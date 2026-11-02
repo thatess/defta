@@ -103,8 +103,10 @@ def do_search(handle: int, params: dict) -> None:
          _url(action="download", kind="loaded", media=md))
     kodi.log(f"Liste: {len(res.human)} insan çevirisi, {len(ready)} hazır AI, {len(res.foreign)} çevrilecek"
              + (f"; hatalar: {' | '.join(res.errors)}" if res.errors else ""))
-    if res.errors:
-        kodi.notify(_short(res.errors[0], 120), "Defta: kaynak hatası", 7000)
+    # Aynı hata (ör. erişim engeli) her aramada değil, günde bir kez bildirilir
+    fresh = [e for e in res.errors if store.should_warn(e)]
+    if fresh:
+        kodi.notify(_short(fresh[0], 120), "Defta: kaynak hatası", 7000)
 
 
 def _give(handle: int, path: str) -> None:

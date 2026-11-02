@@ -76,8 +76,11 @@ def _run_sources(m: Media, wanted: list[str] | None, names: list[str], errors: l
         try:
             res = mod.search(m, wanted)
         except SourceError as e:
+            msg = str(e)
+            if "bağlantı kurulamadı" in msg:
+                msg = "siteye ulaşılamıyor (internet sağlayıcısı engelliyor olabilir)"
             with lock:
-                errors.append(f"{LABEL[name]}: {e}")
+                errors.append(f"{LABEL[name]}: {msg}")
             return
         except Exception as e:  # noqa: BLE001
             kodi.log(f"{LABEL[name]} araması beklenmedik hata: {type(e).__name__}: {e}", "error")

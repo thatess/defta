@@ -49,6 +49,9 @@ def _find_title(m: Media) -> str:
 
 
 _SE_RE = re.compile(r"[sS](\d{1,2})[ ._-]?[eE](\d{1,4})|(?<!\d)(\d{1,2})x(\d{2,3})(?!\d)|[eE][pP]?(\d{1,4})(?!\d)")
+# Anime adlandırması: "[Grup] Ad - 01 (720p)", "[Grup]_Ad_01_(1280x720...)", "Ad 01 [1080p]"
+_ABS_RE = re.compile(r"(?:^|[ ._])(?:-[ ._])?(\d{1,3})(?:v\d)?(?=[ ._]*[\[(]|[ ._]-[ ._]|_|$)")
+_RANGE_RE = re.compile(r"(?<!\d)\d{1,3}\s*[-~]\s*\d{1,3}(?!\d)")
 
 
 def _ep_of(rels: list[str]) -> tuple[int, int]:
@@ -60,6 +63,14 @@ def _ep_of(rels: list[str]) -> tuple[int, int]:
             if mm.group(3):
                 return int(mm.group(3)), int(mm.group(4))
             return 0, int(mm.group(5))
+    for r in rels:
+        name = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", r or "")       # [grup], (1280x720 ...) atılır
+        name = re.sub(r"(?:19|20)\d{2}|\b\d{3,4}p\b|x26[45]|\b10bit\b|(?i:season|sezon|part|cour)\s*\d+", " ", name)
+        if _RANGE_RE.search(name):
+            continue                                                   # "1-6" gibi paket
+        mm = _ABS_RE.search(name.strip())
+        if mm:
+            return 0, int(mm.group(1))
     return 0, 0
 
 

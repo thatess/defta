@@ -191,7 +191,11 @@ class Translator:
         try:
             fj.results = {pos: results.get(pos, fj.prepared[pos].send_text) for pos in fj.translate_pos}
             fj.suspects = {}
-            engine._assemble(fj)
+            check, engine._check_glossary = engine._check_glossary, (lambda j: None)  # ara dosyada sözlük denetimi yok
+            try:
+                engine._assemble(fj)
+            finally:
+                engine._check_glossary = check
             blocks = engine.final_blocks(fj)
         except Exception as e:  # noqa: BLE001
             kodi.log(f"ara dosya hazırlanamadı: {type(e).__name__}: {e}", "debug")

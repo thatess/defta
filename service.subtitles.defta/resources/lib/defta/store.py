@@ -55,6 +55,20 @@ def search_cache_put(m: Media, sig: str, results: list[Sub]) -> None:
         pass
 
 
+def should_warn(message: str, every: float = 24 * 3600) -> bool:
+    path = os.path.join(kodi.profile_dir(), "warned.json")
+    d = _read(path, {}) or {}
+    now = time.time()
+    if now - d.get(message, 0) < every:
+        return False
+    d[message] = now
+    try:
+        _write(path, d)
+    except OSError:
+        pass
+    return True
+
+
 # ------------------------------------------------------------------ indirilenler
 
 def download_path(sub: Sub, ext: str) -> str:

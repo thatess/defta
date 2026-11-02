@@ -128,6 +128,14 @@ class TestRanking(Base):
         b = Sub("opensubtitles", "2", "en", release="Interstellar.2014.1080p.WEB-DL.DD5.1.H264-RARBG")
         self.assertGreater(match_score(v, a), match_score(v, b))
 
+    def test_subsource_episode_names(self):
+        from defta.sources.subsource import _ep_of
+        self.assertEqual(_ep_of(["[Coalgirls]_Shingeki_no_Kyojin_01_(1280x720_Blu-ray_FLAC)"]), (0, 1))
+        self.assertEqual(_ep_of(["[Zero-Raws] Shingeki no Kyojin - 03 (MBS 1280x720 x264 AAC)"]), (0, 3))
+        self.assertEqual(_ep_of(["[gg] Shingeki no Kyojin 1-6"]), (0, 0))
+        self.assertEqual(_ep_of(["Shingeki no Kyojin (Attack on Titan) Season 1"]), (0, 0))
+        self.assertEqual(_ep_of(["Attack.on.Titan.S01E03.1080p"]), (1, 3))
+
     def test_archive_episode(self):
         from defta.sources.base import pick_from_archive
         buf = io.BytesIO()
