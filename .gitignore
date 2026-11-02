@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+/dist/
+/build/
+service.subtitles.defta/resources/lib/subtrans/
+service.subtitles.defta/resources/lib/rules/
+.env
+*.env

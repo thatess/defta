@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings>
+  <category label="Genel">
+    <setting type="lsep" label="Dil"/>
+    <setting id="target_lang" type="enum" label="Çeviri dili (altyazının çevrileceği dil)" values="Türkçe|İngilizce|Japonca|Almanca|Fransızca|İspanyolca|İtalyanca|Portekizce|Rusça|Arapça|Korece|Çince|Felemenkçe|Lehçe|İsveççe|Yunanca|Farsça|Hintçe|Endonezce" default="0"/>
+    <setting id="src_lang" type="enum" label="Varsayılan kaynak dili (bundan çevrilir)" values="Türkçe|İngilizce|Japonca|Almanca|Fransızca|İspanyolca|İtalyanca|Portekizce|Rusça|Arapça|Korece|Çince|Felemenkçe|Lehçe|İsveççe|Yunanca|Farsça|Hintçe|Endonezce" default="1"/>
+    <setting id="extra_src_langs" type="text" label="Ek kaynak dilleri (virgülle, örn. ja,fr,ko)" default=""/>
+    <setting id="anime_japanese" type="bool" label="Animede Japonca altyazıyı öne al" default="false"/>
+    <setting type="lsep" label="Çeviri"/>
+    <setting id="openai_key" type="text" option="hidden" label="OpenAI API anahtarı" default=""/>
+    <setting id="model" type="text" label="Model" default="gpt-6-luna"/>
+    <setting id="mode" type="enum" label="Çeviri modu" values="Hızlı önce, kaliteli sonra|Yalnızca kaliteli (bitince yükle)|Yalnızca hızlı (anlam kontrolü yok)" default="0"/>
+    <setting id="credit" type="text" label="Künye adı (Altyazı çevirisi: ...)" default="Thates"/>
+    <setting type="lsep" label="İsteğe bağlı: anahtarları bir .env dosyasından oku (bilgisayarda)"/>
+    <setting id="key_file" type="text" label="Anahtar dosyası yolu (.env)" default=""/>
+  </category>
+  <category label="Kaynaklar">
+    <setting type="lsep" label="OpenSubtitles"/>
+    <setting id="os_enabled" type="bool" label="OpenSubtitles açık" default="true"/>
+    <setting id="os_key" type="text" option="hidden" label="OpenSubtitles API anahtarı" default="" enable="eq(-1,true)"/>
+    <setting id="os_user" type="text" label="Kullanıcı adı (isteğe bağlı)" default="" enable="eq(-2,true)"/>
+    <setting id="os_pass" type="text" option="hidden" label="Şifre (isteğe bağlı)" default="" enable="eq(-3,true)"/>
+    <setting type="lsep" label="SubDL"/>
+    <setting id="subdl_enabled" type="bool" label="SubDL açık" default="true"/>
+    <setting id="subdl_key" type="text" option="hidden" label="SubDL API anahtarı" default="" enable="eq(-1,true)"/>
+    <setting type="lsep" label="SubSource"/>
+    <setting id="subsource_enabled" type="bool" label="SubSource açık" default="true"/>
+    <setting id="subsource_key" type="text" option="hidden" label="SubSource API anahtarı" default="" enable="eq(-1,true)"/>
+    <setting type="lsep" label="Jimaku (anime, Japonca)"/>
+    <setting id="jimaku_enabled" type="bool" label="Jimaku açık" default="false"/>
+    <setting id="jimaku_key" type="text" option="hidden" label="Jimaku API anahtarı" default="" enable="eq(-1,true)"/>
+    <setting type="lsep" label="Liste"/>
+    <setting id="per_source" type="enum" label="Çevrilecek altyazı sayısı (her kaynaktan)" values="3|5|10|Tümü" default="1"/>
+    <setting id="demote_sdh" type="bool" label="İşitme engelli (SDH) altyazıları alta indir" default="true"/>
+  </category>
+  <category label="Otomatik">
+    <setting id="auto_human" type="bool" label="Hedef dilde insan çevirisi varsa kendiliğinden yükle" default="false"/>
+    <setting id="auto_ai" type="bool" label="Hazır AI çevirisi varsa kendiliğinden yükle" default="false"/>
+    <setting id="auto_translate" type="bool" label="Hedef dilde altyazı yoksa AI çevirisini kendiliğinden başlat" default="false"/>
+    <setting id="prefetch_next" type="bool" label="Dizide sonraki bölümü önceden çevir (yakında)" default="false" enable="false"/>
+  </category>
+  <category label="Altyazı">
+    <setting id="sound_notes" type="enum" label="Ses notları  [kapı çarpar]" values="Kaldır|Koru|Çevir" default="0"/>
+    <setting id="speaker_labels" type="enum" label="Konuşan etiketleri  JOHN:" values="Kaldır|Koru|Çevir" default="0"/>
+    <setting id="speaker_dashes" type="enum" label="Konuşma tireleri  - Geldin mi?" values="Kaldır|Koru" default="0"/>
+    <setting id="lyrics" type="enum" label="Şarkı sözleri  ♪" values="Çevir|Orijinal bırak|Otomatik (yalnızca Japonca vb. ise çevir)" default="0"/>
+  </category>
+  <category label="Temizlik">
+    <setting type="lsep" label="Her silme önce onay ister. API anahtarları ve ayarlar silinmez."/>
+    <setting type="action" label="AI çevirilerini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,ai)"/>
+    <setting type="action" label="Arama sonuçlarını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,search)"/>
+    <setting type="action" label="İndirilen yabancı altyazıları sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,downloads)"/>
+    <setting type="action" label="Seri sözlüğü sil (seri seçerek)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,glossary)"/>
+    <setting type="action" label="Çeviri hafızasını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,memory)"/>
+    <setting type="action" label="Yarım kalan işleri sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,jobs)"/>
+    <setting type="action" label="API yanıt önbelleğini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,apicache)"/>
+    <setting type="lsep" label=" "/>
+    <setting type="action" label="[B]Tümünü sil[/B]" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,all)"/>
+  </category>
+  <category label="Yardım">
+    <setting type="action" label="Bağlantıları ve anahtarları test et" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,test)"/>
+    <setting type="action" label="Kurulum rehberi" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,guide)"/>
+    <setting id="debug" type="bool" label="Ayrıntılı kayıt (hata ayıklama)" default="false"/>
+    <setting id="debug_dir" type="text" label="Kayıtların kopyası bu klasöre de yazılsın (isteğe bağlı)" default=""/>
+  </category>
+</settings>

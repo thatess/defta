@@ -1,0 +1,245 @@
+"""Kodi ile ilgili ortak yardımcılar: ayarlar, klasörler, kayıt, bildirim, anahtarlar.
+
+API anahtarları hiçbir zaman kayda yazılmaz; yalnızca 'girilmiş / girilmemiş' bilgisi yazılır."""
+from __future__ import annotations
+
+import logging
+import os
+import threading
+import time
+
+import xbmc
+import xbmcaddon
+import xbmcgui
+import xbmcvfs
+
+from . import ADDON_ID, langs
+
+_lock = threading.Lock()
+
+
+def addon():
+    return xbmcaddon.Addon(ADDON_ID)
+
+
+def version() -> str:
+    try:
+        return addon().getAddonInfo("version")
+    except Exception:  # noqa: BLE001
+        return "?"
+
+
+def setting(key: str, default: str = "") -> str:
+    try:
+        v = addon().getSetting(key)
+    except Exception:  # noqa: BLE001
+        return default
+    return default if v is None else v
+
+
+def setting_bool(key: str, default: bool = False) -> bool:
+    v = setting(key, "").strip().lower()
+    if not v:
+        return default
+    return v in ("true", "1", "yes")
+
+
+def setting_int(key: str, default: int = 0) -> int:
+    try:
+        return int(setting(key, str(default)) or default)
+    except ValueError:
+        return default
+
+
+# ------------------------------------------------------------------ klasörler
+
+def translate_path(p: str) -> str:
+    return xbmcvfs.translatePath(p)
+
+
+def profile_dir(*parts: str) -> str:
+    base = translate_path(f"special://profile/addon_data/{ADDON_ID}/")
+    path = os.path.join(base, *parts)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def addon_dir() -> str:
+    return translate_path(f"special://home/addons/{ADDON_ID}/")
+
+
+def temp_dir() -> str:
+    return profile_dir("temp")
+
+
+# ------------------------------------------------------------------ kayıt
+
+_LOG_MAX = 2 * 1024 * 1024
+
+
+def _append(path: str, line: str) -> None:
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > _LOG_MAX:
+            old = path + ".1"
+            if os.path.exists(old):
+                os.remove(old)
+            os.replace(path, old)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
+def log(msg: str, level: str = "info") -> None:
+    lvl = {"debug": xbmc.LOGDEBUG, "info": xbmc.LOGINFO, "warning": xbmc.LOGWARNING,
+           "error": xbmc.LOGERROR}.get(level, xbmc.LOGINFO)
+    if level == "debug" and not setting_bool("debug"):
+        return
+    xbmc.log(f"[Defta] {msg}", lvl)
+    line = time.strftime("%Y-%m-%d %H:%M:%S") + f" {level.upper():7s} {msg}"
+    with _lock:
+        _append(os.path.join(profile_dir(), "defta.log"), line)
+        extra = setting("debug_dir").strip()
+        if extra:
+            try:
+                os.makedirs(extra, exist_ok=True)
+                _append(os.path.join(extra, "defta.log"), line)
+            except OSError:
+                pass
+
+
+class KodiLogHandler(logging.Handler):
+    """Çeviri motorunun (subtrans) kayıtlarını Defta kaydına yönlendirir."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = record.getMessage()
+        except Exception:  # noqa: BLE001
+            return
+        level = "debug" if record.levelno < logging.INFO else (
+            "info" if record.levelno < logging.WARNING else "warning")
+        for ln in msg.splitlines() or [""]:
+            log("  " + ln, level)
+
+
+def attach_engine_log() -> None:
+    lg = logging.getLogger("subtrans")
+    if not any(isinstance(h, KodiLogHandler) for h in lg.handlers):
+        lg.addHandler(KodiLogHandler())
+    lg.setLevel(logging.DEBUG if setting_bool("debug") else logging.INFO)
+    lg.propagate = False
+
+
+# ------------------------------------------------------------------ asyncio
+
+def run_async(coro):
+    """asyncio.run Kodi'de kullanılamaz: eklentiler ana iş parçacığında çalışmaz, Windows'un varsayılan
+    döngüsü ve asyncio.run sinyal kurmaya çalışıp hata verir. Sinyalsiz bir seçici döngü kullanılır."""
+    import asyncio
+    import sys
+    loop = asyncio.SelectorEventLoop() if sys.platform == "win32" else asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro)
+    finally:
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:  # noqa: BLE001
+            pass
+        asyncio.set_event_loop(None)
+        loop.close()
+
+
+# ------------------------------------------------------------------ arayüz
+
+def notify(msg: str, heading: str = "Defta", ms: int = 5000) -> None:
+    try:
+        icon = os.path.join(addon_dir(), "icon.png")
+        xbmcgui.Dialog().notification(heading, msg, icon if os.path.exists(icon) else xbmcgui.NOTIFICATION_INFO,
+                                      ms, False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# ------------------------------------------------------------------ dil ayarları
+
+def target_lang() -> str:
+    return langs.code_at(setting_int("target_lang", 0))
+
+
+def source_langs(anime: bool = False) -> list[str]:
+    """Çevrilecek kaynak dilleri, öncelik sırasıyla (hedef dil hariç)."""
+    tgt = target_lang()
+    out = [langs.code_at(setting_int("src_lang", 1))]
+    for c in langs.parse_list(setting("extra_src_langs")):
+        if c not in out:
+            out.append(c)
+    if anime and setting_bool("anime_japanese"):
+        out = ["ja"] + [c for c in out if c != "ja"]
+    return [c for c in out if c != tgt] or (["en"] if tgt != "en" else ["ja"])
+
+
+# ------------------------------------------------------------------ anahtarlar
+
+_ENV_NAMES = {
+    "openai_key": "OPENAI_API_KEY",
+    "os_key": "OPENSUBTITLES_API_KEY",
+    "os_user": "OPENSUBTITLES_USERNAME",
+    "os_pass": "OPENSUBTITLES_PASSWORD",
+    "subdl_key": "SUBDL_API_KEY",
+    "subsource_key": "SUBSOURCE_API_KEY",
+    "jimaku_key": "JIMAKU_API_KEY",
+}
+
+
+def _env_file_values() -> dict:
+    path = setting("key_file").strip().strip('"')
+    if not path:
+        return {}
+    out = {}
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                if k.startswith("export "):
+                    k = k[7:].strip()
+                out[k] = v.strip().strip('"').strip("'").strip()
+    except OSError:
+        return {}
+    return out
+
+
+def secret(key: str) -> str:
+    """Ayarlardaki değer; boşsa anahtar dosyasındaki (.env) değer. Asla kayda yazılmaz."""
+    v = setting(key).strip()
+    if v:
+        return v
+    env = _ENV_NAMES.get(key)
+    if not env:
+        return ""
+    return _env_file_values().get(env, "").strip() or os.environ.get(env, "").strip()
+
+
+def describe_secret(key: str) -> str:
+    v = secret(key)
+    if not v:
+        return "girilmemiş"
+    if setting(key).strip():
+        src = "ayarlar"
+    elif _env_file_values().get(_ENV_NAMES.get(key, ""), "").strip():
+        src = "anahtar dosyası"
+    else:
+        src = "Windows ortam değişkeni"
+    return f"girilmiş ({len(v)} karakter, {src})"
+
+
+def source_enabled(name: str) -> bool:
+    flag = {"opensubtitles": "os_enabled", "subdl": "subdl_enabled", "subsource": "subsource_enabled",
+            "jimaku": "jimaku_enabled"}[name]
+    key = {"opensubtitles": "os_key", "subdl": "subdl_key", "subsource": "subsource_key",
+           "jimaku": "jimaku_key"}[name]
+    return setting_bool(flag, name != "jimaku") and bool(secret(key))
