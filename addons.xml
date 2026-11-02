@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addons>
+<addon id="service.subtitles.defta" name="Defta" version="0.2.0" provider-name="Thates">
+  <requires>
+    <import addon="xbmc.python" version="3.0.1"/>
+    <import addon="script.module.certifi"/>
+  </requires>
+  <extension point="xbmc.subtitle.module" library="default.py"/>
+  <extension point="xbmc.service" library="service.py"/>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="tr_TR">Altyazı bul, yoksa yapay zekâyla Türkçeye çevir</summary>
+    <summary lang="en_GB">Find subtitles and translate them with AI</summary>
+    <description lang="tr_TR">OpenSubtitles, SubDL, SubSource ve Jimaku'da altyazı arar. Türkçe altyazı yoksa yabancı bir altyazıyı OpenAI ile doğal Türkçeye çevirir: seri sözlüğü, hitap ekleri, şarkılar, kurgusal diller. Çeviri parça parça yüklenir, kontrol edilmiş hali arkadan gelir.</description>
+    <description lang="en_GB">Searches OpenSubtitles, SubDL, SubSource and Jimaku. When no subtitle exists in your language, translates a foreign one with OpenAI.</description>
+    <platform>all</platform>
+    <license>MIT</license>
+    <source>https://github.com/thatess/defta</source>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+  </extension>
+</addon>
+<addon id="repository.defta" name="Defta Deposu" version="1.0.0" provider-name="Thates">
+  <extension point="xbmc.addon.repository" name="Defta Deposu">
+    <dir>
+      <info compressed="false">https://thatess.github.io/defta/addons.xml</info>
+      <checksum>https://thatess.github.io/defta/addons.xml.md5</checksum>
+      <datadir zip="true">https://thatess.github.io/defta/</datadir>
+    </dir>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="tr_TR">Defta altyazı eklentisinin deposu (otomatik güncelleme)</summary>
+    <summary lang="en_GB">Repository for the Defta subtitle add-on</summary>
+    <description lang="tr_TR">Bu depoyu kurduktan sonra Defta'yı buradan kurun; yeni sürümler Kodi tarafından kendiliğinden güncellenir.</description>
+    <platform>all</platform>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+  </extension>
+</addon>
+</addons>
