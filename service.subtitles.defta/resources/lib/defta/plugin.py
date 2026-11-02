@@ -85,21 +85,21 @@ def do_search(handle: int, params: dict) -> None:
              sync=s.sync, hi=s.hi, rating=_rating(s))
     for j in running:
         sub = Sub.from_dict(j["sub"])
-        _add(handle, langs.kodi_name(tgt), f"⏳ Defta AI çeviri sürüyor  ·  {_short(sub.release or sub.sid, 50)}",
+        _add(handle, langs.kodi_name(tgt), f"[B]Defta AI çeviri sürüyor[/B]  ·  {_short(sub.release or sub.sid, 50)}",
              tgt, _url(action="download", kind="running", job=j["id"]), sync=True, rating="5")
     for e in ready:
         src = Sub.from_dict(e["src"])
-        _add(handle, langs.kodi_name(tgt), f"✦ Defta AI ({langs.tr_name(src.lang)}'den)  ·  "
+        _add(handle, langs.kodi_name(tgt), f"[B]Defta AI[/B] ({langs.ablative(langs.tr_name(src.lang))})  ·  "
              f"{_short(src.release or src.sid, 50)}", tgt,
              _url(action="download", kind="ai", path=e["path"], media=md), sync=src.sync, rating="5")
-        _add(handle, langs.kodi_name(tgt), f"↻ Baştan yeniden çevir  ·  {_short(src.release or src.sid, 50)}", tgt,
+        _add(handle, langs.kodi_name(tgt), f"[I]Baştan yeniden çevir[/I]  ·  {_short(src.release or src.sid, 50)}", tgt,
              _url(action="download", kind="retranslate", sub=json.dumps(src.to_dict()), media=md), rating="0")
     for s in res.foreign:
         _add(handle, langs.kodi_name(s.lang), f"→ {tname} AI çeviri  ·  {_short(s.release or s.sid, 50)}  ·  "
              f"{LABEL[s.source]}" + ("  ·  SDH" if s.hi else ""), s.lang,
              _url(action="download", kind="translate", sub=json.dumps(s.to_dict()), media=md),
              sync=s.sync, hi=s.hi, rating=_rating(s))
-    _add(handle, langs.kodi_name(tgt), f"→ Yüklenen altyazıyı {tname}ye çevir (başka eklentiyle seçtiğiniz)", tgt,
+    _add(handle, langs.kodi_name(tgt), f"→ Yüklenen altyazıyı {langs.dative(tname)} çevir (başka eklentiyle seçtiğiniz)", tgt,
          _url(action="download", kind="loaded", media=md))
     kodi.log(f"Liste: {len(res.human)} insan çevirisi, {len(ready)} hazır AI, {len(res.foreign)} çevrilecek"
              + (f"; hatalar: {' | '.join(res.errors)}" if res.errors else ""))

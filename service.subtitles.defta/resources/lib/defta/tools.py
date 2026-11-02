@@ -36,7 +36,7 @@ GUIDE = """[B]Defta kurulum rehberi[/B]
 [B]3. Kullanım[/B]
  Video oynarken altyazı simgesi > İndir > Defta. Liste:
  • En üstte hedef dildeki insan çevirileri
- • ✦ Defta AI: daha önce yaptığınız çeviriler (ücretsiz), ↻ baştan yeniden çevir
+ • Defta AI: daha önce yaptığınız çeviriler (ücretsiz) ve 'baştan yeniden çevir'
  • → AI çeviri: seçince çeviri başlar. Önce orijinal altyazı görünür, çevrilen parçalar geldikçe yerine geçer;
    anlam kontrolü bitince kontrol edilmiş hali yüklenir.
  • Yüklenen altyazıyı çevir: başka eklentiyle (a4k vb.) seçtiğiniz altyazıyı çevirir.

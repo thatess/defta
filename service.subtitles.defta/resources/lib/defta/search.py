@@ -119,7 +119,7 @@ def search(m: Media, use_cache: bool = True) -> Results:
     if not names:
         res.errors.append("Hiçbir kaynak açık değil ya da API anahtarı girilmemiş (Defta ayarları > Kaynaklar)")
         return res
-    sig = "|".join([tgt] + srcs + names)
+    sig = "|".join([kodi.version(), tgt] + srcs + names)     # yeni sürümde eski sonuçlar kullanılmaz
     subs = store.search_cache_get(m, sig) if use_cache else None
     if subs is None:
         wanted = [tgt] + srcs
