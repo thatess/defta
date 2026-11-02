@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import os
 import time
 from pathlib import Path
@@ -27,7 +28,7 @@ def _prices() -> dict:
         return {}
 
 
-def build_settings(fresh: bool = False):
+def build_settings():
     from subtrans.config import DEFAULTS, Settings, _merge
     mode = kodi.setting_int("mode", FAST_FIRST)
     sdh3 = ["remove", "keep", "translate"]
@@ -67,11 +68,36 @@ class Translator:
         self.last_write = 0.0
         self.seq = 0
         self.cost = None
+        self._loop = None
+        self._task = None
 
     # ------------------------------------------------------------------
     def run(self) -> str:
+        """Çeviriyi bu iş parçacığında yürütür. stop() başka iş parçacığından çağrılabilir (Kodi kapanırken).
+        Not: asyncio.run kullanılmaz (Kodi'de sinyal kurmaya çalışıp hata verir); seçici döngü elle kurulur."""
         kodi.attach_engine_log()
-        return kodi.run_async(self._run())
+        loop = asyncio.SelectorEventLoop() if sys.platform == "win32" else asyncio.new_event_loop()
+        self._loop = loop
+        try:
+            asyncio.set_event_loop(loop)
+            self._task = loop.create_task(self._run())
+            return loop.run_until_complete(self._task)
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:  # noqa: BLE001
+                pass
+            asyncio.set_event_loop(None)
+            loop.close()
+            self._loop = self._task = None
+
+    def stop(self) -> None:
+        loop, task = self._loop, self._task
+        if loop is not None and task is not None and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(task.cancel)
+            except RuntimeError:
+                pass
 
     async def _run(self) -> str:
         from subtrans import app as sapp
@@ -79,7 +105,7 @@ class Translator:
         from subtrans.config import load_rule_pack
         from subtrans.engine import Engine, FatalError, FileJob
         from subtrans.glossary import Glossary
-        from subtrans.provider import ProviderError, Usage, make_provider
+        from subtrans.provider import ProviderError, make_provider
         from subtrans.subformats import read_subtitle, write_atomic
         from subtrans.srt_io import verify_structure
         from subtrans.textprep import SDH_CATEGORIES, resolve_decisions
@@ -161,7 +187,6 @@ class Translator:
                 raise RuntimeError("yapı kontrolü: " + "; ".join(errs[:3]))
             blocks = engine.final_blocks(fj)
             write_atomic(out_path, blocks, "srt", fj.srt.doc)
-            sapp.record_written(store, fj, blocks, out_path.parent)
         except FatalError as e:
             raise RuntimeError(str(e)) from e
         finally:

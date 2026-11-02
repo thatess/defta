@@ -29,6 +29,8 @@ GUIDE = """[B]Defta kurulum rehberi[/B]
  • SubSource: subsource.net > hesap > API sekmesi
  • Jimaku (anime, isteğe bağlı): jimaku.cc > hesap
  Anahtarı olmayan kaynak atlanır. Her kaynak ayrı ayrı kapatılabilir.
+ Kumandayla yazmak zorsa: anahtarları "OPENAI_API_KEY=..." satırlarıyla bir metin dosyasına yazın,
+ USB belleğe ya da ağ klasörüne koyun ve Genel > "Anahtar dosyasını seç" ile gösterin.
 
 [B]2. Kodi'de varsayılan altyazı servisi[/B]
  Ayarlar > Oynatıcı > Dil > Varsayılan film/dizi servisi: Defta
@@ -83,9 +85,16 @@ def test() -> None:
             settings, _ = build_settings()
             try:
                 p = make_provider(settings["provider"])
-                r = kodi.run_async(p.check(strict=True))
-                kodi.run_async(p.close())
-                lines.append(f"[B]OpenAI[/B]: {r}")
+                try:
+                    status, payload = p._request("GET", "/models/" + p.model)   # eşzamanlı: asyncio gerekmez
+                finally:
+                    p.pool.shutdown(wait=True)
+                if status == 200:
+                    lines.append(f"[B]OpenAI[/B]: çalışıyor, '{p.model}' modeline erişim var")
+                elif status == 401:
+                    lines.append(f"[B]OpenAI[/B]: HATA: {p._auth_401(p._err(payload))}")
+                else:
+                    lines.append(f"[B]OpenAI[/B]: HATA (HTTP {status}): {p._err(payload)[:150]}")
             except ProviderError as e:
                 lines.append(f"[B]OpenAI[/B]: HATA: {e}")
         else:
@@ -124,6 +133,20 @@ def main(argv: list[str]) -> None:
             clean(argv[2] if len(argv) > 2 else "")
         elif cmd == "test":
             test()
+        elif cmd == "pickkeys":
+            path = xbmcgui.Dialog().browse(1, "Anahtar dosyasını seçin (.env ya da .txt)", "files")
+            if path:
+                kodi.addon().setSetting("key_file", path)
+                n = sum(1 for k in ("openai_key", "os_key", "subdl_key", "subsource_key", "jimaku_key")
+                        if kodi.secret(k))
+                xbmcgui.Dialog().ok("Defta", f"Anahtar dosyası: {path}\n{n} anahtar bulundu.")
+        elif cmd == "logs":
+            dest = kodi.setting("debug_dir").strip()
+            if not dest:
+                dest = xbmcgui.Dialog().browse(3, "Kayıtlar hangi klasöre kopyalansın?", "files")
+            copied = kodi.export_kodi_logs(dest) if dest else []
+            xbmcgui.Dialog().ok("Defta", ("Kopyalandı: " + ", ".join(copied) + f"\n{dest}") if copied
+                                else "Kayıt kopyalanmadı (klasör seçilmedi ya da erişilemedi).")
         elif cmd == "guide":
             xbmcgui.Dialog().textviewer("Defta", GUIDE)
     except Exception as e:  # noqa: BLE001

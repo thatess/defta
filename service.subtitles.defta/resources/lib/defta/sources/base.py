@@ -32,16 +32,22 @@ class Sub:
         d["releases"] = d["releases"][:3]
         return d
 
+    def __post_init__(self):
+        if "?" in self.sid:                    # bağlantıdaki api_key vb. hiçbir yerde saklanmaz
+            self.sid = self.sid.split("?")[0]
+
     @staticmethod
     def from_dict(d: dict) -> "Sub":
         s = Sub(source=d.get("source", ""), sid=str(d.get("sid", "")), lang=d.get("lang", ""))
         for k, v in d.items():
             if hasattr(s, k):
                 setattr(s, k, v)
+        s.sid = str(s.sid).split("?")[0]
         return s
 
     def uid(self) -> str:
-        return f"{self.source}-{re.sub(r'[^A-Za-z0-9_.-]+', '_', self.sid)[-80:]}"
+        sid = self.sid.split("?")[0]
+        return f"{self.source}-{re.sub(r'[^A-Za-z0-9_.-]+', '_', sid)[-80:]}"
 
 
 class SourceError(Exception):

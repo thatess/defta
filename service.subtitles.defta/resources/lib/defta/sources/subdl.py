@@ -13,10 +13,18 @@ NAME = "subdl"
 
 
 def search(m: Media, wanted: list[str] | None) -> list[Sub]:
+    out = _search(m, wanted, use_imdb=bool(m.imdb))
+    if not out and m.imdb and m.title:
+        # Dizide oynatıcı bölümün IMDb numarasını verebilir; SubDL dizinin numarasını bekler: adla tekrar
+        out = _search(m, wanted, use_imdb=False)
+    return out
+
+
+def _search(m: Media, wanted: list[str] | None, use_imdb: bool) -> list[Sub]:
     params = {"api_key": kodi.secret("subdl_key"), "subs_per_page": 30, "releases": 1, "comment": 1}
     if wanted:
         params["languages"] = ",".join(langs.subdl_code(c) for c in wanted)
-    if m.imdb:
+    if use_imdb:
         params["imdb_id"] = m.imdb
     else:
         params["film_name"] = m.title
@@ -39,7 +47,7 @@ def search(m: Media, wanted: list[str] | None) -> list[Sub]:
         return []
     out = []
     for it in r.get("subtitles") or []:
-        url = it.get("url") or ""
+        url = (it.get("url") or "").split("?")[0]      # SubDL adrese api_key ekleyebiliyor: asla saklanmaz
         if not url:
             continue
         season, ep = int(it.get("season") or 0), int(it.get("episode") or 0)
@@ -55,13 +63,19 @@ def search(m: Media, wanted: list[str] | None) -> list[Sub]:
 
 
 def download(sub: Sub, m: Media) -> tuple[str, bytes]:
-    url = sub.sid if sub.sid.startswith("http") else DL + "/" + sub.sid.lstrip("/")
+    path = sub.sid.split("?")[0]
+    url = path if path.startswith("http") else DL + "/" + path.lstrip("/")
     if not re.match(r"^https://dl\.subdl\.com/", url):
         raise SourceError("SubDL indirme adresi beklenmedik")
     try:
         raw = net.get_bytes(url)
     except net.HttpError as e:
-        raise SourceError(f"SubDL indirme başarısız ({e})") from e
+        if e.status not in (401, 403):
+            raise SourceError(f"SubDL indirme başarısız ({e})") from e
+        try:
+            raw = net.get_bytes(url, {"api_key": kodi.secret("subdl_key")})
+        except net.HttpError as e2:
+            raise SourceError(f"SubDL indirme başarısız ({e2})") from e2
     return pick_from_archive(raw, m.season, m.episode)
 
 

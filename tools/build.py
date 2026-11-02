@@ -59,7 +59,9 @@ def make_zip(addon_dir: Path, out_dir: Path) -> Path:
 
 def build_repo() -> None:
     """docs/: addons.xml, addons.xml.md5, <id>/<id>-<sürüm>.zip (+ kök dizinde repository zip)."""
-    DOCS.mkdir(exist_ok=True)
+    if DOCS.exists():
+        shutil.rmtree(DOCS)          # yalnızca güncel sürümler yayımlanır
+    DOCS.mkdir()
     xmls = []
     for addon_dir in (ADDON, REPO_ADDON):
         z = make_zip(addon_dir, DOCS / addon_dir.name)

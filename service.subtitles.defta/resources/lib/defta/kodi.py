@@ -90,7 +90,35 @@ def _append(path: str, line: str) -> None:
         pass
 
 
+_SECRET_KEYS = ("openai_key", "os_key", "os_pass", "subdl_key", "subsource_key", "jimaku_key")
+_secret_cache = {"t": 0.0, "values": []}
+
+
+def secret_values() -> list:
+    """Kayda asla yazılmaması gereken değerler (anahtarlar, şifre). 60 sn önbellekli."""
+    now = time.time()
+    if now - _secret_cache["t"] > 60:
+        vals = []
+        for k in _SECRET_KEYS:
+            try:
+                v = secret(k)
+            except Exception:  # noqa: BLE001
+                v = ""
+            if v and len(v) >= 6:
+                vals.append(v)
+        _secret_cache.update(t=now, values=sorted(set(vals), key=len, reverse=True))
+    return _secret_cache["values"]
+
+
+def scrub(text: str) -> str:
+    for v in secret_values():
+        if v in text:
+            text = text.replace(v, "***")
+    return text
+
+
 def log(msg: str, level: str = "info") -> None:
+    msg = scrub(msg)
     lvl = {"debug": xbmc.LOGDEBUG, "info": xbmc.LOGINFO, "warning": xbmc.LOGWARNING,
            "error": xbmc.LOGERROR}.get(level, xbmc.LOGINFO)
     if level == "debug" and not setting_bool("debug"):
@@ -106,6 +134,26 @@ def log(msg: str, level: str = "info") -> None:
                 _append(os.path.join(extra, "defta.log"), line)
             except OSError:
                 pass
+
+
+def export_kodi_logs(dest: str = "") -> list:
+    """Kodi'nin kendi kayıtlarını (kodi.log, çökme öncesi kodi.old.log) kayıt klasörüne kopyalar."""
+    import shutil
+    dest = dest or setting("debug_dir").strip()
+    if not dest:
+        return []
+    out = []
+    src_dir = translate_path("special://logpath/")
+    try:
+        os.makedirs(dest, exist_ok=True)
+        for name in os.listdir(src_dir):
+            low = name.lower()
+            if low in ("kodi.log", "kodi.old.log") or (low.startswith("kodi_crashlog") and low.endswith(".log")):
+                shutil.copyfile(os.path.join(src_dir, name), os.path.join(dest, name))
+                out.append(name)
+    except OSError as e:
+        log(f"Kodi kayıtları kopyalanamadı: {e}", "warning")
+    return out
 
 
 class KodiLogHandler(logging.Handler):
@@ -128,26 +176,6 @@ def attach_engine_log() -> None:
         lg.addHandler(KodiLogHandler())
     lg.setLevel(logging.DEBUG if setting_bool("debug") else logging.INFO)
     lg.propagate = False
-
-
-# ------------------------------------------------------------------ asyncio
-
-def run_async(coro):
-    """asyncio.run Kodi'de kullanılamaz: eklentiler ana iş parçacığında çalışmaz, Windows'un varsayılan
-    döngüsü ve asyncio.run sinyal kurmaya çalışıp hata verir. Sinyalsiz bir seçici döngü kullanılır."""
-    import asyncio
-    import sys
-    loop = asyncio.SelectorEventLoop() if sys.platform == "win32" else asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
-    finally:
-        try:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        except Exception:  # noqa: BLE001
-            pass
-        asyncio.set_event_loop(None)
-        loop.close()
 
 
 # ------------------------------------------------------------------ arayüz
@@ -192,24 +220,41 @@ _ENV_NAMES = {
 }
 
 
+_env_cache = {"path": None, "t": 0.0, "values": {}}
+
+
 def _env_file_values() -> dict:
+    """Anahtar dosyasındaki KEY=değer satırları. Ağ klasöründen (Shield) her seferinde okunmasın diye
+    60 sn önbellekte tutulur."""
     path = setting("key_file").strip().strip('"')
     if not path:
         return {}
+    now = time.time()
+    if _env_cache["path"] == path and now - _env_cache["t"] < 60:
+        return _env_cache["values"]
     out = {}
     try:
-        with open(path, encoding="utf-8-sig") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                k = k.strip()
-                if k.startswith("export "):
-                    k = k[7:].strip()
-                out[k] = v.strip().strip('"').strip("'").strip()
-    except OSError:
-        return {}
+        if "://" in path:                 # smb://, nfs://, special:// (Shield: ağ klasörü ya da USB)
+            f = xbmcvfs.File(path)
+            try:
+                text = f.readBytes().decode("utf-8-sig", "replace")
+            finally:
+                f.close()
+        else:
+            with open(path, encoding="utf-8-sig") as fh:
+                text = fh.read()
+    except (OSError, RuntimeError):
+        text = ""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip()
+        if k.startswith("export "):
+            k = k[7:].strip()
+        out[k] = v.strip().strip('"').strip("'").strip()
+    _env_cache.update(path=path, t=now, values=out)
     return out
 
 

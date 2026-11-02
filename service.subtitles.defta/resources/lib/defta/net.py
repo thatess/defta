@@ -3,9 +3,12 @@
 URL'lerdeki anahtarlar kayda yazılmadan önce gizlenir."""
 from __future__ import annotations
 
+import http.client
 import json
 import re
+import socket
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -25,6 +28,62 @@ def ssl_context():
         except Exception:  # noqa: BLE001  (certifi yoksa sistem sertifikaları)
             _CTX = ssl.create_default_context()
     return _CTX
+
+
+# ------------------------------------------------------------------ DNS engeli
+# Bazı internet sağlayıcıları altyazı sitelerinin adını DNS'te engelliyor (ör. api.subdl.com). Tarayıcılar
+# kendi güvenli DNS'ini (DoH) kullandığı için site açılır ama Kodi bulamaz. Ad çözülemezse Cloudflare ve
+# Google'ın güvenli DNS'ine IP adresiyle sorulur. Bağlantı yine asıl ada (TLS sertifikasıyla) yapılır.
+
+_orig_getaddrinfo = socket.getaddrinfo
+_DOH = (("1.1.1.1", "/dns-query?name={}&type=A", {"Accept": "application/dns-json"}),
+        ("8.8.8.8", "/resolve?name={}&type=A", {}))
+_doh_cache: dict = {}
+_doh_lock = threading.Lock()
+_IP_RE = re.compile(r"^[\d.]+$|:")
+
+
+def _doh_lookup(host: str) -> list:
+    now = time.time()
+    with _doh_lock:
+        hit = _doh_cache.get(host)
+        if hit and now - hit[0] < 3600:
+            return hit[1]
+    for ip, path, headers in _DOH:
+        try:
+            conn = http.client.HTTPSConnection(ip, 443, timeout=6, context=ssl_context())
+            try:
+                conn.request("GET", path.format(host), headers=dict(headers, **{"User-Agent": "Defta"}))
+                data = json.loads(conn.getresponse().read().decode("utf-8") or "{}")
+            finally:
+                conn.close()
+        except (OSError, ValueError, http.client.HTTPException):
+            continue
+        ips = [a.get("data") for a in data.get("Answer") or [] if a.get("type") == 1 and a.get("data")]
+        if ips:
+            with _doh_lock:
+                _doh_cache[host] = (now, ips)
+            kodi.log(f"DNS: {host} internet sağlayıcısının DNS'inde bulunamadı, güvenli DNS ile bulundu ({ip})")
+            return ips
+    return []
+
+
+def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    try:
+        return _orig_getaddrinfo(host, port, family, type, proto, flags)
+    except socket.gaierror:
+        name = host.decode() if isinstance(host, bytes) else str(host or "")
+        if not name or name == "localhost" or _IP_RE.search(name) or family == socket.AF_INET6:
+            raise
+        ips = _doh_lookup(name)
+        if not ips:
+            raise
+        return [(socket.AF_INET, type or socket.SOCK_STREAM, proto or 6, "", (ip, int(port or 0)))
+                for ip in ips]
+
+
+if getattr(socket.getaddrinfo, "__name__", "") != "_getaddrinfo":
+    socket.getaddrinfo = _getaddrinfo
 
 
 def user_agent() -> str:

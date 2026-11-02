@@ -3,6 +3,7 @@ ayar açıksa video başlayınca altyazıyı kendiliğinden bulur/çevirir."""
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
 import traceback
@@ -11,7 +12,7 @@ import xbmc
 
 from . import fetch, kodi, langs, search, store
 from .media import Media, from_player
-from .sources.base import SourceError, Sub
+from .sources.base import SourceError
 
 
 class Player(xbmc.Player):
@@ -60,23 +61,45 @@ class Service:
         self.monitor = xbmc.Monitor()
         self.player = Player(self)
         self.worker: threading.Thread | None = None
+        self.translator = None
 
     # ------------------------------------------------------------------ ana döngü
     def run(self) -> None:
-        kodi.log(f"Servis başladı (Defta {kodi.version()}, Python {'.'.join(map(str, __import__('sys').version_info[:3]))})")
+        kodi.log(f"Servis başladı (Defta {kodi.version()}, Python {'.'.join(map(str, sys.version_info[:3]))})")
         fetch.clean_temp()
-        for j in store.list_jobs("running"):          # Kodi kapanınca yarıda kalan işler
+        try:
+            n = store.scrub_secrets_once()
+            if n:
+                kodi.log(f"Güvenlik: eski dosyalarda {n} yerde anahtar izi temizlendi")
+        except Exception as e:  # noqa: BLE001
+            kodi.log(f"anahtar temizliği yapılamadı: {e}", "warning")
+        if kodi.setting_bool("debug") and kodi.setting("debug_dir").strip():
+            copied = kodi.export_kodi_logs()          # önceki oturum çöktüyse kodi.old.log sebebini gösterir
+            if copied:
+                kodi.log("Kodi kayıtları kayıt klasörüne kopyalandı: " + ", ".join(copied), "debug")
+        store.prune_jobs()
+        for j in store.list_jobs("running"):          # Kodi kapanınca yarıda kalan işler: kaldığı yerden sürer
             j["status"] = "pending"
             j["load"] = False
             store.save_job(j)
+        seen = -1.0
         while not self.monitor.abortRequested():
             if self.worker is None or not self.worker.is_alive():
-                pending = store.list_jobs("pending")
-                if pending:
-                    self.worker = threading.Thread(target=self._run_job, args=(pending[0],), daemon=True)
-                    self.worker.start()
+                stamp = store.queue_stamp()
+                if stamp != seen:                     # yalnızca yeni iş eklendiyse klasöre bakılır
+                    pending = store.list_jobs("pending")
+                    if pending:
+                        self.worker = threading.Thread(target=self._run_job, args=(pending[0],), daemon=True)
+                        self.worker.start()
+                    else:
+                        seen = stamp
             if self.monitor.waitForAbort(1):
                 break
+        # Kodi kapanıyor: süren çeviri durdurulur (iş "bekliyor"a döner, açılışta kaldığı yerden sürer)
+        if self.translator is not None:
+            self.translator.stop()
+        if self.worker is not None and self.worker.is_alive():
+            self.worker.join(8)
         kodi.log("Servis durdu")
 
     # ------------------------------------------------------------------ iş
@@ -110,20 +133,27 @@ class Service:
             elif stage == "final":
                 kodi.notify("Kontrol edilmiş çeviri yüklendi.", "Defta", 5000)
 
+        import asyncio
         try:
             t = Translator(job, on_update, should_stop=self.monitor.abortRequested)
+            self.translator = t
             out = t.run()
             job["status"] = "done"
             job["out_file"] = out
             job["cost"] = t.cost
             if not job.get("load") or not self.player.is_playing(m):
                 kodi.notify(f"{m.label()}: {tname} AI çevirisi hazır.", "Defta", 6000)
+        except asyncio.CancelledError:
+            job["status"] = "pending"                 # Kodi kapanırken durduruldu: açılışta sürer
+            job["load"] = False
+            kodi.log(f"Çeviri durduruldu, Kodi açılınca kaldığı yerden sürecek: {m.label()}")
         except Exception as e:  # noqa: BLE001
             job["status"] = "failed"
             job["error"] = f"{type(e).__name__}: {e}"
             kodi.log(f"Çeviri başarısız ({m.label()}): {job['error']}\n{traceback.format_exc()}", "error")
             kodi.notify(f"Çeviri başarısız: {str(e)[:120]}", "Defta", 9000)
         finally:
+            self.translator = None
             job["finished"] = time.time()
             store.save_job(job)
 

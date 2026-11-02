@@ -13,6 +13,7 @@
     <setting id="credit" type="text" label="Künye adı (Altyazı çevirisi: ...)" default="Thates"/>
     <setting type="lsep" label="İsteğe bağlı: anahtarları bir .env dosyasından oku (bilgisayarda)"/>
     <setting id="key_file" type="text" label="Anahtar dosyası yolu (.env)" default=""/>
+    <setting type="action" option="close" label="Anahtar dosyasını seç (USB / ağ klasörü)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,pickkeys)"/>
   </category>
   <category label="Kaynaklar">
     <setting type="lsep" label="OpenSubtitles"/>
@@ -47,19 +48,20 @@
   </category>
   <category label="Temizlik">
     <setting type="lsep" label="Her silme önce onay ister. API anahtarları ve ayarlar silinmez."/>
-    <setting type="action" label="AI çevirilerini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,ai)"/>
-    <setting type="action" label="Arama sonuçlarını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,search)"/>
-    <setting type="action" label="İndirilen yabancı altyazıları sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,downloads)"/>
-    <setting type="action" label="Seri sözlüğü sil (seri seçerek)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,glossary)"/>
-    <setting type="action" label="Çeviri hafızasını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,memory)"/>
-    <setting type="action" label="Yarım kalan işleri sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,jobs)"/>
-    <setting type="action" label="API yanıt önbelleğini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,apicache)"/>
+    <setting type="action" option="close" label="AI çevirilerini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,ai)"/>
+    <setting type="action" option="close" label="Arama sonuçlarını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,search)"/>
+    <setting type="action" option="close" label="İndirilen yabancı altyazıları sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,downloads)"/>
+    <setting type="action" option="close" label="Seri sözlüğü sil (seri seçerek)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,glossary)"/>
+    <setting type="action" option="close" label="Çeviri hafızasını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,memory)"/>
+    <setting type="action" option="close" label="Yarım kalan işleri sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,jobs)"/>
+    <setting type="action" option="close" label="API yanıt önbelleğini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,apicache)"/>
     <setting type="lsep" label=" "/>
-    <setting type="action" label="[B]Tümünü sil[/B]" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,all)"/>
+    <setting type="action" option="close" label="[B]Tümünü sil[/B]" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,all)"/>
   </category>
   <category label="Yardım">
-    <setting type="action" label="Bağlantıları ve anahtarları test et" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,test)"/>
-    <setting type="action" label="Kurulum rehberi" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,guide)"/>
+    <setting type="action" option="close" label="Bağlantıları ve anahtarları test et" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,test)"/>
+    <setting type="action" option="close" label="Kurulum rehberi" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,guide)"/>
+    <setting type="action" option="close" label="Kodi kayıtlarını kayıt klasörüne kopyala" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,logs)"/>
     <setting id="debug" type="bool" label="Ayrıntılı kayıt (hata ayıklama)" default="false"/>
     <setting id="debug_dir" type="text" label="Kayıtların kopyası bu klasöre de yazılsın (isteğe bağlı)" default=""/>
   </category>

@@ -115,12 +115,12 @@ def _give(handle: int, path: str) -> None:
 
 
 def _start_job(m: Media, sub: Sub, src: str, fresh: bool) -> None:
-    job = store.running_job_for(m, sub)
-    if job is None:
-        job = store.new_job(m, sub, src, fresh=fresh, load=True)
     if not kodi.secret("openai_key"):
         kodi.notify("OpenAI API anahtarı girilmemiş (Defta ayarları > Genel)", "Defta", 8000)
         return
+    job = store.running_job_for(m, sub)
+    if job is None:
+        job = store.new_job(m, sub, src, fresh=fresh, load=True)
     mode = kodi.setting_int("mode", 0)
     kodi.notify("Çeviri başladı. " + ("Bitince yüklenecek." if mode == 1 else "Parça parça yüklenecek."),
                 f"Defta: {langs.tr_name(kodi.target_lang())} çeviri", 6000)

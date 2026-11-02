@@ -20,9 +20,9 @@ ADDON = ROOT / "service.subtitles.defta"
 sys.path.insert(0, str(Path(__file__).resolve().parent / "fakekodi"))
 sys.path.insert(0, str(ADDON / "resources" / "lib"))
 
+sys.modules.setdefault("_asyncio", None)    # Kodi'deki gibi saf Python asyncio
 import xbmc  # noqa: E402
 import xbmcaddon  # noqa: E402
-import xbmcgui  # noqa: E402
 import xbmcplugin  # noqa: E402
 import xbmcvfs  # noqa: E402
 
@@ -32,6 +32,7 @@ SAMPLE = Path(os.environ.get("SUBTRANS_DIR", ROOT.parent / "altyazi_cevirici")) 
 
 class FakeOpenAI(BaseHTTPRequestHandler):
     requests = 0
+    delay = 0.0
 
     def log_message(self, *a):
         pass
@@ -51,6 +52,9 @@ class FakeOpenAI(BaseHTTPRequestHandler):
 
     def do_POST(self):
         FakeOpenAI.requests += 1
+        if FakeOpenAI.delay:
+            import time
+            time.sleep(FakeOpenAI.delay)
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         user = json.loads(body["messages"][1]["content"])
         if "lines" in user:
@@ -175,6 +179,76 @@ class TestSearchList(Base):
             xbmc.INFO.clear()
 
 
+class TestKodiSafety(Base):
+    def test_pure_python_asyncio(self):
+        # Kodi'deki gibi temiz bir yorumlayıcıda: giriş betiği asyncio'dan önce _asyncio'yu engeller
+        import subprocess
+        code = ("import runpy, sys; sys.argv=['x']; sys.path.insert(0, %r); sys.path.insert(0, %r);"
+                "import defta, asyncio, asyncio.tasks;"
+                "print(sys.modules.get('_asyncio') is None, hasattr(asyncio.tasks, '_CTask'))"
+                % (str(Path(__file__).resolve().parent / "fakekodi"), str(ADDON / "resources" / "lib")))
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.stdout.split(), ["True", "False"], out.stderr)
+
+    def test_dns_fallback(self):
+        import socket
+        from defta import net
+        calls = []
+
+        def broken(host, *a, **k):
+            calls.append(host)
+            if host == "api.subdl.com":
+                raise socket.gaierror(11004, "getaddrinfo failed")
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))]
+
+        orig_gai, orig_lookup = net._orig_getaddrinfo, net._doh_lookup
+        net._orig_getaddrinfo = broken
+        net._doh_lookup = lambda host: ["104.21.1.1"] if host == "api.subdl.com" else []
+        try:
+            res = socket.getaddrinfo("api.subdl.com", 443, 0, socket.SOCK_STREAM)
+            self.assertEqual(res[0][4], ("104.21.1.1", 443))
+            with self.assertRaises(socket.gaierror):
+                net._doh_lookup = lambda host: []
+                socket.getaddrinfo("api.subdl.com", 443)
+        finally:
+            net._orig_getaddrinfo, net._doh_lookup = orig_gai, orig_lookup
+
+
+class TestSecrets(Base):
+    def test_subdl_key_never_stored(self):
+        from defta.sources.base import Sub
+        s = Sub("subdl", "/subtitle/1-2.zip?api_key=SECRETSECRET", "en")
+        self.assertEqual(s.sid, "/subtitle/1-2.zip")
+        self.assertNotIn("SECRET", s.uid())
+        s2 = Sub.from_dict({"source": "subdl", "sid": "/subtitle/1-2.zip?api_key=SECRETSECRET", "lang": "en"})
+        self.assertNotIn("SECRET", s2.sid + s2.uid())
+
+    def test_log_scrubs_keys(self):
+        from defta import kodi
+        xbmcaddon.SETTINGS["subdl_key"] = "J2kLGzqzrTXXXXXXXX"
+        kodi._secret_cache["t"] = 0
+        try:
+            xbmc.LOGS.clear()
+            kodi.log("adres https://dl.subdl.com/x.zip?api_key=J2kLGzqzrTXXXXXXXX")
+            self.assertNotIn("J2kLGzqzrTXXXXXXXX", xbmc.LOGS[-1])
+            with open(os.path.join(kodi.profile_dir(), "defta.log"), encoding="utf-8") as f:
+                self.assertNotIn("J2kLGzqzrTXXXXXXXX", f.read())
+        finally:
+            xbmcaddon.SETTINGS["subdl_key"] = "y"
+            kodi._secret_cache["t"] = 0
+
+    def test_scrub_old_files(self):
+        from defta import kodi, store
+        bad = os.path.join(kodi.profile_dir("downloads"), "subdl-_subtitle_1.zip_api_key_ABCDEFGHIJ.srt")
+        open(bad, "w").write("x")
+        j = os.path.join(kodi.profile_dir("jobs"), "old.json")
+        open(j, "w").write('{"sid": "/subtitle/1.zip?api_key=ABCDEFGHIJKL"}')
+        self.assertGreaterEqual(store.scrub_secrets(), 2)
+        self.assertFalse(os.path.exists(bad))
+        self.assertNotIn("ABCDEFGHIJKL", open(j).read())
+        os.remove(j)
+
+
 class TestTranslate(Base):
     def test_full_job_then_cache(self):
         from defta import store
@@ -203,16 +277,48 @@ class TestTranslate(Base):
         self.assertIn("silindi", store.clean("ai"))
         self.assertFalse(store.ready_translations(m))
 
-    def test_bad_key(self):
+    def test_stop_cancels_job(self):
         import asyncio
+        from defta import store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        from defta.translate import Translator
+        m = Media(title="Durdurma Testi", season=1, episode=2)
+        sub = Sub("opensubtitles", "77", "en", release="x")
+        src = store.download_path(sub, ".srt")
+        shutil.copy(SAMPLE, src)
+        t = Translator(store.new_job(m, sub, src, fresh=True, load=False), lambda *a: None)
+        box = {}
+
+        def go():
+            try:
+                t.run()
+            except BaseException as e:  # noqa: BLE001
+                box["e"] = e
+        FakeOpenAI.delay = 0.6
+        try:
+            th = threading.Thread(target=go)
+            th.start()
+            import time
+            time.sleep(0.3)
+            t.stop()
+            th.join(15)
+        finally:
+            FakeOpenAI.delay = 0.0
+        self.assertFalse(th.is_alive(), "durdurma sonrası iş parçacığı bitmeli")
+        self.assertIsInstance(box.get("e"), asyncio.CancelledError)
+
+    def test_bad_key(self):
         from defta.translate import build_settings
-        from subtrans.provider import ProviderError, make_provider
+        from subtrans.provider import make_provider
         xbmcaddon.SETTINGS["openai_key"] = "sk-wrong"
         try:
             s, _ = build_settings()
             p = make_provider(s["provider"])
-            with self.assertRaises(ProviderError):
-                __import__("defta.kodi").kodi.run_async(p.check())
+            status, payload = p._request("GET", "/models/" + p.model)
+            p.pool.shutdown(wait=True)
+            self.assertEqual(status, 401)
+            self.assertNotIn("sk-wrong", p._auth_401(p._err(payload)))
         finally:
             xbmcaddon.SETTINGS["openai_key"] = "sk-test-key-000000000000000000000000000000000000"
 
