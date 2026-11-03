@@ -54,9 +54,9 @@ def get_checked(sub: Sub, m: Media) -> tuple[str, str]:
     return path, state
 
 
-SYNC_NOTE = {"fps": "Kare hızı farkı vardı, zamanlama düzeltildi.",
-             "long": "Bu altyazı videodan uzun: büyük ihtimalle başka sürüm, kayabilir.",
-             "short": "Bu altyazı videonun yarısından kısa: eksik ya da başka sürüm olabilir."}
+SYNC_NOTE = {"fps": "Kare hızı düzeltildi",
+             "long": "Altyazı uzun, kayabilir",
+             "short": "Altyazı kısa, eksik olabilir"}
 
 
 def for_kodi(path: str, label: str, lang: str) -> str:
@@ -80,14 +80,54 @@ def clean_temp(max_age: float = 24 * 3600) -> None:
             pass
 
 
-def newest_loaded_subtitle(max_age: float = 12 * 3600) -> str:
-    """Başka bir eklentiyle (a4k vb.) seçilip yüklenmiş en yeni altyazı dosyası.
-    Kodi ve eklentiler indirdikleri altyazıyı geçici klasörlere koyar; oralara bakılır."""
+def playback_started() -> float:
+    """Şu anki videonun başladığı an. Servis video başlayınca ana pencereye yazar; yoksa oynatıcının
+    geçen süresinden tahmin edilir."""
+    try:
+        import xbmcgui
+        v = float(xbmcgui.Window(10000).getProperty("defta.play_start") or 0)
+        if v:
+            return v
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import xbmc
+        p = xbmc.Player()
+        if p.isPlayingVideo():
+            return time.time() - float(p.getTime() or 0) - 30
+    except Exception:  # noqa: BLE001
+        pass
+    return 0.0
+
+
+def _looks_target(path: str, name: str, tgt: str) -> bool:
+    """Zaten hedef dilde olan dosya (ör. Defta'nın ya da başka eklentinin yüklediği Türkçe altyazı)."""
+    from . import langs
+    parts = name.lower().rsplit(".", 2)
+    if len(parts) == 3 and langs.norm(parts[1]) == tgt:
+        return True
+    if tgt == "tr":
+        try:
+            with open(path, "rb") as f:
+                head = f.read(20000).decode("utf-8", "ignore")
+        except OSError:
+            return False
+        letters = sum(head.count(c) for c in "ğşıİĞŞ")
+        return letters >= 15
+    return False
+
+
+def loaded_subtitle(since: float, tgt: str = "") -> str:
+    """Başka bir eklentiyle (a4k vb.) bu video başladıktan sonra yüklenmiş en yeni altyazı dosyası.
+    Kodi ve eklentiler indirdikleri altyazıyı geçici klasörlere koyar; oralara bakılır. Video başlamadan
+    önceki dosyalar (ör. önceki bölümün altyazısı) ve zaten hedef dilde olanlar sayılmaz."""
+    if since <= 0:
+        return ""
     roots = [kodi.translate_path("special://temp/"),
              kodi.translate_path("special://profile/addon_data/")]
     mine = os.path.normcase(kodi.profile_dir())
+    own = _own_given(since)
     best, best_t = "", 0.0
-    now = time.time()
     for root in roots:
         base_depth = root.rstrip(os.sep).count(os.sep)
         for dirpath, dirnames, files in os.walk(root):
@@ -102,6 +142,31 @@ def newest_loaded_subtitle(max_age: float = 12 * 3600) -> str:
                     t = os.path.getmtime(p)
                 except OSError:
                     continue
-                if now - t < max_age and t > best_t:
+                if t >= since and t > best_t and not (tgt and _looks_target(p, name, tgt)) \
+                        and _digest(p) not in own:
                     best, best_t = p, t
     return best
+
+
+def _digest(path: str) -> str:
+    import hashlib
+    try:
+        with open(path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _own_given(since: float) -> set:
+    """Defta'nın bu video için Kodi'ye verdiği dosyalar: Kodi bunların kopyasını geçici klasörüne koyabilir,
+    "başka eklentinin altyazısı" sanılmasın."""
+    d = kodi.temp_dir()
+    out = set()
+    for name in os.listdir(d):
+        p = os.path.join(d, name)
+        try:
+            if os.path.getmtime(p) >= since - 5:
+                out.add(_digest(p))
+        except OSError:
+            pass
+    return out

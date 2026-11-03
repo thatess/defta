@@ -117,8 +117,6 @@ def search(m: Media, use_cache: bool = True) -> Results:
     tgt = kodi.target_lang()
     srcs = kodi.source_langs(m.is_anime)
     names = [n for n in ALL if kodi.source_enabled(n)]
-    if "jimaku" in names and not (m.is_anime or "ja" in srcs):
-        names.remove("jimaku")
     res = Results()
     if not names:
         res.errors.append("Hiçbir kaynak açık değil ya da API anahtarı girilmemiş (Defta ayarları > Kaynaklar)")
@@ -143,6 +141,9 @@ def search(m: Media, use_cache: bool = True) -> Results:
             subs += [s for s in _run_sources(m, None, ["opensubtitles"], res.errors) if s.lang != tgt]
         if subs or not res.errors:
             store.search_cache_put(m, sig, subs)
+    if not m.is_anime and any(s.source == "jimaku" for s in subs):
+        m.is_anime = True                       # Jimaku'da kaydı var: anime (Japonca ayarı sırayı belirler)
+        srcs = kodi.source_langs(True)
     video = m.filename
     pref = store.series_pref(m)
     bad = store.bad_uids(m)

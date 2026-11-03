@@ -12,6 +12,7 @@ Kodi için altyazı eklentisi. OpenSubtitles, SubDL, SubSource ve Jimaku'da alty
 - Başka bir satır seçersen süren çeviri durur (son seçilen kazanır); aynı satırı yeniden seçersen kaldığı yerden sürer.
 - İsteğe bağlı: bölümün %90'ı izlenince sıradaki bölümü arkada çevirir (Ayarlar → Otomatik: Kapalı / Sor / Otomatik).
 - Yapılan çeviriler saklanır: aynı bölüm ikinci kez açıldığında **Defta AI** satırından ücretsiz yüklenir.
+- Jimaku açıksa her videoda sorulur: animenin Japonca altyazısı doğru sezondan listeye gelir.
 - Seri sözlüğü: isimler her bölümde aynı yazılır. Hitap ekleri (-san, senpai) korunur, şarkılar çevrilir.
 - Kodi 21 (Omega), Windows ve Android/Nvidia Shield'da çalışır. Ek kütüphane gerekmez.
 
@@ -67,7 +68,8 @@ Video oynarken altyazı simgesi → **İndir** → Defta. Liste yukarıdan aşa�
 1. Hedef dildeki insan çevirileri (en fazla 10; senkron uyumlu, sonra önceki bölümün devamı, sonra sürümü uyan)
 2. **Defta AI**: daha önce yaptığın çeviriler (ücretsiz) ve *Baştan yeniden çevir*
 3. **→ AI çeviri**: çevrilecek yabancı altyazılar. Seçince çeviri başlar.
-4. **Yüklenen altyazıyı çevir**: başka bir eklentiyle (a4k vb.) seçtiğin altyazıyı çevirir.
+4. **Yüklenen altyazıyı çevir**: bu video başladıktan sonra başka bir eklentiyle (a4k vb.) altyazı seçtiysen
+   dosya adıyla görünür ve onu çevirir; yoksa bu satır çıkmaz.
 
 Kodi'nin *İlk altyazıyı otomatik indir* ayarı açıksa, ücretli çeviri satırı (otomatik çeviri kapalıyken)
 hiçbir zaman ilk sırada olmaz.
@@ -79,7 +81,8 @@ hiçbir zaman ilk sırada olmaz.
 - **Kaynaklar:** her kaynak için aç/kapat ve anahtar, listede kaç altyazı çıkacağı (3/5/10/tümü), SDH'yi alta indir
 - **Otomatik** (hepsi varsayılan kapalı): insan çevirisini, hazır AI çevirisini kendiliğinden yükle;
   hedef dilde altyazı yoksa çeviriyi kendiliğinden başlat; sıradaki bölümü önceden çevir (*Kapalı / Sor / Otomatik*).
-  *Sor*: bölümün %90'ı izlenince 15 saniyelik soru çıkar, imleç *Çevir*de durur; bir şeye basmazsan çevrilir.
+  *Sor*: bölümün %90'ı izlenince sağ üstte küçük bir kutu çıkar, video durmaz. İmleç *Çevir*de durur, alttaki
+  çubuk 15 saniyede boşalınca çevrilir; *İptal* ya da Geri tuşuyla vazgeçersin.
   Sıradaki bölümde Türkçe altyazı ya da hazır çeviri varsa sorulmaz.
 - **Altyazı:** ses notları, konuşan etiketleri, tireler, şarkı sözleri, italik/biçim etiketleri (varsayılan *Kaldır*)
 - **Temizlik:** AI çevirileri, arama sonuçları, indirilen altyazılar, seri sözlükleri, çeviri hafızası,

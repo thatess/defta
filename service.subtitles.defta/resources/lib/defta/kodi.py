@@ -227,7 +227,12 @@ def attach_engine_log() -> None:
 
 # ------------------------------------------------------------------ arayüz
 
-def notify(msg: str, heading: str = "Defta", ms: int = 5000) -> None:
+INFO_MS, ERROR_MS = 3000, 6000
+
+
+def notify(msg: str, heading: str = "Defta", ms: int | None = None, error: bool = False) -> None:
+    """Kısa bildirim: bilgi 3 sn, hata 6 sn."""
+    ms = ms or (ERROR_MS if error else INFO_MS)
     try:
         icon = os.path.join(addon_dir(), "icon.png")
         xbmcgui.Dialog().notification(heading, msg, icon if os.path.exists(icon) else xbmcgui.NOTIFICATION_INFO,

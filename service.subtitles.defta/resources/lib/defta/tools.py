@@ -46,13 +46,16 @@ GUIDE = """[B]Defta kurulum rehberi[/B]
    aynı satırı yeniden seçerseniz kaldığı yerden sürer (biten kısım tekrar ödenmez).
  • 'Şu anki altyazı kaymış': yüklenen altyazı senkron değilse seçin. İşaretlenir, listede alta iner
    ve sıradaki altyazı yüklenir ya da çevrilir.
- • Yüklenen altyazıyı çevir: başka eklentiyle (a4k vb.) seçtiğiniz altyazıyı çevirir.
-   Videonun içine gömülü altyazılar çevrilemez.
+ • Yüklenen altyazıyı çevir: bu video başladıktan sonra başka eklentiyle (a4k vb.) altyazı seçtiyseniz
+   dosya adıyla görünür ve onu çevirir. Videonun içine gömülü altyazılar çevrilemez.
+ • Jimaku açıksa her videoda sorulur; animenin Japonca altyazısı (doğru sezonun) listeye gelir.
+   "Animede Japonca altyazıyı öne al" açıksa en üstte, kapalıysa İngilizcelerin altında.
  Altyazı videodan uzunsa uyarılır; fark yalnızca kare hızındansa (25 / 23.976) zamanlama kendiliğinden düzeltilir.
 
 [B]4. Sıradaki bölüm[/B]  (Ayarlar > Otomatik)
- Bölümün %90'ı izlenince sıradaki bölüm arkada çevrilir. 'Sor' seçiliyse 15 saniyelik bir soru çıkar;
- bir şeye basmazsanız çevrilir, 'İptal' ile vazgeçersiniz. Sıradaki bölümde Türkçe altyazı varsa sorulmaz.
+ Bölümün %90'ı izlenince sıradaki bölüm arkada çevrilir. 'Sor' seçiliyse sağ üstte küçük bir kutu çıkar,
+ video durmaz; alttaki çubuk 15 saniyede boşalınca çevrilir. 'İptal' ya da Geri tuşuyla vazgeçersiniz.
+ Kutuyu Yardım > 'Sıradaki bölüm kutusunu dene' ile görebilirsiniz. Sıradaki bölümde Türkçe altyazı varsa sorulmaz.
 
 [B]5. Maliyet[/B]
  Bir dizi bölümü genelde birkaç sent tutar. Aynı altyazı ikinci kez açıldığında hazır çeviri kullanılır, ücret yoktur.
@@ -195,6 +198,11 @@ def main(argv: list[str]) -> None:
             if path:
                 kodi.addon().setSetting("debug_dir", path)
                 xbmcgui.Dialog().ok("Defta", f"Kayıt klasörü: {path}")
+        elif cmd == "nextdemo":
+            from . import nextdialog
+            ok, why = nextdialog.ask("Sıradaki bölüm çevrilsin mi?", "Deneme · S01E05 (bir şey çevrilmez)", 15)
+            kodi.log(f"Kutu denemesi: {'çevrilirdi' if ok else 'vazgeçildi'} ({why})")
+            kodi.notify(("Çevrilirdi" if ok else "Vazgeçildi") + f" · {why}")
         elif cmd == "guide":
             xbmcgui.Dialog().textviewer("Defta", GUIDE)
     except Exception as e:  # noqa: BLE001

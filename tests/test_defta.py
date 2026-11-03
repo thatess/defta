@@ -185,7 +185,7 @@ class TestSearchList(Base):
             self.assertIn("altyazı yok", labels[0])            # Kodi otomatik indirse de ücretli satır ilk değil
             self.assertIn("SPARKS", labels[1])                 # sürümü uyan, SDH olmayan önde
             self.assertNotIn("SDH", labels[1])
-            self.assertTrue(labels[-1].startswith("→ Yüklenen altyazıyı"))
+            self.assertFalse(any("Yüklenen altyazıyı" in x for x in labels), "başka eklentinin dosyası yokken satır çıkmaz")
         finally:
             opensubtitles.search, subdl.search = orig
             xbmc.JSONRPC.clear()
@@ -560,16 +560,29 @@ class TestJobsAndPrefetch(Base):
         subdl.search = lambda m, w: []
         svc = service_main.Service()
         m = Media(title="Dizi", season=1, episode=4, filename="Dizi.S01E04.1080p.mkv")
+        svc.player.is_playing = lambda mm: True
         try:
-            xbmcgui.YESNO["answer"] = False                 # hemen "İptal"
+            xbmcgui.DIALOGS["script"] = lambda d: d.onClick(3002)      # sağ üst kutuda "İptal"
             svc._prefetch_inner(m, 1)
             self.assertFalse([j for j in store.list_jobs() if j["media"]["episode"] == 5])
-            k = xbmcgui.YESNO["calls"][-1][1]
-            self.assertEqual((k["yeslabel"], k["nolabel"], k["autoclose"], k["defaultbutton"]),
-                             ("Çevir", "İptal", 15000, xbmcgui.DLG_YESNO_YES_BTN))
-            xbmcgui.YESNO["answer"] = True
+            box = xbmcgui.DIALOGS["opened"][-1]
+            self.assertEqual(box.xml, "defta-next.xml")
+            self.assertEqual(box.focus, 3001, "imleç Çevir'de başlamalı")
+            self.assertIn("S01E05", box.controls[3011].label)
+            xbmcgui.DIALOGS["script"] = lambda d: d.onAction(xbmcgui.Action(92))   # Geri tuşu = İptal
             store.clean("search")
             svc._prefetch_inner(m, 1)
+            self.assertFalse([j for j in store.list_jobs() if j["media"]["episode"] == 5])
+            xbmcgui.DIALOGS["script"] = None                             # hiçbir şeye basılmaz: süre dolunca çevrilir
+            from defta import nextdialog
+            orig_ask = nextdialog.ask
+            nextdialog.ask = lambda t, l2, sec, should_close: orig_ask(t, l2, 0.6, should_close)
+            store.clean("search")
+            try:
+                svc._prefetch_inner(m, 1)
+            finally:
+                nextdialog.ask = orig_ask
+            self.assertLess(xbmcgui.DIALOGS["opened"][-1].controls[3003].percent, 100)
             jobs = [j for j in store.list_jobs() if j["media"]["episode"] == 5]
             self.assertEqual(len(jobs), 1)
             self.assertFalse(jobs[0]["load"])
@@ -582,7 +595,7 @@ class TestJobsAndPrefetch(Base):
             self.assertIn((2, 1), asked)
         finally:
             opensubtitles.search, subdl.search = orig
-            xbmcgui.YESNO["answer"] = True
+            xbmcgui.DIALOGS["script"] = None
             store.clean("jobs")
             store.clean("search")
 
@@ -614,6 +627,96 @@ class TestJobsAndPrefetch(Base):
         finally:
             xbmc.Player.playing, xbmc.Player.total, xbmc.Player.time = "", 0.0, 0.0
             xbmcaddon.SETTINGS.pop("prefetch_next", None)
+
+
+class TestLoadedAndJimaku(Base):
+    def test_loaded_only_after_playback_start(self):
+        import time as _t
+        import xbmcgui
+        from defta import fetch, plugin
+        tmp = self.tmp / "kodi_temp" / "a4k"
+        tmp.mkdir(parents=True, exist_ok=True)
+        old = tmp / "Dizi.S01E02.en.srt"
+        old.write_text("1\n00:00:01,000 --> 00:00:02,000\nOld episode\n", encoding="utf-8")
+        os.utime(old, (_t.time() - 600, _t.time() - 600))          # önceki bölümün altyazısı
+        xbmcgui.Window.PROPS["defta.play_start"] = str(_t.time() - 60)
+        try:
+            self.assertEqual(fetch.loaded_subtitle(fetch.playback_started(), "tr"), "")
+            tr = tmp / "Dizi.S01E03.tr.srt"
+            tr.write_text("1\n00:00:01,000 --> 00:00:02,000\nMerhaba\n", encoding="utf-8")
+            self.assertEqual(fetch.loaded_subtitle(fetch.playback_started(), "tr"), "", "Türkçe olan sayılmaz")
+            new = tmp / "Dizi.S01E03.en.srt"
+            new.write_text("1\n00:00:01,000 --> 00:00:02,000\nNew episode\n", encoding="utf-8")
+            self.assertEqual(fetch.loaded_subtitle(fetch.playback_started(), "tr"), str(new))
+            # Defta'nın kendi verdiği dosyanın kopyası "başka eklentinin" sayılmaz
+            given = fetch.for_kodi(str(new), "Dizi S01E03", "en")
+            self.assertTrue(os.path.exists(given))
+            self.assertEqual(fetch.loaded_subtitle(fetch.playback_started(), "tr"), "")
+            os.remove(given)
+            # listede dosya adıyla görünür
+            from defta.sources import opensubtitles, subdl
+            orig = (opensubtitles.search, subdl.search)
+            opensubtitles.search = lambda m, w: []
+            subdl.search = lambda m, w: []
+            try:
+                xbmc.INFO.clear()
+                xbmc.INFO["Player.Filenameandpath"] = "Dizi.S01E03.mkv"
+                xbmcplugin.ITEMS.clear()
+                sys.argv = ["plugin://x/", "1", "?action=search"]
+                plugin.main()
+                rows = [li.label2 for _, li in xbmcplugin.ITEMS if "Yüklenen" in li.label2]
+                self.assertEqual(len(rows), 1)
+                self.assertIn("Dizi.S01E03.en.srt", rows[0])
+            finally:
+                opensubtitles.search, subdl.search = orig
+                xbmc.INFO.clear()
+        finally:
+            xbmcgui.Window.PROPS.pop("defta.play_start", None)
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_jimaku_entry_and_always_asked(self):
+        from defta import search, net
+        from defta.media import Media
+        from defta.sources import jimaku, opensubtitles, subdl
+        from defta.sources.base import Sub
+        entries = [{"id": 1, "name": "Mob Psycho 100", "english_name": "Mob Psycho 100"},
+                   {"id": 2, "name": "Mob Psycho 100 II", "english_name": "Mob Psycho 100 Season 2"},
+                   {"id": 4, "name": "Interstellar Tensei", "english_name": ""},
+                   {"id": 6, "name": "Shingeki no Kyojin", "english_name": "Attack on Titan"},
+                   {"id": 8, "name": "Kimi no Na wa.", "english_name": "Your Name.", "flags": {"movie": True}}]
+        pick = lambda t, s=0, e=0: (jimaku.pick_entry(Media(title=t, season=s, episode=e), entries) or {}).get("id")
+        self.assertEqual(pick("Mob Psycho 100", 1, 3), 1)
+        self.assertEqual(pick("Mob Psycho 100", 2, 3), 2)
+        self.assertEqual(pick("Attack on Titan", 2, 1), 6)       # tek kayıtta süren dizi
+        self.assertIsNone(pick("Interstellar"))                   # anime olmayan film eşleşmez
+        self.assertIsNone(pick("Mob Psycho", 1, 1))               # zayıf eşleşme kabul edilmez
+        self.assertEqual(pick("Your Name"), 8)
+        calls = []
+
+        def fake_get_json(url, params=None, headers=None, timeout=15.0):
+            calls.append((url, dict(params or {})))
+            if url.endswith("/entries/search"):
+                return entries
+            return [{"name": "Mob Psycho 100 - 03.srt", "url": "https://jimaku.cc/entry/1/download/x.srt"}]
+        orig = (net.get_json, opensubtitles.search, subdl.search)
+        net.get_json = fake_get_json
+        opensubtitles.search = lambda m, w: [Sub("opensubtitles", "71", "en", release="Mob.Psycho.100.S01E03")]
+        subdl.search = lambda m, w: []
+        xbmcaddon.SETTINGS.update({"jimaku_enabled": "true", "jimaku_key": "jk-test", "anime_japanese": "true"})
+        try:
+            # dosya adı anime gibi görünmüyor ama Jimaku'da kaydı var: Japonca altyazı gelir ve öne geçer
+            m = Media(title="Mob Psycho 100", season=1, episode=3, filename="Mob.Psycho.100.S01E03.1080p.WEB.mkv")
+            res = search.search(m, use_cache=False)
+            self.assertEqual([s.source for s in res.foreign][:2], ["jimaku", "opensubtitles"])
+            self.assertTrue(m.is_anime)
+            self.assertIn(("https://jimaku.cc/api/entries/1/files", {"episode": 3}), calls)
+            xbmcaddon.SETTINGS["anime_japanese"] = "false"         # ayar kapalı: İngilizcenin altında
+            res = search.search(Media(title="Mob Psycho 100", season=1, episode=3), use_cache=False)
+            self.assertEqual([s.source for s in res.foreign][:2], ["opensubtitles", "jimaku"])
+        finally:
+            net.get_json, opensubtitles.search, subdl.search = orig
+            for k in ("jimaku_enabled", "jimaku_key", "anime_japanese"):
+                xbmcaddon.SETTINGS.pop(k, None)
 
 
 class TestTools(Base):

@@ -35,6 +35,10 @@ class Player(xbmc.Player):
         if not self.file:
             return
         try:
+            xbmcgui.Window(10000).setProperty("defta.play_start", str(time.time()))   # eklenti betiği okur
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             self.media = from_player()
         except Exception as e:  # noqa: BLE001
             kodi.log(f"video bilgisi alınamadı: {e}", "warning")
@@ -155,7 +159,6 @@ class Service:
             return
         self.current_job = job["id"]
         state = {"fast_file": ""}
-        tname = langs.tr_name(job.get("target") or "tr")
 
         def cancelled() -> bool:
             return job.get("status") == "cancelled" or store.job_status(job["id"]) == "cancelled"
@@ -176,9 +179,9 @@ class Service:
                 return
             kodi.log(f"Oynatıcıya yüklendi ({stage}): {os.path.basename(path)}", "debug")
             if stage == "fast":
-                kodi.notify("Hızlı çeviri yüklendi. Kontrol edilmiş hali arkada hazırlanıyor.", "Defta", 5000)
+                kodi.notify("Hızlı çeviri yüklendi")
             else:
-                kodi.notify("Kontrol edilmiş çeviri yüklendi.", "Defta", 5000)
+                kodi.notify("Kaliteli çeviri yüklendi")
 
         import asyncio
         try:
@@ -189,7 +192,7 @@ class Service:
             job["out_file"] = out
             job["cost"] = t.cost
             if not job.get("load") or not self.player.is_playing(m):
-                kodi.notify(f"{m.label()}: {tname} AI çevirisi hazır.", "Defta", 6000)
+                kodi.notify(f"{m.short()} çevirisi hazır")
         except asyncio.CancelledError:
             if cancelled():
                 job["status"] = "cancelled"           # yeni seçim yapıldı; biten parçalar önbellekte kalır
@@ -205,7 +208,7 @@ class Service:
                 job["status"] = "failed"
                 job["error"] = f"{type(e).__name__}: {e}"
                 kodi.log(f"Çeviri başarısız ({m.label()}): {job['error']}\n{traceback.format_exc()}", "error")
-                kodi.notify(f"Çeviri başarısız: {str(e)[:120]}", "Defta", 9000)
+                kodi.notify(f"Çeviri olmadı: {str(e)[:70]}", error=True)
         finally:
             self.translator = None
             self.current_job = ""
@@ -247,14 +250,14 @@ class Service:
         tgt = kodi.target_lang()
         tname = langs.tr_name(tgt)
         if not kodi.secret("openai_key"):
-            kodi.notify("Sıradaki bölüm çevrilemedi: OpenAI API anahtarı girilmemiş.", "Defta", 5000)
+            kodi.notify("OpenAI anahtarı yok (Ayarlar > Genel)", error=True)
             return
         nm, res = None, None
         for next_season in (False, True):
             cand = m.next_episode(next_season=next_season)
             if store.ready_translations(cand):
                 kodi.log(f"Sıradaki bölüm ({cand.label()}) için hazır çeviri var")
-                kodi.notify(f"Sıradaki bölümün ({cand.label()}) çevirisi zaten hazır.", "Defta", 5000)
+                kodi.notify(f"{cand.short()} çevirisi hazır")
                 return
             r = search.search(cand)
             if r.human or r.foreign:
@@ -262,39 +265,30 @@ class Service:
                 break
         if nm is None:
             kodi.log(f"Sıradaki bölüm için altyazı bulunamadı ({m.label()} sonrası)")
-            kodi.notify("Sıradaki bölüm için çevrilecek altyazı bulunamadı.", "Defta", 5000)
+            kodi.notify("Sıradaki bölüme altyazı yok")
             return
         if res.human:
             kodi.log(f"Sıradaki bölümde ({nm.label()}) {tname} altyazı var, çevrilmeyecek")
-            kodi.notify(f"Sıradaki bölümde ({nm.label()}) {tname} altyazı var, çeviri gerekmiyor.", "Defta", 5000)
+            kodi.notify(f"{nm.short()}: {tname} altyazı var")
             return
         best = search.best_foreign(res)
         if best is None:
-            kodi.notify("Sıradaki bölüm için çevrilecek altyazı bulunamadı.", "Defta", 5000)
+            kodi.notify("Sıradaki bölüme altyazı yok")
             return
         if any(Media.from_dict(j["media"]).key() == nm.key() for j in store.list_jobs()
                if j.get("status") in ("pending", "running")):
-            kodi.notify(f"Sıradaki bölüm ({nm.label()}) zaten çevriliyor.", "Defta", 5000)
+            kodi.notify(f"{nm.short()} zaten çevriliyor")
             return
         if mode == 1:
-            t0 = time.monotonic()
-            msg = (f"Sıradaki bölüm ({nm.label()}) {langs.dative(tname)} çevrilsin mi?\n"
-                   f"{best.release or best.sid}" + (f"  ({best.note})" if best.note else "")
-                   + "\n15 saniye içinde seçmezsen çevrilecek.")
+            from . import nextdialog
+            line2 = f"{nm.title} · {nm.short()}" + (f" · {best.note}" if best.note else "")
             kodi.log(f"Sıradaki bölüm soruluyor: {nm.label()}")
-            kw = {"nolabel": "İptal", "yeslabel": "Çevir", "autoclose": 15000}
-            if hasattr(xbmcgui, "DLG_YESNO_YES_BTN"):
-                kw["defaultbutton"] = xbmcgui.DLG_YESNO_YES_BTN       # imleç "Çevir"de dursun (Kodi 20+)
-            try:
-                ok = xbmcgui.Dialog().yesno("Defta", msg, **kw)
-            except TypeError:
-                kw.pop("defaultbutton", None)
-                ok = xbmcgui.Dialog().yesno("Defta", msg, **kw)
-            # Süre dolunca da çevrilir (varsayılan: çevir); yalnızca İptal'e basılırsa vazgeçilir
-            if not ok and time.monotonic() - t0 < 14.5:
-                kodi.log(f"Sıradaki bölüm çevirisi iptal edildi: {nm.label()}")
+            ok, why = nextdialog.ask("Sıradaki bölüm çevrilsin mi?", line2, 15,
+                                     should_close=lambda: self.monitor.abortRequested()
+                                     or not self.player.is_playing(m))
+            kodi.log(f"Sıradaki bölüm: {why}")
+            if not ok:
                 return
-            kodi.log(f"Sıradaki bölüm: {'Çevir seçildi' if ok else 'süre doldu, çevriliyor'}")
         try:
             src, state = fetch.get_checked(best, nm)
         except SourceError as e:
@@ -303,7 +297,7 @@ class Service:
         store.new_job(nm, best, src, fresh=False, load=False)
         kodi.log(f"Sıradaki bölüm çeviriye alındı: {nm.label()} <- {best.source}:{best.release or best.sid}"
                  + (f" ({best.note})" if best.note else ""))
-        kodi.notify(f"Sıradaki bölüm ({nm.label()}) arkada çevriliyor.", "Defta", 5000)
+        kodi.notify(f"{nm.short()} çevriliyor")
 
     # ------------------------------------------------------------------ otomatik yükleme
     def autoload(self, m: Media, file: str) -> None:
@@ -344,8 +338,8 @@ class Service:
                 self.player.setSubtitles(fetch.for_kodi(path, m.label(), tgt))
                 store.set_loaded(m, "human", s)
                 store.remember_choice(m, s)
-                kodi.notify(f"{langs.tr_name(tgt)} altyazı yüklendi ({s.source})."
-                            + (" " + fetch.SYNC_NOTE[state] if state in fetch.SYNC_NOTE else ""), "Defta", 5000)
+                kodi.notify(f"{langs.tr_name(tgt)} altyazı yüklendi"
+                            + (" · " + fetch.SYNC_NOTE[state] if state in fetch.SYNC_NOTE else ""))
                 return
             except SourceError as e:
                 kodi.log(f"otomatik indirme başarısız: {e}", "warning")
@@ -360,8 +354,7 @@ class Service:
         # Yalnızca eşleşmeden eminken: IMDb numarası var ya da sürüm adı uyuyor
         if best is None or not (m.imdb or best.score >= 3):
             if res.foreign:
-                kodi.notify(f"{langs.tr_name(tgt)} altyazı yok. Altyazı listesinden çevrilecek birini seçebilirsiniz.",
-                            "Defta", 7000)
+                kodi.notify(f"{langs.tr_name(tgt)} altyazı yok · listeden çevirebilirsin")
             return
         if store.running_job_for(m, best) or not kodi.secret("openai_key"):   # (sürmekte olan iş yüklenecek)
             return
@@ -373,7 +366,7 @@ class Service:
         store.new_job(m, best, src, fresh=False, load=True)
         store.set_loaded(m, "ai", best)
         store.remember_choice(m, best)
-        kodi.notify(f"{langs.tr_name(tgt)} altyazı yok, AI çevirisi başladı.", "Defta", 5000)
+        kodi.notify(f"{langs.tr_name(tgt)} altyazı yok · çeviri başladı")
 
     @staticmethod
     def _good_ready(m: Media) -> dict | None:
@@ -384,7 +377,7 @@ class Service:
         from .sources.base import Sub
         self.player.setSubtitles(fetch.for_kodi(e["path"], m.label() + " Defta", tgt))
         store.set_loaded(m, "ai", Sub.from_dict(e["src"]))
-        kodi.notify("Hazır AI çevirisi yüklendi.", "Defta", 4000)
+        kodi.notify("Hazır çeviri yüklendi")
 
 
 def main() -> None:

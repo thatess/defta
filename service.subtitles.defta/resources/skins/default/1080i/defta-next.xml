@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sıradaki bölüm sorusu: sağ üstte küçük kutu, video oynamaya devam eder.
+     Alttaki çubuk 15 saniyede boşalır; boşalınca çevrilir. Geri tuşu = İptal. -->
+<window>
+  <defaultcontrol always="true">3001</defaultcontrol>
+  <zorder>2</zorder>
+  <coordinates>
+    <left>1320</left>
+    <top>40</top>
+  </coordinates>
+  <animation type="WindowOpen" reversible="false">
+    <effect type="slide" start="80,0" end="0,0" time="250" tween="cubic" easing="out"/>
+    <effect type="fade" start="0" end="100" time="250"/>
+  </animation>
+  <animation type="WindowClose" reversible="false">
+    <effect type="fade" start="100" end="0" time="200"/>
+  </animation>
+  <controls>
+    <control type="image">
+      <left>0</left>
+      <top>0</top>
+      <width>560</width>
+      <height>168</height>
+      <texture colordiffuse="E6101418">defta-white.png</texture>
+    </control>
+    <control type="image">
+      <left>0</left>
+      <top>0</top>
+      <width>6</width>
+      <height>168</height>
+      <texture colordiffuse="FFF2B705">defta-white.png</texture>
+    </control>
+    <control type="label" id="3010">
+      <left>26</left>
+      <top>14</top>
+      <width>514</width>
+      <height>36</height>
+      <font>font13</font>
+      <textcolor>FFFFFFFF</textcolor>
+      <scroll>false</scroll>
+      <label></label>
+    </control>
+    <control type="label" id="3011">
+      <left>26</left>
+      <top>50</top>
+      <width>514</width>
+      <height>30</height>
+      <font>font12</font>
+      <textcolor>FFB0B8C0</textcolor>
+      <scroll>false</scroll>
+      <label></label>
+    </control>
+    <control type="button" id="3001">
+      <left>26</left>
+      <top>92</top>
+      <width>246</width>
+      <height>52</height>
+      <label>Çevir</label>
+      <font>font13</font>
+      <align>center</align>
+      <aligny>center</aligny>
+      <textcolor>FFB0B8C0</textcolor>
+      <focusedcolor>FF101418</focusedcolor>
+      <texturefocus colordiffuse="FFF2B705">defta-white.png</texturefocus>
+      <texturenofocus colordiffuse="33FFFFFF">defta-white.png</texturenofocus>
+      <onright>3002</onright>
+      <onleft>3002</onleft>
+    </control>
+    <control type="button" id="3002">
+      <left>288</left>
+      <top>92</top>
+      <width>246</width>
+      <height>52</height>
+      <label>İptal</label>
+      <font>font13</font>
+      <align>center</align>
+      <aligny>center</aligny>
+      <textcolor>FFB0B8C0</textcolor>
+      <focusedcolor>FF101418</focusedcolor>
+      <texturefocus colordiffuse="FFF2B705">defta-white.png</texturefocus>
+      <texturenofocus colordiffuse="33FFFFFF">defta-white.png</texturenofocus>
+      <onleft>3001</onleft>
+      <onright>3001</onright>
+    </control>
+    <control type="progress" id="3003">
+      <left>6</left>
+      <top>160</top>
+      <width>554</width>
+      <height>8</height>
+      <texturebg colordiffuse="22FFFFFF">defta-white.png</texturebg>
+      <lefttexture></lefttexture>
+      <midtexture colordiffuse="FFF2B705">defta-white.png</midtexture>
+      <righttexture></righttexture>
+    </control>
+  </controls>
+</window>

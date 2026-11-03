@@ -6,7 +6,7 @@ Liste sırası (yukarıdan aşağı):
   1. hedef dilde insan çevirileri (en fazla 10)
   2. hazır AI çevirileri + 'baştan yeniden çevir'  (+ süren çeviri)
   3. çevrilecek yabancı altyazılar (her kaynaktan ayardaki sayı kadar)
-  4. 'yüklenen altyazıyı çevir'
+  4. 'yüklenen altyazıyı çevir' (yalnızca bu video başladıktan sonra başka eklentiyle altyazı yüklendiyse)
 Her grupta: video karması eşleşen ('senkron uyumlu') en üstte, sonra önceki bölümde seçilenin devamı,
 sonra sürüm uyumu; 'kaymış' işaretlenenler en altta.
 Ücretli çeviri satırı, 'otomatik çeviri' kapalıyken hiçbir zaman ilk sırada olmaz: Kodi'nin
@@ -122,8 +122,11 @@ def do_search(handle: int, params: dict) -> None:
              f"{LABEL[s.source]}" + ("  ·  SDH" if s.hi else "") + _note(s), s.lang,
              _url(action="download", kind="translate", sub=json.dumps(s.to_dict()), media=md),
              sync=s.sync, hi=s.hi, rating=_rating(s))
-    _add(handle, langs.kodi_name(tgt), f"→ Yüklenen altyazıyı {langs.dative(tname)} çevir (başka eklentiyle seçtiğiniz)", tgt,
-         _url(action="download", kind="loaded", media=md))
+    other = fetch.loaded_subtitle(fetch.playback_started(), tgt)
+    if other:                                  # yalnızca bu video başladıktan sonra başka eklentiyle yüklenen
+        _add(handle, langs.kodi_name(tgt), f"→ Yüklenen altyazıyı {langs.dative(tname)} çevir  ·  "
+             f"{_short(os.path.basename(other), 50)}", tgt,
+             _url(action="download", kind="loaded", path=other, media=md))
     if loaded and downloadfirst:
         bad_row()
     kodi.log(f"Liste: {len(res.human)} insan çevirisi, {len(ready)} hazır AI, {len(res.foreign)} çevrilecek"
@@ -132,7 +135,7 @@ def do_search(handle: int, params: dict) -> None:
     # Aynı hata (ör. erişim engeli) her aramada değil, günde bir kez bildirilir
     fresh = [e for e in res.errors if store.should_warn(e)]
     if fresh:
-        kodi.notify(_short(fresh[0], 120), "Defta: kaynak hatası", 7000)
+        kodi.notify(_short(fresh[0], 90), "Defta: kaynak hatası", error=True)
 
 
 def _give(handle: int, path: str) -> None:
@@ -142,7 +145,7 @@ def _give(handle: int, path: str) -> None:
 
 def _start_job(m: Media, sub: Sub, src: str, fresh: bool) -> bool:
     if not kodi.secret("openai_key"):
-        kodi.notify("OpenAI API anahtarı girilmemiş (Defta ayarları > Genel)", "Defta", 8000)
+        kodi.notify("OpenAI anahtarı yok (Ayarlar > Genel)", error=True)
         return False
     n = store.cancel_jobs_for(m, except_uid=sub.uid())          # son seçilen kazanır
     if n:
@@ -153,17 +156,14 @@ def _start_job(m: Media, sub: Sub, src: str, fresh: bool) -> bool:
     elif not job.get("load"):
         job["load"] = True                                       # önceden başlamış (sıradaki bölüm) iş: bitince yüklensin
         store.save_job(job)
-    mode = kodi.setting_int("mode", 0)
-    kodi.notify("Çeviri başladı. " + ("Bitince yüklenecek." if mode == 1 else
-                                      "Hızlı hali birkaç saniyede, kontrol edilmiş hali sonra yüklenecek."),
-                f"Defta: {langs.tr_name(kodi.target_lang())} çeviri", 6000)
+    kodi.notify("Çeviri başladı")
     kodi.log(f"İş kuyruğa alındı: {job['id']} ({sub.source}:{sub.release or sub.sid})")
     return True
 
 
 def _warn_sync(state: str) -> None:
     if state in fetch.SYNC_NOTE:
-        kodi.notify(fetch.SYNC_NOTE[state], "Defta: senkron", 6000)
+        kodi.notify(fetch.SYNC_NOTE[state])
 
 
 def _load_human(handle: int, m: Media, sub: Sub, tgt: str) -> None:
@@ -190,7 +190,7 @@ def _translate(handle: int, m: Media, sub: Sub, fresh: bool) -> None:
 def _bad_sync(handle: int, m: Media, tgt: str) -> None:
     loaded = store.get_loaded(m)
     if not loaded:
-        kodi.notify("Bu videoda Defta'nın yüklediği bir altyazı yok.", "Defta", 5000)
+        kodi.notify("Defta altyazı yüklememiş")
         return
     cur = Sub.from_dict(loaded["sub"])
     store.mark_bad(m, cur)
@@ -202,16 +202,15 @@ def _bad_sync(handle: int, m: Media, tgt: str) -> None:
             src = Sub.from_dict(e["src"])
             _give(handle, fetch.for_kodi(e["path"], m.label() + " Defta", tgt))
             store.set_loaded(m, "ai", src)
-            kodi.notify("Kaymış işaretlendi. Başka kaynaktan hazır çeviri yüklendi.", "Defta", 5000)
+            kodi.notify("Kaymış · hazır çeviri yüklendi")
             return
     res = search.search(m)
     kind, nxt = search.next_candidate(res, cur.uid(), loaded.get("kind", ""))
     if nxt is None:
         store.cancel_jobs_for(m)
-        kodi.notify("Kaymış işaretlendi. Denenecek başka altyazı kalmadı.", "Defta", 6000)
+        kodi.notify("Kaymış · başka altyazı yok")
         return
-    kodi.notify("Kaymış işaretlendi. Sıradaki altyazı " + ("yükleniyor." if kind == "human" else "çevriliyor."),
-                "Defta", 5000)
+    kodi.notify("Kaymış · sıradaki " + ("yüklendi" if kind == "human" else "çevriliyor"))
     if kind == "human":
         _load_human(handle, m, nxt, tgt)
     else:
@@ -243,10 +242,9 @@ def do_download(handle: int, params: dict) -> None:
         elif kind == "badsync":
             _bad_sync(handle, m, tgt)
         elif kind == "loaded":
-            path = fetch.newest_loaded_subtitle()
-            if not path:
-                kodi.notify("Yüklenmiş bir altyazı dosyası bulunamadı. Videonun içindeki (gömülü) altyazılar "
-                            "çevrilemiyor; önce başka bir eklentiyle bir altyazı seçin.", "Defta", 9000)
+            path = params.get("path", "")
+            if not path or not os.path.exists(path):
+                kodi.notify("Yüklenen altyazı bulunamadı", error=True)
                 return
             lang = kodi.source_langs(m.is_anime)[0]
             with open(path, "rb") as f:
@@ -260,7 +258,7 @@ def do_download(handle: int, params: dict) -> None:
             _give(handle, fetch.for_kodi(path, m.label(), lang))
     except SourceError as e:
         kodi.log(f"İndirme hatası: {e}", "warning")
-        kodi.notify(str(e)[:150], "Defta", 8000)
+        kodi.notify(str(e)[:90], error=True)
 
 
 def main() -> None:
@@ -275,7 +273,7 @@ def main() -> None:
     except Exception as e:  # noqa: BLE001
         import traceback
         kodi.log(f"Beklenmeyen hata ({action}): {type(e).__name__}: {e}\n{traceback.format_exc()}", "error")
-        kodi.notify(f"Hata: {type(e).__name__}: {str(e)[:100]}", "Defta", 8000)
+        kodi.notify(f"Hata: {str(e)[:80]}", error=True)
     finally:
         xbmcplugin.endOfDirectory(handle)
         kodi.flush_log()

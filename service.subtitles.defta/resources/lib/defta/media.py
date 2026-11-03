@@ -67,6 +67,12 @@ class Media:
                                  lambda mm: f"{mm.group(1)}{n.season:02d}{mm.group(2)}{n.episode:02d}", self.filename)
         return n
 
+    def short(self) -> str:
+        """Bildirimlerde: dizide S01E05, filmde adı."""
+        if self.is_episode:
+            return f"S{self.season:02d}E{self.episode:02d}"
+        return self.title or self.release
+
     def label(self) -> str:
         t = self.title or self.release
         if self.is_episode:
