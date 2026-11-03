@@ -26,6 +26,8 @@ class Sub:
     pack: bool = False          # sezon paketi (arşivden bölüm seçilir)
     score: float = 0.0          # sürüm uyumu puanı (sıralama)
     sync: bool = False
+    hash_match: bool = False    # OpenSubtitles video karmasıyla eşleşti: senkronu kesin
+    note: str = ""              # listede gösterilecek kısa not ("önceki bölümde kullandığın", "kaymış")
 
     def to_dict(self) -> dict:
         d = asdict(self)

@@ -25,6 +25,8 @@ def executebuiltin(cmd):
 class Player:
     playing = ""
     loaded = []
+    total = 0.0
+    time = 0.0
 
     def __init__(self):
         pass
@@ -40,6 +42,12 @@ class Player:
 
     def getAvailableSubtitleStreams(self):
         return []
+
+    def getTotalTime(self):
+        return Player.total
+
+    def getTime(self):
+        return Player.time
 
 
 class Monitor:

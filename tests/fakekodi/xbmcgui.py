@@ -1,5 +1,8 @@
 NOTIFICATION_INFO = "info"
+DLG_YESNO_YES_BTN = 11
 NOTES = []
+YESNO = {"answer": True, "calls": []}
+BROWSE = {"path": ""}
 
 
 class ListItem:
@@ -30,8 +33,12 @@ class Dialog:
     def ok(self, *a):
         NOTES.append(a)
 
-    def yesno(self, *a):
-        return True
+    def yesno(self, *a, **k):
+        YESNO["calls"].append((a, k))
+        return YESNO["answer"]
+
+    def browse(self, *a, **k):
+        return BROWSE["path"]
 
     def select(self, *a):
         return 0

@@ -126,31 +126,78 @@ def log(msg: str, level: str = "info") -> None:
     xbmc.log(f"[Defta] {msg}", lvl)
     line = time.strftime("%Y-%m-%d %H:%M:%S") + f" {level.upper():7s} {msg}"
     with _lock:
-        _append(os.path.join(profile_dir(), "defta.log"), line)
+        own = os.path.join(profile_dir(), "defta.log")
+        _append(own, line)
         extra = setting("debug_dir").strip()
         if extra:
-            try:
-                os.makedirs(extra, exist_ok=True)
-                _append(os.path.join(extra, "defta.log"), line)
-            except OSError:
-                pass
+            if is_url(extra):
+                _mirror(own, extra)
+            else:
+                try:
+                    os.makedirs(extra, exist_ok=True)
+                    _append(os.path.join(extra, "defta.log"), line)
+                except OSError:
+                    pass
+
+
+# Ağ klasörü (smb://, nfs://): Shield'da kayıtlar bilgisayarın paylaşılan klasörüne yazılabilsin.
+# Ağ dosyasına satır eklenemediği için kayıt dosyası en çok 5 sn'de bir oraya kopyalanır (iş parçacığı
+# açılmaz: kısa ömürlü eklenti betiklerinde açık kalan iş parçacığı Kodi'yi çökertebilir).
+_mirror_state = {"t": 0.0, "dirty": False}
+
+
+def is_url(path: str) -> bool:
+    return "://" in path and not path.startswith("special://")
+
+
+def vfs_join(folder: str, name: str) -> str:
+    if is_url(folder):
+        return folder.rstrip("/") + "/" + name
+    return os.path.join(translate_path(folder) if folder.startswith("special://") else folder, name)
+
+
+def vfs_copy(src: str, dst: str) -> bool:
+    try:
+        return bool(xbmcvfs.copy(src, dst))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _mirror(own: str, folder: str, now: bool = False) -> None:
+    _mirror_state["dirty"] = True
+    if not now and time.time() - _mirror_state["t"] < 5:
+        return
+    _mirror_state["t"] = time.time()
+    _mirror_state["dirty"] = False
+    vfs_copy(own, vfs_join(folder, "defta.log"))
+
+
+def flush_log() -> None:
+    """Kayıt kopyası ağ klasöründeyse son satırları hemen gönderir (servis kapanırken)."""
+    extra = setting("debug_dir").strip()
+    if extra and is_url(extra) and _mirror_state["dirty"]:
+        with _lock:
+            _mirror(os.path.join(profile_dir(), "defta.log"), extra, now=True)
 
 
 def export_kodi_logs(dest: str = "") -> list:
-    """Kodi'nin kendi kayıtlarını (kodi.log, çökme öncesi kodi.old.log) kayıt klasörüne kopyalar."""
-    import shutil
+    """Kodi'nin kendi kayıtlarını (kodi.log, çökme öncesi kodi.old.log) kayıt klasörüne kopyalar.
+    Klasör ağ klasörü (smb://...) de olabilir."""
     dest = dest or setting("debug_dir").strip()
     if not dest:
         return []
     out = []
     src_dir = translate_path("special://logpath/")
     try:
-        os.makedirs(dest, exist_ok=True)
+        if not is_url(dest):
+            os.makedirs(translate_path(dest) if dest.startswith("special://") else dest, exist_ok=True)
         for name in os.listdir(src_dir):
             low = name.lower()
             if low in ("kodi.log", "kodi.old.log") or (low.startswith("kodi_crashlog") and low.endswith(".log")):
-                shutil.copyfile(os.path.join(src_dir, name), os.path.join(dest, name))
-                out.append(name)
+                if vfs_copy(os.path.join(src_dir, name), vfs_join(dest, name)):
+                    out.append(name)
+        if vfs_copy(os.path.join(profile_dir(), "defta.log"), vfs_join(dest, "defta.log")):
+            out.append("defta.log")
     except OSError as e:
         log(f"Kodi kayıtları kopyalanamadı: {e}", "warning")
     return out

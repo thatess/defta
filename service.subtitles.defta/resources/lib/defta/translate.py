@@ -1,10 +1,11 @@
 """Bir altyazıyı masaüstü motoruyla (subtrans) çevirir.
 
-Aşamalar:
-  1. bölüm analizi + seri sözlüğü (isimler her bölümde aynı yazılsın)
-  2. çeviri: parçalar paralel gider; her parça bitince ara dosya yazılır (on_update) -> Kodi'de yüklenir
-  3. 'hızlı önce' modunda anlam kontrolünden önceki tam çeviri yüklenir
-  4. anlam kontrolü + son düzeltmeler -> kalıcı dosya
+'Hızlı önce, kaliteli sonra' modunda iki çeviri aynı anda başlar:
+  - hızlı: bölüm analizi ve anlam kontrolü yok, mevcut seri sözlüğüyle; bitince bir kez yüklenir (geçici dosya)
+  - kaliteli: bölüm analizi + seri sözlüğü güncellemesi -> çeviri -> anlam kontrolü -> kalıcı dosya, yüklenir
+Sözlük yalnızca analizden beslenir; kaydedilen tek dosya kaliteli olandır.
+Hızlı çeviri atlanır: iş yüklenmeyecekse (sıradaki bölüm), mod başkaysa ya da bölüm analizi kayıtlıysa
+(yeniden çeviri, yarıda kalan iş): o zaman kaliteli çeviri de hızlı çeviri kadar sürer, ikisini yüklemek gereksiz.
 API yanıtları cache.sqlite'ta tutulur: yarıda kalan iş yeniden başlarsa biten parçalar tekrar ödenmez."""
 from __future__ import annotations
 
@@ -46,7 +47,8 @@ def build_settings():
                 "lyrics": ["translate", "keep", "auto"][min(2, kodi.setting_int("lyrics", 0))],
                 "note_only_blocks": "delete"},
         "output": {"credit": kodi.setting("credit", "Thates").strip(), "format": "srt", "position_codes": "remove",
-                   "suspect_report": False, "progress": "off"},
+                   "suspect_report": False, "progress": "off", "residue_filter": True,
+                   "format_tags": "keep" if kodi.setting_int("format_tags", 0) == 1 else "remove"},
         "glossary": {"enabled": True, "folder": kodi.profile_dir("glossaries"), "series": "auto"},
         "quality": {"review": mode != FAST_ONLY, "episode_analysis": True},
         "prices": _prices(),
@@ -56,7 +58,7 @@ def build_settings():
 
 
 class Translator:
-    """Tek bir işi (job) yürütür. on_update(path, stage, percent) Kodi'ye yükleme için çağrılır."""
+    """Tek bir işi (job) yürütür. on_update(path, stage, percent): stage "fast" (geçici) ya da "final"."""
 
     def __init__(self, job: dict, on_update, should_stop=lambda: False):
         self.job = job
@@ -64,9 +66,6 @@ class Translator:
         self.should_stop = should_stop
         self.done_chunks = 0
         self.total_chunks = 1
-        self.partial: dict = {}
-        self.last_write = 0.0
-        self.seq = 0
         self.cost = None
         self._loop = None
         self._task = None
@@ -101,7 +100,7 @@ class Translator:
 
     async def _run(self) -> str:
         from subtrans import app as sapp
-        from subtrans.cache import CachedProvider, Store
+        from subtrans.cache import CachedProvider, Store, sha
         from subtrans.config import load_rule_pack
         from subtrans.engine import Engine, FatalError, FileJob
         from subtrans.glossary import Glossary
@@ -123,118 +122,136 @@ class Translator:
         if not kodi.secret("openai_key"):
             raise RuntimeError("OpenAI API anahtarı girilmemiş (Defta ayarları > Genel)")
         src_path = Path(job["src_file"])
-        srt = read_subtitle(src_path)
-        if not srt.blocks:
-            raise RuntimeError("altyazı dosyasında satır bulunamadı")
         src_lang = langs.norm(sub.lang) or "en"
         rules = load_rule_pack(target)
         decisions = {k: str(settings["sdh"][k]) for k in SDH_CATEGORIES}
         decisions["established_names"] = "use"
         decisions["note_only_blocks"] = "delete"
-        engine = Engine(settings, None, rules, decisions)
-        out_path = Path(dstore.tr_path(m, sub, target))
-        rel = Path(f"{m.label()} [{sub.uid()}]{src_path.suffix}")
-        fj = FileJob(srt=srt, rel=rel, out_path=out_path, src_lang=src_lang,
-                     decisions=resolve_decisions(decisions, src_lang), out_fmt="srt")
+        decisions["format_tags"] = settings["output"]["format_tags"]
         series = m.series_name()
-        if series:
-            g = Glossary.load_or_new(Path(settings["glossary"]["folder"]), series, target)
-            g.lower_races = rules.lowercase_races
-            fj.series, fj.glossary = series, g
-            fj.instructions = sapp.series_instructions(settings, series)
-        engine.plan(fj)
+        out_path = Path(dstore.tr_path(m, sub, target))
+        gl_dir = Path(settings["glossary"]["folder"])
+
+        def make_job(engine, rel_name: str, memory) -> FileJob:
+            srt = read_subtitle(src_path)
+            if not srt.blocks:
+                raise RuntimeError("altyazı dosyasında satır bulunamadı")
+            fj = FileJob(srt=srt, rel=Path(rel_name), out_path=out_path, src_lang=src_lang,
+                         decisions=resolve_decisions(decisions, src_lang), out_fmt="srt")
+            if series:
+                g = Glossary.load_or_new(gl_dir, series, target)
+                g.lower_races = rules.lowercase_races
+                fj.series, fj.glossary = series, g
+                fj.instructions = sapp.series_instructions(settings, series)
+            engine.plan(fj)
+            fj.memory = memory
+            return fj
+
         store = Store(Path(kodi.profile_dir()) / "cache.sqlite")
         model = settings["provider"]["model"]
         price = settings.price(model)
-        engine.store = store
-        engine.main_price = price
         try:
             inner = make_provider(settings["provider"])
         except ProviderError as e:
+            store.close()
             raise RuntimeError(str(e)) from e
+        engine = Engine(settings, None, rules, decisions)
+        engine.store = store
+        engine.main_price = price
         engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
+        rel = f"{m.label()} [{sub.uid()}]{src_path.suffix}"
+        fj = make_job(engine, rel, None)
         fj.memory = store.memory(sapp.memory_series(fj))
         self.total_chunks = max(1, len(fj.chunks))
+
+        # Hızlı çeviri gerekli mi? Analiz kayıtlıysa (yarıda kalmış iş sürüyor) kaliteli çeviri zaten hızlı gelir.
+        analysed = fj.glossary is not None and store.get_stage(
+            "an:" + sha(fj.glossary.series, str(model), "\n".join(b.text for b in fj.srt.blocks))) is not None
+        use_fast = mode == FAST_FIRST and engine.review_on and bool(job.get("load")) and not analysed
+        fast_engine = fast_job = fast_task = None
+        if use_fast:
+            fast_settings, _ = build_settings()
+            fast_settings.raw["language"]["target"] = target
+            fast_settings.raw["quality"] = {"review": False, "episode_analysis": False}
+            fast_engine = Engine(fast_settings, None, rules, decisions)
+            fast_engine.store = store
+            fast_engine.main_price = price
+            fast_engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
+            fast_job = make_job(fast_engine, "fast-" + rel, None)
         kodi.log(f"Çeviri başladı: {m.label()} <- {sub.source}:{sub.release or sub.sid} ({src_lang}->{target}), "
-                 f"{len(srt.blocks)} blok, {len(fj.chunks)} parça, mod={mode}")
+                 f"{len(fj.srt.blocks)} blok, {len(fj.chunks)} parça, mod={mode}, hızlı={'evet' if use_fast else 'hayır'}")
         t0 = time.monotonic()
+        state = {"final": False}
+
+        async def run_fast():
+            try:
+                await fast_engine.translate_phase(fast_job)
+                if fast_job.status != "çevrildi":
+                    kodi.log("hızlı çeviri başarısız: " + "; ".join(fast_job.errors), "warning")
+                    return
+                await fast_engine.finish_phase(fast_job)
+                if fast_job.status != "tamam" or state["final"] or self.should_stop():
+                    return
+                path = os.path.join(kodi.temp_dir(), f"defta-{self.job['id']}-fast.{target}.srt")
+                write_atomic(Path(path), fast_engine.final_blocks(fast_job), "srt", fast_job.srt.doc)
+                kodi.log(f"Hızlı çeviri hazır: {time.monotonic() - t0:.0f} sn")
+                self.on_update(path, "fast", 100)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001  (hızlı çeviri olmazsa kaliteli olan yine gelir)
+                kodi.log(f"hızlı çeviri hatası: {type(e).__name__}: {e}", "warning")
+
+        def on_chunk(job_, res):
+            self.done_chunks += 1
+
+        engine.on_chunk = on_chunk
         try:
+            if use_fast:
+                fast_task = asyncio.ensure_future(run_fast())
             await sapp._build_glossaries(engine, [fj])
             if self.should_stop():
-                raise RuntimeError("durduruldu")
-
-            def on_chunk(job_, res):
-                self.done_chunks += 1
-                self.partial.update(res)
-                if mode == QUALITY_ONLY or self.should_stop():
-                    return
-                now = time.monotonic()
-                if now - self.last_write >= 6 or self.done_chunks == self.total_chunks:
-                    self.last_write = now
-                    self._write_partial(engine, fj, write_atomic)
-
-            engine.on_chunk = on_chunk
+                raise asyncio.CancelledError()
             await engine.translate_phase(fj)
             if fj.status != "çevrildi":
                 raise RuntimeError("; ".join(fj.errors) or "çeviri başarısız")
-            if mode == FAST_FIRST and engine.review_on:
-                self._write_partial(engine, fj, write_atomic, stage="fast")
             await engine.finish_phase(fj)
             if fj.status != "tamam":
                 raise RuntimeError("; ".join(fj.errors) or "anlam kontrolü başarısız")
             errs = verify_structure(fj.srt.blocks, fj.out_blocks, allow_empty=fj.dropped)
             if errs:
                 raise RuntimeError("yapı kontrolü: " + "; ".join(errs[:3]))
+            state["final"] = True
             blocks = engine.final_blocks(fj)
             write_atomic(out_path, blocks, "srt", fj.srt.doc)
         except FatalError as e:
             raise RuntimeError(str(e)) from e
         finally:
-            for prov in {id(x): x for x in (engine.provider, engine.review_provider) if x is not None}.values():
+            state["final"] = True
+            if fast_task is not None and not fast_task.done():
+                fast_task.cancel()
+            if fast_task is not None:
+                try:
+                    await fast_task
+                except BaseException:  # noqa: BLE001
+                    pass
+            provs = [engine.provider, engine.review_provider]
+            if fast_engine is not None:
+                provs += [fast_engine.provider, fast_engine.review_provider]
+            for prov in {id(x): x for x in provs if x is not None}.values():
                 try:
                     await prov.close()
                 except Exception:  # noqa: BLE001
                     pass
             store.close()
         self.cost = fj.usage.cost(price)
+        if fast_job is not None and self.cost is not None:
+            fc = fast_job.usage.cost(price)
+            self.cost = self.cost + (fc or 0.0)
         kodi.log(f"Çeviri bitti: {m.label()} {len(fj.chunks)} parça, {fj.usage.requests} istek, "
                  f"{fj.usage.input_tokens}+{fj.usage.output_tokens} token, maliyet "
-                 f"{'$%.4f' % self.cost if self.cost is not None else '?'}, {time.monotonic() - t0:.0f} sn, "
-                 f"anlam kontrolü {fj.review_fixes} düzeltme")
+                 f"{'$%.4f' % self.cost if self.cost is not None else '?'}"
+                 + (" (hızlı çeviri dahil)" if fast_job is not None else "")
+                 + f", {time.monotonic() - t0:.0f} sn, anlam kontrolü {fj.review_fixes} düzeltme")
         dstore.tr_record(m, sub, str(out_path), "final", self.cost)
         self.on_update(str(out_path), "final", 100)
         return str(out_path)
-
-    # ------------------------------------------------------------------
-    def _write_partial(self, engine, fj, write_atomic, stage: str = "partial") -> None:
-        """Bitmiş parçalar çevrilmiş, kalanlar orijinal hâliyle bir ara dosya yazar ve yükletir."""
-        results = dict(fj.results) if stage == "fast" else dict(self.partial)
-        if not results:
-            return
-        saved = (fj.results, fj.out_blocks, fj.suspects, fj.dropped, fj.memory_used,
-                 fj.conlang_translated, fj.glossary_misses)
-        try:
-            fj.results = {pos: results.get(pos, fj.prepared[pos].send_text) for pos in fj.translate_pos}
-            fj.suspects = {}
-            check, engine._check_glossary = engine._check_glossary, (lambda j: None)  # ara dosyada sözlük denetimi yok
-            try:
-                engine._assemble(fj)
-            finally:
-                engine._check_glossary = check
-            blocks = engine.final_blocks(fj)
-        except Exception as e:  # noqa: BLE001
-            kodi.log(f"ara dosya hazırlanamadı: {type(e).__name__}: {e}", "debug")
-            return
-        finally:
-            (fj.results, fj.out_blocks, fj.suspects, fj.dropped, fj.memory_used,
-             fj.conlang_translated, fj.glossary_misses) = saved
-        self.seq += 1
-        target = self.job.get("target") or "tr"
-        path = os.path.join(kodi.temp_dir(), f"defta-{self.job['id']}-{self.seq}.{target}.srt")
-        try:
-            write_atomic(Path(path), blocks, "srt", fj.srt.doc)
-        except OSError as e:
-            kodi.log(f"ara dosya yazılamadı: {e}", "warning")
-            return
-        pct = 100 if stage == "fast" else int(100 * self.done_chunks / self.total_chunks)
-        self.on_update(path, stage, pct)

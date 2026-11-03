@@ -1,4 +1,4 @@
-"""Ayarlardaki düğmeler: temizlik, bağlantı testi, kurulum rehberi."""
+"""Ayarlardaki düğmeler: temizlik, bağlantı testi, dışa aktarma, kayıt klasörü, kurulum rehberi."""
 from __future__ import annotations
 
 import sys
@@ -15,6 +15,7 @@ CLEAN_TEXT = {
     "memory": "Çeviri hafızası silinsin mi?",
     "jobs": "Yarım kalan ve başarısız çeviri işleri silinsin mi?",
     "apicache": "API yanıt önbelleği silinsin mi? (Aynı altyazı yeniden çevrilirse tekrar ücret ödenir.)",
+    "syncmarks": "'Kaymış' işaretleri ve dizilerde 'önceki bölümde kullandığın' tercihleri silinsin mi?",
     "all": "Defta'nın TÜM verileri silinsin mi? (AI çevirileri, sözlükler, önbellek, işler.)\n"
            "API anahtarları ve ayarlar silinmez.",
 }
@@ -37,18 +38,28 @@ GUIDE = """[B]Defta kurulum rehberi[/B]
 
 [B]3. Kullanım[/B]
  Video oynarken altyazı simgesi > İndir > Defta. Liste:
- • En üstte hedef dildeki insan çevirileri
+ • En üstte hedef dildeki insan çevirileri. 'senkron uyumlu' yazanlar tam bu video dosyası için yapılmıştır.
+   Dizide 'önceki bölümde kullandığın' yazan, bir önceki bölümde seçtiğiniz çevirmenin/sürümün devamıdır.
  • Defta AI: daha önce yaptığınız çeviriler (ücretsiz) ve 'baştan yeniden çevir'
- • → AI çeviri: seçince çeviri başlar. Önce orijinal altyazı görünür, çevrilen parçalar geldikçe yerine geçer;
-   anlam kontrolü bitince kontrol edilmiş hali yüklenir.
+ • → AI çeviri: seçince çeviri başlar. Önce orijinal altyazı görünür, birkaç saniyede hızlı çeviri,
+   anlam kontrolü bitince kontrol edilmiş hali yüklenir. Başka bir satır seçerseniz önceki çeviri durur;
+   aynı satırı yeniden seçerseniz kaldığı yerden sürer (biten kısım tekrar ödenmez).
+ • 'Şu anki altyazı kaymış': yüklenen altyazı senkron değilse seçin. İşaretlenir, listede alta iner
+   ve sıradaki altyazı yüklenir ya da çevrilir.
  • Yüklenen altyazıyı çevir: başka eklentiyle (a4k vb.) seçtiğiniz altyazıyı çevirir.
    Videonun içine gömülü altyazılar çevrilemez.
+ Altyazı videodan uzunsa uyarılır; fark yalnızca kare hızındansa (25 / 23.976) zamanlama kendiliğinden düzeltilir.
 
-[B]4. Maliyet[/B]
+[B]4. Sıradaki bölüm[/B]  (Ayarlar > Otomatik)
+ Bölümün sonuna doğru sıradaki bölüm arkada çevrilir. 'Sor' seçiliyse 15 saniyelik bir soru çıkar;
+ bir şeye basmazsanız çevrilir, 'İptal' ile vazgeçersiniz. Sıradaki bölümde Türkçe altyazı varsa sorulmaz.
+
+[B]5. Maliyet[/B]
  Bir dizi bölümü genelde birkaç sent tutar. Aynı altyazı ikinci kez açıldığında hazır çeviri kullanılır, ücret yoktur.
 
-[B]5. Sorun olursa[/B]
+[B]6. Sorun olursa[/B]
  Ayarlar > Yardım > Bağlantıları test et. Temizlik sekmesinden kalıntıları silebilirsiniz.
+ Kayıtları bilgisayara almak için Yardım > kayıt klasörü olarak paylaşılan bir ağ klasörü (smb://...) seçin.
 """
 
 
@@ -126,6 +137,36 @@ def test() -> None:
     xbmcgui.Dialog().textviewer("Defta: bağlantı testi", text)
 
 
+def export() -> None:
+    """Hazır AI çevirilerini okunur adlarla bir klasöre kopyalar (ağ klasörü olabilir)."""
+    import os
+    import re
+    dest = xbmcgui.Dialog().browse(3, "AI çevirileri hangi klasöre kopyalansın?", "files",
+                                   defaultt=kodi.setting("debug_dir").strip())
+    if not dest:
+        return
+    root = kodi.profile_dir("translations")
+    n, failed = 0, 0
+    for key in sorted(os.listdir(root)):
+        d = os.path.join(root, key)
+        meta = store._read(os.path.join(d, "meta.json"), []) or []
+        for e in meta:
+            src = os.path.join(d, e.get("file", ""))
+            if not e.get("file") or not os.path.exists(src):
+                continue
+            title = e.get("title") or key
+            rel = (e.get("src") or {}).get("release") or ""
+            name = re.sub(r'[\\/:*?"<>|]+', " ", f"{title} - {rel}" if rel else title).strip()[:120]
+            lang = e["file"].rsplit(".", 2)[-2] if e["file"].count(".") >= 2 else "tr"
+            if kodi.vfs_copy(src, kodi.vfs_join(dest, f"{name}.{lang}.srt")):
+                n += 1
+            else:
+                failed += 1
+    kodi.log(f"Dışa aktarma: {n} çeviri -> {dest}" + (f", {failed} kopyalanamadı" if failed else ""))
+    xbmcgui.Dialog().ok("Defta", f"{n} AI çevirisi kopyalandı.\n{dest}"
+                        + (f"\n{failed} dosya kopyalanamadı." if failed else ""))
+
+
 def main(argv: list[str]) -> None:
     cmd = argv[1] if len(argv) > 1 else ""
     try:
@@ -147,9 +188,18 @@ def main(argv: list[str]) -> None:
             copied = kodi.export_kodi_logs(dest) if dest else []
             xbmcgui.Dialog().ok("Defta", ("Kopyalandı: " + ", ".join(copied) + f"\n{dest}") if copied
                                 else "Kayıt kopyalanmadı (klasör seçilmedi ya da erişilemedi).")
+        elif cmd == "export":
+            export()
+        elif cmd == "pickdebugdir":
+            path = xbmcgui.Dialog().browse(3, "Kayıtların kopyalanacağı klasör (ağ klasörü olabilir)", "files")
+            if path:
+                kodi.addon().setSetting("debug_dir", path)
+                xbmcgui.Dialog().ok("Defta", f"Kayıt klasörü: {path}")
         elif cmd == "guide":
             xbmcgui.Dialog().textviewer("Defta", GUIDE)
     except Exception as e:  # noqa: BLE001
         import traceback
         kodi.log(f"Araç hatası ({cmd}): {type(e).__name__}: {e}\n{traceback.format_exc()}", "error")
         xbmcgui.Dialog().ok("Defta", f"Hata: {type(e).__name__}: {e}")
+    finally:
+        kodi.flush_log()

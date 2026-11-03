@@ -24,6 +24,9 @@ class Media:
     path: str = ""             # oynatılan dosya/URL
     episode_title: str = ""
     is_anime: bool = False
+    duration: float = 0.0      # saniye (oynatıcıdan)
+    hash: str = ""             # OpenSubtitles video karması (dosyanın baş/son 64 KB'ı + boyut)
+    size: int = 0
     extra: dict = field(default_factory=dict)
 
     @property
@@ -35,12 +38,34 @@ class Media:
         return os.path.splitext(self.filename)[0] if self.filename else ""
 
     def key(self) -> str:
-        """Bu videonun kalıcı anahtarı (hazır AI çevirisi ve arama önbelleği için)."""
+        """Bu videonun kalıcı anahtarı (hazır AI çevirisi ve arama önbelleği için).
+        Dizide dizi adıyla kurulur: oynatıcı bazen dizinin, bazen bölümün IMDb numarasını verir;
+        sıradaki bölümün anahtarı da önceden bilinebilsin."""
+        if self.is_episode and self.title:
+            return f"{slug(self.title)}-s{self.season:02d}e{self.episode:02d}"
+        return self.legacy_key()
+
+    def legacy_key(self) -> str:
+        """0.2 sürümündeki anahtar (eski hazır çeviriler bulunabilsin)."""
         base = self.imdb or slug(self.title) or slug(self.release)
         k = f"{base}-{self.year}" if self.year and not self.imdb else base
         if self.is_episode:
             k += f"-s{self.season:02d}e{self.episode:02d}"
         return k
+
+    def series_key(self) -> str:
+        return slug(self.title) or slug(self.release)
+
+    def next_episode(self, next_season: bool = False) -> "Media":
+        """Sıradaki bölümün bilgisi (sürüm adındaki bölüm numarası da kaydırılır, sürüm uyumu için)."""
+        n = Media.from_dict(self.to_dict())
+        n.season, n.episode = (self.season + 1, 1) if next_season else (self.season, self.episode + 1)
+        n.imdb, n.path, n.hash, n.size, n.duration, n.episode_title = "", "", "", 0, 0.0, ""
+        if self.filename:
+            import re as _re
+            n.filename = _re.sub(r"([sS])\d{1,2}([ ._-]?[eE])\d{1,4}",
+                                 lambda mm: f"{mm.group(1)}{n.season:02d}{mm.group(2)}{n.episode:02d}", self.filename)
+        return n
 
     def label(self) -> str:
         t = self.title or self.release
@@ -175,6 +200,12 @@ def from_player() -> Media:
         m.season = 1
     if not m.year:
         m.year = parsed["year"]
+    try:
+        p = xbmc.Player()
+        if p.isPlayingVideo():
+            m.duration = float(p.getTotalTime() or 0)
+    except Exception:  # noqa: BLE001
+        pass
     genre = il("VideoPlayer.Genre").lower()
     m.is_anime = parsed["anime"] or "anime" in genre or "animation" in genre and _has_japanese_hint(m)
     return m

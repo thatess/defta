@@ -38,13 +38,15 @@
     <setting id="auto_human" type="bool" label="Hedef dilde insan çevirisi varsa kendiliğinden yükle" default="false"/>
     <setting id="auto_ai" type="bool" label="Hazır AI çevirisi varsa kendiliğinden yükle" default="false"/>
     <setting id="auto_translate" type="bool" label="Hedef dilde altyazı yoksa AI çevirisini kendiliğinden başlat" default="false"/>
-    <setting id="prefetch_next" type="bool" label="Dizide sonraki bölümü önceden çevir (yakında)" default="false" enable="false"/>
+    <setting type="lsep" label="Dizide sıradaki bölüm (bölümün sonuna doğru)"/>
+    <setting id="prefetch_next" type="enum" label="Sıradaki bölümü önceden çevir" values="Kapalı|Sor (15 sn)|Otomatik" default="0"/>
   </category>
   <category label="Altyazı">
     <setting id="sound_notes" type="enum" label="Ses notları  [kapı çarpar]" values="Kaldır|Koru|Çevir" default="0"/>
     <setting id="speaker_labels" type="enum" label="Konuşan etiketleri  JOHN:" values="Kaldır|Koru|Çevir" default="0"/>
     <setting id="speaker_dashes" type="enum" label="Konuşma tireleri  - Geldin mi?" values="Kaldır|Koru" default="0"/>
     <setting id="lyrics" type="enum" label="Şarkı sözleri  ♪" values="Çevir|Orijinal bırak|Otomatik (yalnızca Japonca vb. ise çevir)" default="0"/>
+    <setting id="format_tags" type="enum" label="İtalik ve biçim etiketleri  &lt;i&gt;" values="Kaldır|Koru" default="0"/>
   </category>
   <category label="Temizlik">
     <setting type="lsep" label="Her silme önce onay ister. API anahtarları ve ayarlar silinmez."/>
@@ -55,6 +57,7 @@
     <setting type="action" option="close" label="Çeviri hafızasını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,memory)"/>
     <setting type="action" option="close" label="Yarım kalan işleri sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,jobs)"/>
     <setting type="action" option="close" label="API yanıt önbelleğini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,apicache)"/>
+    <setting type="action" option="close" label="Senkron işaretlerini ve dizi tercihlerini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,syncmarks)"/>
     <setting type="lsep" label=" "/>
     <setting type="action" option="close" label="[B]Tümünü sil[/B]" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,all)"/>
   </category>
@@ -62,7 +65,9 @@
     <setting type="action" option="close" label="Bağlantıları ve anahtarları test et" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,test)"/>
     <setting type="action" option="close" label="Kurulum rehberi" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,guide)"/>
     <setting type="action" option="close" label="Kodi kayıtlarını kayıt klasörüne kopyala" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,logs)"/>
+    <setting type="action" option="close" label="AI çevirilerini dışa aktar (klasöre kopyala)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,export)"/>
     <setting id="debug" type="bool" label="Ayrıntılı kayıt (hata ayıklama)" default="false"/>
-    <setting id="debug_dir" type="text" label="Kayıtların kopyası bu klasöre de yazılsın (isteğe bağlı)" default=""/>
+    <setting id="debug_dir" type="text" label="Kayıtların kopyası bu klasöre de yazılsın (ağ klasörü olabilir: smb://...)" default=""/>
+    <setting type="action" option="close" label="Kayıt klasörünü seç (ağ klasörü: Gözat > Ağ konumu ekle)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,pickdebugdir)"/>
   </category>
 </settings>

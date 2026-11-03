@@ -33,6 +33,32 @@ def get(sub: Sub, m: Media) -> str:
     return path
 
 
+def get_checked(sub: Sub, m: Media) -> tuple[str, str]:
+    """İndirir ve videonun süresiyle karşılaştırır: (yol, durum).
+    durum: ok | fps (kare hızı farkı düzeltildi, yol düzeltilmiş kopya) | long (videodan uzun: büyük
+    ihtimalle başka sürüm) | short | unknown. Düzeltilmiş kopya ayrı dosyadır, indirilen bozulmaz."""
+    from . import sync
+    path = get(sub, m)
+    if not m.duration:
+        return path, "unknown"
+    state, factor = sync.check(sync.subtitle_end(path), m.duration)
+    if state == "fps":
+        stem, ext = os.path.splitext(path)
+        fixed = stem + ".fps" + ext
+        if os.path.exists(fixed) or sync.fix_fps(path, factor, fixed):
+            kodi.log(f"Kare hızı farkı düzeltildi (x{factor:.4f}): {os.path.basename(path)}")
+            return fixed, "fps"
+        state = "long"
+    if state in ("long", "short"):
+        kodi.log(f"Süre uyuşmuyor ({state}): {sub.release or sub.sid}, video {m.duration:.0f} sn", "warning")
+    return path, state
+
+
+SYNC_NOTE = {"fps": "Kare hızı farkı vardı, zamanlama düzeltildi.",
+             "long": "Bu altyazı videodan uzun: büyük ihtimalle başka sürüm, kayabilir.",
+             "short": "Bu altyazı videonun yarısından kısa: eksik ya da başka sürüm olabilir."}
+
+
 def for_kodi(path: str, label: str, lang: str) -> str:
     """Kodi'ye verilecek kopya. Dosya adındaki dil kodu Kodi'nin altyazı dilini göstermesini sağlar."""
     ext = os.path.splitext(path)[1].lower() or ".srt"

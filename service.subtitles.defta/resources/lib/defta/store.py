@@ -107,12 +107,93 @@ def tr_path(m: Media, sub: Sub, target: str) -> str:
 
 
 def ready_translations(m: Media) -> list[dict]:
-    out = []
-    for e in tr_meta(m):
-        p = os.path.join(tr_dir(m), e.get("file", ""))
-        if e.get("file") and os.path.exists(p):
-            out.append(dict(e, path=p))
+    out, seen = [], set()
+    dirs = [tr_dir(m)]
+    legacy = m.legacy_key()
+    if legacy != m.key() and os.path.isdir(os.path.join(kodi.profile_dir("translations"), legacy)):
+        dirs.append(kodi.profile_dir("translations", legacy))     # 0.2 sürümünün kaydettikleri
+    for d in dirs:
+        for e in _read(os.path.join(d, "meta.json"), []) or []:
+            p = os.path.join(d, e.get("file", ""))
+            if e.get("file") and os.path.exists(p) and e.get("uid") not in seen:
+                seen.add(e.get("uid"))
+                out.append(dict(e, path=p))
+    bad = bad_uids(m)
+    out.sort(key=lambda e: e.get("uid") in bad)                   # kaymış işaretlenenler alta
     return out
+
+
+# ------------------------------------------------------------------ senkron geri bildirimi ve tercihler
+
+def _state_path(name: str) -> str:
+    return os.path.join(kodi.profile_dir(), name)
+
+
+def set_loaded(m: Media, kind: str, sub: Sub) -> None:
+    """Bu videoya en son Defta'nın yüklediği altyazı (kind: human | ai | source)."""
+    d = _read(_state_path("loaded.json"), {}) or {}
+    d[m.key()] = {"kind": kind, "sub": sub.to_dict(), "t": time.time()}
+    if len(d) > 300:                                              # dosya büyümesin
+        for k in sorted(d, key=lambda k: d[k].get("t", 0))[:100]:
+            d.pop(k, None)
+    try:
+        _write(_state_path("loaded.json"), d)
+    except OSError:
+        pass
+
+
+def get_loaded(m: Media) -> dict | None:
+    return (_read(_state_path("loaded.json"), {}) or {}).get(m.key())
+
+
+def mark_bad(m: Media, sub: Sub) -> None:
+    d = _read(_state_path("badsync.json"), {}) or {}
+    lst = d.setdefault(m.key(), [])
+    if sub.uid() not in lst:
+        lst.append(sub.uid())
+    try:
+        _write(_state_path("badsync.json"), d)
+    except OSError:
+        pass
+    pref = series_pref(m)
+    if pref and ((sub.uploader and pref.get("uploader") == sub.uploader) or
+                 (pref.get("group") and pref.get("group") == _group(sub))):
+        prefs = _read(_state_path("series_prefs.json"), {}) or {}
+        prefs.pop(m.series_key(), None)                           # bu yükleyenin ayrıcalığı bu dizide kalkar
+        try:
+            _write(_state_path("series_prefs.json"), prefs)
+        except OSError:
+            pass
+
+
+def bad_uids(m: Media) -> set:
+    return set((_read(_state_path("badsync.json"), {}) or {}).get(m.key(), []))
+
+
+def _group(sub: Sub) -> str:
+    from .search import features
+    return features(sub.release).get("group", "")
+
+
+def remember_choice(m: Media, sub: Sub) -> None:
+    """Dizide seçilen altyazının yükleyeni/grubu: sıradaki bölümde onun devamı öne alınır."""
+    if not m.is_episode or sub.source in ("local", ""):
+        return
+    from .search import features
+    f = features(sub.release)
+    prefs = _read(_state_path("series_prefs.json"), {}) or {}
+    prefs[m.series_key()] = {"source": sub.source, "uploader": sub.uploader, "group": f.get("group", ""),
+                             "kind": f.get("source", ""), "hi": sub.hi, "lang": sub.lang, "t": time.time()}
+    try:
+        _write(_state_path("series_prefs.json"), prefs)
+    except OSError:
+        pass
+
+
+def series_pref(m: Media) -> dict | None:
+    if not m.is_episode:
+        return None
+    return (_read(_state_path("series_prefs.json"), {}) or {}).get(m.series_key())
 
 
 # ------------------------------------------------------------------ işler
@@ -156,7 +237,8 @@ def prune_jobs(max_age: float = 3 * 24 * 3600) -> int:
     n = 0
     now = time.time()
     for j in list_jobs():
-        if j.get("status") in ("done", "failed") and now - float(j.get("finished") or j.get("created") or now) > max_age:
+        if j.get("status") in ("done", "failed", "cancelled") and \
+                now - float(j.get("finished") or j.get("created") or now) > max_age:
             try:
                 os.remove(os.path.join(kodi.profile_dir("jobs"), j["id"] + ".json"))
                 n += 1
@@ -175,6 +257,39 @@ def list_jobs(status: str | None = None) -> list[dict]:
         if j and (status is None or j.get("status") == status):
             out.append(j)
     return out
+
+
+def cancel_jobs_for(m: Media, except_uid: str = "") -> int:
+    """Aynı video için bekleyen/süren diğer işleri iptal eder (son seçilen kazanır).
+    Biten parçalar önbellekte kaldığı için aynı altyazı yeniden seçilirse kaldığı yerden sürer."""
+    n = 0
+    for j in list_jobs():
+        if j.get("status") in ("pending", "running") and Media.from_dict(j["media"]).key() == m.key() \
+                and Sub.from_dict(j["sub"]).uid() != except_uid:
+            j["status"] = "cancelled"
+            save_job(j)
+            n += 1
+    return n
+
+
+def get_job(job_id: str) -> dict | None:
+    return _read(os.path.join(kodi.profile_dir("jobs"), job_id + ".json"))
+
+
+def job_status(job_id: str) -> str:
+    return (get_job(job_id) or {}).get("status", "")
+
+
+def want_load(m: Media) -> int:
+    """Video oynatılmaya başladı: önceden başlamış (sıradaki bölüm) işleri bitince yüklenecek yapar."""
+    n = 0
+    for j in list_jobs():
+        if j.get("status") in ("pending", "running") and not j.get("load") \
+                and Media.from_dict(j["media"]).key() == m.key():
+            j["load"] = True
+            save_job(j)
+            n += 1
+    return n
 
 
 def running_job_for(m: Media, sub: Sub) -> dict | None:
@@ -248,8 +363,17 @@ def clean(what: str, series: str = "") -> str:
         finally:
             con.close()
         return f"{n} kayıt silindi"
+    if what == "syncmarks":
+        n = 0
+        for name in ("badsync.json", "series_prefs.json", "loaded.json"):
+            try:
+                os.remove(_state_path(name))
+                n += 1
+            except OSError:
+                pass
+        return "Senkron işaretleri ve dizi tercihleri silindi"
     if what == "all":
-        msgs = [clean(x) for x in ("ai", "search", "downloads", "jobs", "glossary")]
+        msgs = [clean(x) for x in ("ai", "search", "downloads", "jobs", "glossary", "syncmarks")]
         for name in ("cache.sqlite", "os_token.json", "defta.log", "defta.log.1"):
             try:
                 os.remove(os.path.join(kodi.profile_dir(), name))

@@ -67,12 +67,15 @@ class Results:
     errors: list = field(default_factory=list)
 
 
-def _run_sources(m: Media, wanted: list[str] | None, names: list[str], errors: list) -> list[Sub]:
+def _run_sources(m: Media, wanted: list[str] | None, names: list[str], errors: list,
+                 before_os=None) -> list[Sub]:
     out: list[Sub] = []
     lock = threading.Lock()
 
     def one(name: str):
         mod = ALL[name]
+        if name == "opensubtitles" and before_os is not None:
+            before_os()                     # video karması hazır olsun (diğer kaynaklar beklemez)
         try:
             res = mod.search(m, wanted)
         except SourceError as e:
@@ -110,6 +113,7 @@ def _dedupe(subs: list[Sub]) -> list[Sub]:
 
 
 def search(m: Media, use_cache: bool = True) -> Results:
+    from . import sync
     tgt = kodi.target_lang()
     srcs = kodi.source_langs(m.is_anime)
     names = [n for n in ALL if kodi.source_enabled(n)]
@@ -122,21 +126,44 @@ def search(m: Media, use_cache: bool = True) -> Results:
     sig = "|".join([kodi.version(), tgt] + srcs + names)     # yeni sürümde eski sonuçlar kullanılmaz
     subs = store.search_cache_get(m, sig) if use_cache else None
     if subs is None:
+        hash_job = None
+        if "opensubtitles" in names and m.path and not m.hash:
+            def compute():
+                m.hash, m.size = sync.moviehash(m.path)
+                if m.hash:
+                    kodi.log(f"Video karması: {m.hash}", "debug")
+            hash_job = threading.Thread(target=compute)
+            hash_job.start()
         wanted = [tgt] + srcs
-        subs = _run_sources(m, wanted, names, res.errors)
+        subs = _run_sources(m, wanted, names, res.errors, before_os=hash_job.join if hash_job else None)
+        if hash_job is not None:
+            hash_job.join()
         if not any(s.lang in srcs for s in subs) and "opensubtitles" in names:
             # İstenen kaynak dillerinde yok: başka dillerden (filmin kendi dili vb.) bakılır
             subs += [s for s in _run_sources(m, None, ["opensubtitles"], res.errors) if s.lang != tgt]
         if subs or not res.errors:
             store.search_cache_put(m, sig, subs)
     video = m.filename
+    pref = store.series_pref(m)
+    bad = store.bad_uids(m)
     for s in subs:
         s.score = match_score(video, s)
-        s.sync = s.sync or s.score >= 5
+        s.sync = s.hash_match or s.sync or s.score >= 5
+        s.note = ""
+        if pref and s.source == pref.get("source") and s.lang == pref.get("lang", s.lang) and (
+                (pref.get("uploader") and s.uploader == pref["uploader"]) or
+                (pref.get("group") and features(s.release).get("group") == pref["group"])):
+            s.note = "önceki bölümde kullandığın"
+        if s.hash_match:
+            s.note = "senkron uyumlu"
+        if s.uid() in bad:
+            s.note = "kaymış"
     demote = kodi.setting_bool("demote_sdh", True)
 
     def key(s: Sub):
-        return (-s.score, s.hi if demote else False, -s.downloads, -s.rating)
+        # Sıra: kaymış en sonda; video karması eşleşen en üstte; sonra önceki bölümün devamı; sonra sürüm uyumu
+        return (s.note == "kaymış", not s.hash_match, s.note != "önceki bölümde kullandığın", -s.score,
+                s.hi if demote else False, -s.downloads, -s.rating)
 
     subs = _dedupe(subs)
     res.human = sorted([s for s in subs if s.lang == tgt and not s.ai], key=key)[:HUMAN_MAX]
@@ -145,16 +172,28 @@ def search(m: Media, use_cache: bool = True) -> Results:
     foreign = [s for s in subs if s.lang != tgt and not s.ai]
     picked: list[Sub] = []
     for name in ALL:
-        mine = sorted([s for s in foreign if s.source == name],
-                      key=lambda s: (order.get(s.lang, 99),) + key(s))
-        # Kaynak dilinde yeterince yoksa diğer diller tamamlar
+        mine = sorted([s for s in foreign if s.source == name], key=lambda s: (order.get(s.lang, 99),) + key(s))
         picked += mine[:per]
-    res.foreign = sorted(picked, key=lambda s: (order.get(s.lang, 99),) + key(s))
+    res.foreign = sorted(picked, key=lambda s: key(s)[:3] + (order.get(s.lang, 99),) + key(s)[3:])
     return res
 
 
 def best_foreign(res: Results) -> Sub | None:
-    """Otomatik çeviri için en güvenilir aday: kaynak dilinde, sürümü uyan, SDH olmayan, en çok indirilen."""
-    if not res.foreign:
-        return None
-    return res.foreign[0]
+    """Otomatik çeviri için en güvenilir aday (sıralamanın ilki; kaymış işaretliler hiç seçilmez)."""
+    return next((s for s in res.foreign if s.note != "kaymış"), None)
+
+
+def next_candidate(res: Results, current_uid: str, kind: str):
+    """"Kaymış" denince yüklenecek sıradaki aday: (tür, altyazı). Şu anki insan çevirisiyse önce sıradaki
+    insan çevirisi; yoksa ya da şu anki bir AI çevirisiyse sıradaki çevrilecek altyazı."""
+    def ok(s):
+        return s.uid() != current_uid and s.note != "kaymış"
+    if kind == "human":
+        h = next((s for s in res.human if ok(s)), None)
+        if h is not None:
+            return "human", h
+    f = next((s for s in res.foreign if ok(s)), None)
+    if f is not None:
+        return "translate", f
+    h = next((s for s in res.human if ok(s)), None)
+    return ("human", h) if h is not None else (None, None)

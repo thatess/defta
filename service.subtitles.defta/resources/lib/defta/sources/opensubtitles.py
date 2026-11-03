@@ -65,6 +65,8 @@ def _os_langs(codes: list[str]) -> str:
 def search(m: Media, wanted: list[str] | None) -> list[Sub]:
     """wanted None = tüm diller."""
     base: list = [("ai_translated", "exclude"), ("machine_translated", "exclude")]
+    if m.hash:
+        base.append(("moviehash", m.hash))      # eşleşenler moviehash_match ile işaretlenir
     if wanted:
         base.append(("languages", _os_langs(wanted)))
     tries = []
@@ -108,7 +110,7 @@ def search(m: Media, wanted: list[str] | None) -> list[Sub]:
                        ai=bool(a.get("ai_translated") or a.get("machine_translated")),
                        uploader=(a.get("uploader") or {}).get("name") or "",
                        season=int(fd.get("season_number") or 0), episode=int(fd.get("episode_number") or 0),
-                       sync=bool(a.get("moviehash_match"))))
+                       sync=bool(a.get("moviehash_match")), hash_match=bool(a.get("moviehash_match"))))
     return out
 
 
