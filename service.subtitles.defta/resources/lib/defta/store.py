@@ -235,6 +235,31 @@ def remember_choice(m: Media, sub: Sub) -> None:
         pass
 
 
+def request_load(m: Media, sub: Sub) -> None:
+    """Sıradaki bölüm için çeviri istendi: o bölüm açıldığında (ayar ne olursa olsun) yüklenecek."""
+    d = _read(_state_path("requested.json"), {}) or {}
+    d[m.key()] = {"uid": sub.uid(), "t": time.time()}
+    now = time.time()
+    d = {k: v for k, v in d.items() if now - v.get("t", 0) < KEEP_AGE}
+    try:
+        _write(_state_path("requested.json"), d)
+    except OSError:
+        pass
+
+
+def take_requested(m: Media) -> str:
+    """Bu bölüm için istenmiş çevirinin kimliği (bir kez döner, sonra silinir)."""
+    d = _read(_state_path("requested.json"), {}) or {}
+    e = d.pop(m.key(), None)
+    if e is None:
+        return ""
+    try:
+        _write(_state_path("requested.json"), d)
+    except OSError:
+        pass
+    return e.get("uid", "") if time.time() - e.get("t", 0) < KEEP_AGE else ""
+
+
 def series_pref(m: Media) -> dict | None:
     if not m.is_episode:
         return None
@@ -495,7 +520,7 @@ def clean(what: str, series: str = "") -> str:
         return f"{n} kayıt silindi"
     if what == "syncmarks":
         n = 0
-        for name in ("badsync.json", "series_prefs.json", "loaded.json"):
+        for name in ("badsync.json", "series_prefs.json", "loaded.json", "requested.json"):
             try:
                 os.remove(_state_path(name))
                 n += 1

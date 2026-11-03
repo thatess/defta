@@ -10,6 +10,7 @@
     <setting id="openai_key" type="text" option="hidden" label="OpenAI API anahtarı" default=""/>
     <setting id="model" type="text" label="Model" default="gpt-6-luna"/>
     <setting id="mode" type="enum" label="Çeviri modu" values="Hızlı önce, kaliteli sonra|Yalnızca kaliteli (bitince yükle)|Yalnızca hızlı (anlam kontrolü yok)" default="0"/>
+    <setting id="fast_window" type="enum" label="Hızlı çevirinin kapsadığı süre (izlenen yerden itibaren)" values="Otomatik (dizi 2 dk, film 5 dk)|1 dk|2 dk|3 dk|5 dk" default="0" enable="eq(-1,0)"/>
     <setting id="credit" type="text" label="Künye adı (Altyazı çevirisi: ...)" default="Thates"/>
     <setting type="lsep" label="İsteğe bağlı: anahtarları bir .env dosyasından oku (bilgisayarda)"/>
     <setting id="key_file" type="text" label="Anahtar dosyası yolu (.env)" default=""/>

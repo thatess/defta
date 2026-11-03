@@ -1,7 +1,8 @@
 """Bir altyazıyı masaüstü motoruyla (subtrans) çevirir.
 
 'Hızlı önce, kaliteli sonra' modunda iki çeviri aynı anda başlar:
-  - hızlı: yalnızca izlenen yerden itibaren 5 dakika; bölüm analizi ve anlam kontrolü yok, mevcut seri
+  - hızlı: yalnızca izlenen yerden itibaren birkaç dakika (ayar; dizi 2, film 5 dk), 12 satırlık küçük
+    parçalar aynı anda; bölüm analizi ve anlam kontrolü yok, mevcut seri
     sözlüğüyle; bitince bir kez yüklenir (geçici dosya, kalanı orijinal dilde)
   - kaliteli: bölüm analizi + seri sözlüğü güncellemesi -> çeviri -> anlam kontrolü -> kalıcı dosya, yüklenir
 Sözlük yalnızca analizden beslenir; kaydedilen tek dosya kaliteli olandır. Anlam kontrolü olmazsa
@@ -21,7 +22,33 @@ from pathlib import Path
 from . import kodi, langs, net
 
 FAST_FIRST, QUALITY_ONLY, FAST_ONLY = 0, 1, 2
-FAST_WINDOW = 300          # hızlı çeviri: izlenen yerden itibaren bu kadar saniye (kalanı kaliteli çeviriyle gelir)
+FAST_WINDOWS = (0, 60, 120, 180, 300)   # ayar: Otomatik (dizi 2 dk, film 5 dk) / 1 / 2 / 3 / 5 dk
+FAST_CHUNK = 12                          # hızlı çeviride parça başına satır (küçük parça = hızlı yanıt)
+
+
+def fast_window(is_episode: bool) -> int:
+    """Hızlı çevirinin kapsadığı süre (sn): kaliteli çeviri gelene kadar yetsin."""
+    sec = FAST_WINDOWS[min(4, max(0, kodi.setting_int("fast_window", 0)))]
+    return sec or (120 if is_episode else 300)
+
+
+def window_chunks(job, start_ms: int, window_s: int, size: int = FAST_CHUNK) -> list:
+    """İzlenen yerden itibaren window_s saniyedeki satırlar, size'lık küçük parçalara bölünür (hepsi aynı
+    anda gönderilir). Bağlam için önceki 3, sonraki 2 satır da gider."""
+    from subtrans.chunking import Chunk
+    times = {b.pos: (b.start_ms, b.end_ms) for b in job.srt.blocks}
+    lo, hi = start_ms - 5000, start_ms + window_s * 1000
+    order = list(job.translate_pos)
+    sel = [p for p in order if times.get(p, (0, 0))[1] >= lo and times.get(p, (0, 0))[0] <= hi]
+    if not sel:
+        sel = order[:size]
+    index = {p: i for i, p in enumerate(order)}
+    out = []
+    for n, i in enumerate(range(0, len(sel), size), 1):
+        part = sel[i:i + size]
+        a, b = index[part[0]], index[part[-1]]
+        out.append(Chunk(number=n, targets=part, before=order[max(0, a - 3):a], after=order[b + 1:b + 3]))
+    return out
 
 
 def _prices() -> dict:
@@ -179,13 +206,9 @@ class Translator:
             fast_engine.main_price = price
             fast_engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
             fast_job = make_job(fast_engine, "fast-" + rel, None)
-            # Yalnızca izlenen yerden itibaren 5 dakika çevrilir: kaliteli çeviri o süre dolmadan gelir
+            # Yalnızca izlenen yerden itibaren birkaç dakika (ayar), küçük parçalarla: kaliteli çeviri gelene kadar
             start_ms = int(float(job.get("start_at") or 0) * 1000)
-            win = (start_ms - 5000, start_ms + FAST_WINDOW * 1000)
-            times = {b.pos: (b.start_ms, b.end_ms) for b in fast_job.srt.blocks}
-            near = [c for c in fast_job.chunks
-                    if any(times.get(p, (0, 0))[1] >= win[0] and times.get(p, (0, 0))[0] <= win[1] for p in c.targets)]
-            fast_job.chunks = near or fast_job.chunks[:1]
+            fast_job.chunks = window_chunks(fast_job, start_ms, fast_window(m.is_episode))
         kodi.log(f"Çeviri başladı: {m.label()} <- {sub.source}:{sub.release or sub.sid} ({src_lang}->{target}), "
                  f"{len(fj.srt.blocks)} blok, {len(fj.chunks)} parça, mod={mode}, hızlı={'evet' if use_fast else 'hayır'}")
         t0 = time.monotonic()

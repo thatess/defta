@@ -785,9 +785,62 @@ class TestV310(Base):
         self.assertIn("Line number 2", fast)                                  # 5 dakikanın dışı: orijinal
         self.assertNotIn("TR[Line number 2 here.]", fast)
         self.assertIn("TR[Line number 125 here.]", fast)                      # 20:50 → çevrildi
+        self.assertNotIn("TR[Line number 160 here.]", fast)                  # 26:40: film için 5 dk penceresinin dışı
         final = Path(ups[1][1]).read_text(encoding="utf-8")
         self.assertIn("TR[Line number 2 here.]", final)
         store.clean("ai")
+
+    def test_fast_window_setting_and_small_chunks(self):
+        from defta import store
+        from defta.sources.base import Sub
+        from defta.translate import FAST_CHUNK, fast_window, window_chunks
+        from subtrans.subformats import read_subtitle
+        self.assertEqual((fast_window(True), fast_window(False)), (120, 300))        # Otomatik
+        xbmcaddon.SETTINGS["fast_window"] = "1"
+        try:
+            self.assertEqual(fast_window(False), 60)
+        finally:
+            xbmcaddon.SETTINGS.pop("fast_window", None)
+        sub = Sub("opensubtitles", "903", "en", release="x")
+        src = store.download_path(sub, ".srt")
+        self._long_srt(src)
+
+        class J:                                              # window_chunks için yeterli iş taklidi
+            srt = read_subtitle(Path(src))
+            translate_pos = [b.pos for b in srt.blocks]
+        chunks = window_chunks(J, 10 * 60 * 1000, 120)
+        targets = [p for c in chunks for p in c.targets]
+        self.assertTrue(all(len(c.targets) <= FAST_CHUNK for c in chunks))
+        self.assertEqual(len(chunks), 2)                                       # 2 dk = 12-13 satır, 12'lik parçalar
+        self.assertIn(60, targets)                                             # 10:00
+        self.assertNotIn(80, targets)                                          # 13:20 pencere dışı
+        self.assertEqual(len(chunks[0].before), 3)                             # bağlam için önceki 3 satır
+
+    def test_requested_next_episode_loads_regardless_of_setting(self):
+        from defta import service_main, store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        m = Media(title="Istek", season=1, episode=5)
+        sub = Sub("opensubtitles", "904", "en", release="Istek.S01E05")
+        p = store.tr_path(m, sub, "tr")
+        Path(p).write_text("1\n00:00:01,000 --> 00:00:02,000\nMerhaba\n", encoding="utf-8")
+        store.tr_record(m, sub, p, "final")
+        store.request_load(m, sub)
+        self.assertEqual(store.take_requested(m), sub.uid())
+        self.assertEqual(store.take_requested(m), "", "bir kez döner")
+        svc = service_main.Service()
+        svc.player.is_playing = lambda mm: True
+        svc.monitor.waitForAbort = lambda t=0: False
+        xbmc.Player.loaded.clear()
+        xbmcaddon.SETTINGS["auto_ai"] = "false"
+        try:
+            svc.load_requested(m, sub.uid())
+        finally:
+            xbmcaddon.SETTINGS.pop("auto_ai", None)
+        self.assertEqual(len(xbmc.Player.loaded), 1)
+        self.assertEqual(store.get_loaded(m)["sub"]["sid"], "904")
+        store.clean("ai")
+        store.clean("syncmarks")
 
     def test_unchecked_when_review_step_fails(self):
         from defta import store

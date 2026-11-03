@@ -78,13 +78,15 @@ Kodi'nin *İlk altyazıyı otomatik indir* ayarı açıksa Kodi ilk satırı ken
 ## Ayarlar
 
 - **Genel:** çeviri dili (varsayılan Türkçe), kaynak dili (varsayılan İngilizce), ek kaynak dilleri, model,
-  çeviri modu (*Hızlı önce, kaliteli sonra* / *Yalnızca kaliteli* / *Yalnızca hızlı*), künye adı
+  çeviri modu (*Hızlı önce, kaliteli sonra* / *Yalnızca kaliteli* / *Yalnızca hızlı*), hızlı çevirinin kapsadığı
+  süre (*Otomatik*: dizide 2, filmde 5 dakika; ya da 1/2/3/5 dk), künye adı
 - **Kaynaklar:** her kaynak için aç/kapat ve anahtar, listede kaç altyazı çıkacağı (3/5/10/tümü), SDH'yi alta indir
 - **Otomatik** (hepsi varsayılan kapalı): insan çevirisini, hazır AI çevirisini kendiliğinden yükle;
   hedef dilde altyazı yoksa çeviriyi kendiliğinden başlat; sıradaki bölümü önceden çevir (*Kapalı / Sor / Otomatik*).
   *Sor*: bölümün ayardaki kadarı (varsayılan %90) izlenince sağ üstte küçük bir kutu çıkar, video durmaz. İmleç *Çevir*de durur, alttaki
   çubuk 15 saniyede boşalınca çevrilir; *İptal* ya da Geri tuşuyla vazgeçersin.
-  Sıradaki bölümde Türkçe altyazı ya da hazır çeviri varsa sorulmaz.
+  Sıradaki bölümde Türkçe altyazı ya da hazır çeviri varsa sorulmaz. "Çevir" dediğin bölüm açılınca çevirisi
+  ayarlardan bağımsız olarak kendiliğinden yüklenir.
 - **Altyazı:** ses notları, konuşan etiketleri, tireler, şarkı sözleri, italik/biçim etiketleri (varsayılan *Kaldır*)
 - **Temizlik:** AI çevirileri, arama sonuçları, indirilen altyazılar, seri sözlükleri, çeviri hafızası,
   yarım işler, API önbelleği, senkron işaretleri ve *Tümünü sil* (anahtarlar ve ayarlar silinmez)

@@ -14,7 +14,7 @@ import xbmcgui
 
 from . import fetch, kodi, langs, search, store
 from .media import Media, from_player
-from .sources.base import SourceError
+from .sources.base import SourceError, Sub
 
 
 PREFETCH_STEPS = (0.80, 0.85, 0.90, 0.95)   # ayar: bölümün bu kadarı izlenince (varsayılan %90; Red Light %95'te sorar)
@@ -53,6 +53,11 @@ class Player(xbmc.Player):
                 kodi.log(f"Önceden başlamış çeviri bitince yüklenecek: {self.media.label()}")
         except Exception:  # noqa: BLE001
             pass
+        uid = store.take_requested(self.media)
+        if uid:
+            # Sıradaki bölüm için "Çevir" denmişti: hazırsa ayara bakılmadan yüklenir
+            threading.Thread(target=self.service.load_requested, args=(self.media, uid), daemon=True).start()
+            return
         if any(kodi.setting_bool(k) for k in ("auto_human", "auto_ai", "auto_translate")):
             threading.Thread(target=self.service.autoload, args=(self.media, self.file), daemon=True).start()
 
@@ -193,11 +198,13 @@ class Service:
             if cancelled() or not job.get("load") or not self.player.is_playing(m):
                 return
             try:
-                self.player.setSubtitles(fetch.for_kodi(path, m.label() + " Defta", job.get("target") or "tr")
-                                         if stage == "final" else path)
+                self.player.setSubtitles(path if stage == "fast" else
+                                         fetch.for_kodi(path, m.label() + " Defta", job.get("target") or "tr"))
             except Exception as e:  # noqa: BLE001
                 kodi.log(f"altyazı yüklenemedi: {e}", "warning")
                 return
+            if stage != "fast":
+                store.set_loaded(m, "ai", Sub.from_dict(job["sub"]))   # listede etkin satır olsun
             kodi.log(f"Oynatıcıya yüklendi ({stage}): {os.path.basename(path)}", "debug")
             if stage == "fast":
                 kodi.notify("Hızlı çeviri yüklendi")
@@ -319,9 +326,26 @@ class Service:
             kodi.log(f"sıradaki bölüm için indirme başarısız: {e}", "warning")
             return
         store.new_job(nm, best, src, fresh=False, load=False)
+        store.request_load(nm, best)            # o bölüm açılınca ayara bakılmadan yüklensin
         kodi.log(f"Sıradaki bölüm çeviriye alındı: {nm.label()} <- {best.source}:{best.release or best.sid}"
                  + (f" ({best.note})" if best.note else ""))
         kodi.notify(f"{nm.short()} çevriliyor")
+
+    # ------------------------------------------------------------------ istenmiş sıradaki bölüm
+    def load_requested(self, m: Media, uid: str) -> None:
+        try:
+            if self.monitor.waitForAbort(2) or not self.player.is_playing(m):
+                return
+            e = next((e for e in store.ready_translations(m) if e.get("uid") == uid), None)
+            if e is None:
+                return              # henüz bitmedi: iş "bitince yükle" olarak işaretlendi (want_load)
+            tgt = kodi.target_lang()
+            self.player.setSubtitles(fetch.for_kodi(e["path"], m.label() + " Defta", tgt))
+            store.set_loaded(m, "ai", Sub.from_dict(e["src"]))
+            kodi.log(f"İstenen sıradaki bölüm çevirisi yüklendi: {m.label()}")
+            kodi.notify(f"{m.short()} çevirisi yüklendi")
+        except Exception as e:  # noqa: BLE001
+            kodi.log(f"istenen çeviri yüklenemedi: {type(e).__name__}: {e}", "warning")
 
     # ------------------------------------------------------------------ otomatik yükleme
     def autoload(self, m: Media, file: str) -> None:
