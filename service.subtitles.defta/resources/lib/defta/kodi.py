@@ -110,11 +110,19 @@ def secret_values() -> list:
     return _secret_cache["values"]
 
 
+_KEY_RE = None
+
+
 def scrub(text: str) -> str:
+    """Anahtar değerleri ve adreslere/dosya adlarına karışmış 'api_key=...' izleri *** yapılır."""
+    global _KEY_RE
     for v in secret_values():
         if v in text:
             text = text.replace(v, "***")
-    return text
+    if _KEY_RE is None:
+        import re
+        _KEY_RE = re.compile(r"(api[_-]?key[=_:]\s*)[A-Za-z0-9_-]{8,}", re.I)
+    return _KEY_RE.sub(r"\1***", text)
 
 
 def log(msg: str, level: str = "info") -> None:
@@ -194,13 +202,54 @@ def export_kodi_logs(dest: str = "") -> list:
         for name in os.listdir(src_dir):
             low = name.lower()
             if low in ("kodi.log", "kodi.old.log") or (low.startswith("kodi_crashlog") and low.endswith(".log")):
-                if vfs_copy(os.path.join(src_dir, name), vfs_join(dest, name)):
+                # Kodi'nin kendi kaydında eski sürümlerden kalma anahtar izi olabilir: kopya temizlenerek yazılır
+                if _copy_scrubbed(os.path.join(src_dir, name), vfs_join(dest, name)):
                     out.append(name)
         if vfs_copy(os.path.join(profile_dir(), "defta.log"), vfs_join(dest, "defta.log")):
             out.append("defta.log")
     except OSError as e:
         log(f"Kodi kayıtları kopyalanamadı: {e}", "warning")
     return out
+
+
+def _copy_scrubbed(src: str, dst: str) -> bool:
+    try:
+        with open(src, encoding="utf-8", errors="replace") as f:
+            text = scrub(f.read())
+    except OSError:
+        return False
+    try:
+        if is_url(dst):
+            f = xbmcvfs.File(dst, "w")
+            try:
+                return bool(f.write(text.encode("utf-8")))
+            finally:
+                f.close()
+        with open(dst, "w", encoding="utf-8") as f:
+            f.write(text)
+        return True
+    except (OSError, RuntimeError):
+        return False
+
+
+def scrub_kodi_old_log() -> bool:
+    """Kodi'nin bir önceki oturum kaydı (kodi.old.log, artık yazılmıyor) eski Defta sürümlerinin yazdığı
+    anahtar izini taşıyorsa yerinde temizlenir. Açık olan kodi.log'a dokunulmaz."""
+    path = os.path.join(translate_path("special://logpath/"), "kodi.old.log")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return False
+    new = scrub(text)
+    if new == text:
+        return False
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new)
+        return True
+    except OSError:
+        return False
 
 
 class KodiLogHandler(logging.Handler):
@@ -324,7 +373,7 @@ def secret(key: str) -> str:
     env = _ENV_NAMES.get(key)
     if not env:
         return ""
-    return _env_file_values().get(env, "").strip() or os.environ.get(env, "").strip()
+    return _env_file_values().get(env, "").strip()     # Windows ortam değişkenleri okunmaz (eski anahtar karışmasın)
 
 
 def describe_secret(key: str) -> str:
@@ -333,10 +382,8 @@ def describe_secret(key: str) -> str:
         return "girilmemiş"
     if setting(key).strip():
         src = "ayarlar"
-    elif _env_file_values().get(_ENV_NAMES.get(key, ""), "").strip():
-        src = "anahtar dosyası"
     else:
-        src = "Windows ortam değişkeni"
+        src = "anahtar dosyası"
     return f"girilmiş ({len(v)} karakter, {src})"
 
 

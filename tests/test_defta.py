@@ -895,6 +895,33 @@ class TestV310(Base):
         con.close()
         self.assertIn("silindi", store.clean("all"))
 
+    def test_kodi_log_key_traces_and_env(self):
+        from defta import kodi
+        logdir = self.tmp / "kodilog"
+        logdir.mkdir(exist_ok=True)
+        xbmcvfs.MAP["special://logpath/"] = str(logdir)
+        fake = "FAKEsubdlK" + "Q" * 10
+        line = f"İndirildi: x -> subdl-_subtitle_1-2.zip_api_key_{fake}.srt\n"
+        (logdir / "kodi.old.log").write_text("baş\n" + line, encoding="utf-8")
+        (logdir / "kodi.log").write_text(line, encoding="utf-8")
+        dest = self.tmp / "kayitlar"
+        try:
+            copied = kodi.export_kodi_logs(str(dest))
+            self.assertIn("kodi.log", copied)
+            for name in ("kodi.log", "kodi.old.log"):
+                self.assertNotIn(fake, (dest / name).read_text(encoding="utf-8"), "kopya temizlenmiş olmalı")
+            self.assertIn(fake, (logdir / "kodi.log").read_text(encoding="utf-8"), "açık kodi.log'a dokunulmaz")
+            self.assertTrue(kodi.scrub_kodi_old_log())
+            self.assertNotIn(fake, (logdir / "kodi.old.log").read_text(encoding="utf-8"))
+            self.assertFalse(kodi.scrub_kodi_old_log(), "ikinci kez bulacak bir şey kalmaz")
+            # Windows ortam değişkenindeki eski anahtar kullanılmaz
+            os.environ["SUBSOURCE_API_KEY"] = "eski-windows-anahtari-123456"
+            xbmcaddon.SETTINGS.pop("subsource_key", None)
+            self.assertEqual(kodi.secret("subsource_key"), "")
+        finally:
+            os.environ.pop("SUBSOURCE_API_KEY", None)
+            xbmcvfs.MAP.pop("special://logpath/", None)
+
     def test_active_sync_flag_is_honest(self):
         from defta import plugin, store
         from defta.media import Media

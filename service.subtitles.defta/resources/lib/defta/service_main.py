@@ -99,6 +99,9 @@ class Service:
         kodi.log(f"Servis başladı (Defta {kodi.version()}, Python {'.'.join(map(str, sys.version_info[:3]))})")
         try:
             n = store.scrub_secrets_once()
+            if kodi.scrub_kodi_old_log():
+                n += 1
+                kodi.log("Güvenlik: Kodi'nin önceki oturum kaydındaki (kodi.old.log) eski anahtar izi temizlendi")
             if n:
                 kodi.log(f"Güvenlik: eski dosyalarda {n} yerde anahtar izi temizlendi")
         except Exception as e:  # noqa: BLE001
