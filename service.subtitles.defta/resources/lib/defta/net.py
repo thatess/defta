@@ -68,18 +68,55 @@ def _doh_lookup(host: str) -> list:
     return []
 
 
+_force_doh: dict = {}          # ad -> zaman: bağlantısı reddedilen adlar bir süre doğrudan güvenli DNS'le çözülür
+_LOCAL_SUFFIX = (".local", ".lan", ".home", ".localdomain", ".internal", ".arpa")
+
+
+def _is_local_name(name: str) -> bool:
+    n = name.lower().rstrip(".")
+    return not n or n == "localhost" or "." not in n or n.endswith(_LOCAL_SUFFIX) or bool(_IP_RE.search(n))
+
+
+def _bogus(addrs) -> bool:
+    """Sağlayıcının ya da modemin engelli sitelere verdiği sahte yanıt: 0.0.0.0, 127.x, ::, ::1."""
+    ips = [a[4][0] for a in addrs if a and len(a) > 4 and a[4]]
+    return bool(ips) and all(ip.startswith(("0.", "127.")) or ip in ("::", "::1") for ip in ips)
+
+
+def _doh_addrs(name: str, port, type, proto):
+    ips = _doh_lookup(name)
+    return [(socket.AF_INET, type or socket.SOCK_STREAM, proto or 6, "", (ip, int(port or 0))) for ip in ips]
+
+
 def _getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    name = host.decode() if isinstance(host, bytes) else str(host or "")
+    public = not _is_local_name(name) and family != socket.AF_INET6
+    if public and name in _force_doh and time.time() - _force_doh[name] < 3600:
+        res = _doh_addrs(name, port, type, proto)
+        if res:
+            return res
     try:
-        return _orig_getaddrinfo(host, port, family, type, proto, flags)
+        res = _orig_getaddrinfo(host, port, family, type, proto, flags)
     except socket.gaierror:
-        name = host.decode() if isinstance(host, bytes) else str(host or "")
-        if not name or name == "localhost" or _IP_RE.search(name) or family == socket.AF_INET6:
+        if not public:
             raise
-        ips = _doh_lookup(name)
-        if not ips:
+        res = _doh_addrs(name, port, type, proto)
+        if not res:
             raise
-        return [(socket.AF_INET, type or socket.SOCK_STREAM, proto or 6, "", (ip, int(port or 0)))
-                for ip in ips]
+        return res
+    if public and _bogus(res):
+        alt = _doh_addrs(name, port, type, proto)
+        if alt:
+            kodi.log(f"DNS: {name} için sahte adres geldi ({res[0][4][0]}), güvenli DNS'in adresi kullanılıyor")
+            return alt
+    return res
+
+
+def _resolved(name: str) -> str:
+    try:
+        return ", ".join(sorted({a[4][0] for a in socket.getaddrinfo(name, 443, 0, socket.SOCK_STREAM)}))[:80]
+    except OSError:
+        return "?"
 
 
 if getattr(socket.getaddrinfo, "__name__", "") != "_getaddrinfo":
@@ -117,7 +154,9 @@ def request(method: str, url: str, params: dict | list | None = None, headers: d
         data = json.dumps(body).encode("utf-8") if not isinstance(body, bytes) else body
         h.setdefault("Content-Type", "application/json")
     last = None
-    for attempt in range(retries + 1):
+    attempt = -1
+    while attempt < retries:
+        attempt += 1
         req = urllib.request.Request(url, data=data, method=method, headers=h)
         try:
             with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:
@@ -131,10 +170,27 @@ def request(method: str, url: str, params: dict | list | None = None, headers: d
             return e.code, raw, dict(e.headers or {})
         except (urllib.error.URLError, OSError) as e:
             last = e
+            host = urllib.parse.urlparse(url).hostname or ""
+            reason = getattr(e, "reason", e)
+            if isinstance(reason, (ConnectionRefusedError, ConnectionResetError, socket.timeout, TimeoutError)) \
+                    and not _is_local_name(host) and host not in _force_doh:
+                # Bağlantı reddedildi/kesildi: sağlayıcının DNS'i yanlış (engel) adres vermiş olabilir.
+                # Güvenli DNS'in verdiği adres farklıysa bir kez onunla denenir.
+                before = _resolved(host)
+                _force_doh[host] = time.time()
+                after = _resolved(host)
+                if after not in ("?", before):
+                    kodi.log(f"Bağlantı: {host} ({before}) {type(reason).__name__}; güvenli DNS adresiyle "
+                             f"({after}) yeniden deneniyor")
+                    attempt -= 1                      # bu deneme sayılmaz
+                    continue
+                _force_doh.pop(host, None)
             if attempt < retries:
                 time.sleep(1.0)
                 continue
-    raise HttpError(0, f"bağlantı kurulamadı: {getattr(last, 'reason', last)} ({redact(url.split('?')[0])})")
+    host = urllib.parse.urlparse(url).hostname or ""
+    raise HttpError(0, f"bağlantı kurulamadı: {getattr(last, 'reason', last)} ({redact(url.split('?')[0])}"
+                       + (f" → {_resolved(host)}" if host else "") + ")")
 
 
 def get_json(url: str, params=None, headers=None, timeout: float = 15.0):

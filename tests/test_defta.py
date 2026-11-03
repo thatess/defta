@@ -226,6 +226,48 @@ class TestKodiSafety(Base):
         finally:
             net._orig_getaddrinfo, net._doh_lookup = orig_gai, orig_lookup
 
+    def test_sinkhole_and_refused_use_secure_dns(self):
+        import socket
+        from defta import net
+        # Sunucu: yalnızca 127.0.0.1'de dinler; "sağlayıcı DNS'i" engel adresi verir
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), FakeOpenAI)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        port = srv.server_address[1]
+        orig_gai, orig_lookup, orig_bogus = net._orig_getaddrinfo, net._doh_lookup, net._bogus
+
+        def isp(host, p, *a, **k):
+            if host == "api.example.org":
+                return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (self.sink, int(p or 0)))]
+            return orig_gai(host, p, *a, **k)
+        net._orig_getaddrinfo = isp
+        net._doh_lookup = lambda host: ["127.0.0.1"] if host == "api.example.org" else []
+        try:
+            # 1) sahte adres (0.0.0.0 / 127.x): doğrudan güvenli DNS
+            self.sink = "0.0.0.0"
+            self.assertEqual(socket.getaddrinfo("api.example.org", port)[0][4], ("127.0.0.1", port))
+            # 2) gerçek görünen ama bağlantıyı reddeden adres: bir kez güvenli DNS adresiyle yeniden denenir
+            self.sink = "127.0.0.2"
+            net._bogus = lambda addrs: False
+            net._force_doh.clear()
+            status, raw, _ = net.request("GET", f"http://api.example.org:{port}/models/x",
+                                         headers={"Authorization": "Bearer sk-test-key-000000000000000000000000000000000000"},
+                                         retries=0)
+            self.assertEqual(status, 200)
+            self.assertIn("api.example.org", net._force_doh)
+            # yerel adlara (bilgisayar adı, .local) dokunulmaz
+            self.assertTrue(net._is_local_name("mypc.local") and net._is_local_name("nas"))
+            # ikisi de olmazsa hata, çözülen adresi de söyler
+            net._doh_lookup = lambda host: []
+            net._force_doh.clear()
+            with self.assertRaises(net.HttpError) as cm:
+                net.request("GET", f"http://api.example.org:{port}/x", retries=0)
+            self.assertEqual(cm.exception.status, 0)
+            self.assertIn("127.0.0.2", str(cm.exception))
+        finally:
+            net._orig_getaddrinfo, net._doh_lookup, net._bogus = orig_gai, orig_lookup, orig_bogus
+            net._force_doh.clear()
+            srv.shutdown()
+
 
 class TestSecrets(Base):
     def test_subdl_key_never_stored(self):
