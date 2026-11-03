@@ -102,14 +102,62 @@ def _run_sources(m: Media, wanted: list[str] | None, names: list[str], errors: l
     return out
 
 
+_NAME_TAIL_RE = re.compile(r"(?:[ ._\-\[(]+(?:en|eng|english|tr|tur|turkish|ja|jpn|japanese|hi|sdh|cc|forced|"
+                           r"srt|ass|ssa|vtt|sub|subs|zip)[\])]?)+$", re.I)
+
+
+def release_key(name: str) -> str:
+    """Kaynaklar arası aynı altyazıyı tanımak için sürüm adı anahtarı: dil eki, uzantı, SDH işareti,
+    büyük/küçük harf ve ayraçlar yok sayılır ("show.s01e03.720p-grp.en.srt" = "Show S01E03 720p GRP")."""
+    n = (name or "").strip()
+    n = re.sub(r"\.(srt|ass|ssa|vtt|zip|sub)$", "", n, flags=re.I)
+    prev = None
+    while prev != n:
+        prev, n = n, _NAME_TAIL_RE.sub("", n)
+    return re.sub(r"[^a-z0-9]", "", n.lower())
+
+
+def _better(a: Sub, b: Sub) -> bool:
+    """a, b'den iyi mi: video karması > sürüm uyumu > OpenSubtitles (indirme sayısı güvenilir) > indirme."""
+    return (a.hash_match, a.score, a.source == "opensubtitles", a.downloads, a.rating) > \
+           (b.hash_match, b.score, b.source == "opensubtitles", b.downloads, b.rating)
+
+
 def _dedupe(subs: list[Sub]) -> list[Sub]:
+    """Aynı altyazı birden çok kaynakta (ya da aynı kaynakta iki kez) varsa tek satır kalır.
+    1) aynı dil + aynı sürüm adı (eklerden arındırılmış) + aynı SDH durumu
+    2) daha önce indirilmişse içerik parmak izi (metin + zamanlama) aynı olanlar
+    Kalan satır, birleşenlerin "senkron uyumlu" bilgisini taşır."""
     best: dict = {}
     for s in subs:
-        k = (s.lang, re.sub(r"[^a-z0-9]", "", (s.release or s.sid).lower()), s.hi)
+        k = (s.lang, release_key(s.release or s.sid) or s.uid(), s.hi)
         cur = best.get(k)
-        if cur is None or (s.downloads, s.source == "opensubtitles") > (cur.downloads, cur.source == "opensubtitles"):
+        if cur is None:
             best[k] = s
-    return list(best.values())
+            continue
+        keep, drop = (s, cur) if _better(s, cur) else (cur, s)
+        keep.hash_match = keep.hash_match or drop.hash_match
+        keep.sync = keep.sync or drop.sync
+        best[k] = keep
+    out = list(best.values())
+    prints = store.fingerprints()
+    by_fp: dict = {}
+    rest = []
+    for s in out:
+        fp = prints.get(s.uid())
+        if not fp:
+            rest.append(s)
+            continue
+        cur = by_fp.get(fp)
+        if cur is None or _better(s, cur):
+            if cur is not None:
+                s.hash_match = s.hash_match or cur.hash_match
+                s.sync = s.sync or cur.sync
+            by_fp[fp] = s
+        else:
+            cur.hash_match = cur.hash_match or s.hash_match
+            cur.sync = cur.sync or s.sync
+    return rest + list(by_fp.values())
 
 
 def search(m: Media, use_cache: bool = True) -> Results:

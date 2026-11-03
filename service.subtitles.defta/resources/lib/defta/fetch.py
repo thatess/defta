@@ -29,6 +29,7 @@ def get(sub: Sub, m: Media) -> str:
     path = store.download_path(sub, ext)
     with open(path, "wb") as f:
         f.write(data)
+    store.remember_fingerprint(sub, path)       # içeriği başka kaynaktakiyle aynıysa listede tek görünsün
     kodi.log(f"İndirildi: {LABEL.get(sub.source, sub.source)} {sub.release or sub.sid} -> {os.path.basename(path)}")
     return path
 
@@ -66,18 +67,6 @@ def for_kodi(path: str, label: str, lang: str) -> str:
     dst = os.path.join(kodi.temp_dir(), f"{safe}.{int(time.time() * 1000) % 10 ** 8}.{lang}{ext}")
     shutil.copyfile(path, dst)
     return dst
-
-
-def clean_temp(max_age: float = 24 * 3600) -> None:
-    d = kodi.temp_dir()
-    now = time.time()
-    for name in os.listdir(d):
-        p = os.path.join(d, name)
-        try:
-            if now - os.path.getmtime(p) > max_age:
-                os.remove(p)
-        except OSError:
-            pass
 
 
 def playback_started() -> float:

@@ -90,13 +90,13 @@ class Service:
         self.worker: threading.Thread | None = None
         self.translator = None
         self.current_job = ""
+        self.need_clean = False
         self.prefetched: set = set()          # bu oturumda sıradaki bölümü için karar verilmiş videolar
         self.prefetcher: threading.Thread | None = None
 
     # ------------------------------------------------------------------ ana döngü
     def run(self) -> None:
         kodi.log(f"Servis başladı (Defta {kodi.version()}, Python {'.'.join(map(str, sys.version_info[:3]))})")
-        fetch.clean_temp()
         try:
             n = store.scrub_secrets_once()
             if n:
@@ -107,7 +107,7 @@ class Service:
             copied = kodi.export_kodi_logs()          # önceki oturum çöktüyse kodi.old.log sebebini gösterir
             if copied:
                 kodi.log("Kodi kayıtları kayıt klasörüne kopyalandı: " + ", ".join(copied), "debug")
-        store.prune_jobs()
+        self._clean("açılış")
         for j in store.list_jobs("running"):          # Kodi kapanınca yarıda kalan işler: kaldığı yerden sürer
             j["status"] = "pending"
             j["load"] = False
@@ -131,6 +131,9 @@ class Service:
                         self.worker.start()
                     else:
                         seen = stamp
+                if (self.worker is None or not self.worker.is_alive()) and \
+                        (self.need_clean or time.time() - store.last_clean() >= store.CLEAN_EVERY):
+                    self._clean("çeviri bitti" if self.need_clean else "6 saatlik")
             if tick % 2 == 0:
                 self._check_prefetch()
             if self.monitor.waitForAbort(1):
@@ -142,6 +145,17 @@ class Service:
             self.worker.join(8)
         kodi.log("Servis durdu")
         kodi.flush_log()
+
+    # ------------------------------------------------------------------ temizlik
+    def _clean(self, why: str) -> None:
+        self.need_clean = False
+        try:
+            n = store.auto_clean()
+        except Exception as e:  # noqa: BLE001
+            kodi.log(f"temizlik yapılamadı: {type(e).__name__}: {e}", "warning")
+            return
+        if any(n.values()):
+            kodi.log("Temizlik (" + why + "): " + ", ".join(f"{k} {v}" for k, v in n.items() if v), "debug")
 
     # ------------------------------------------------------------------ iş
     def _save(self, job: dict) -> None:
@@ -184,6 +198,8 @@ class Service:
             kodi.log(f"Oynatıcıya yüklendi ({stage}): {os.path.basename(path)}", "debug")
             if stage == "fast":
                 kodi.notify("Hızlı çeviri yüklendi")
+            elif stage == "unchecked":
+                kodi.notify("Çeviri yüklendi (kontrolsüz)")
             else:
                 kodi.notify("Kaliteli çeviri yüklendi")
 
@@ -216,6 +232,7 @@ class Service:
         finally:
             self.translator = None
             self.current_job = ""
+            self.need_clean = True
             job["finished"] = time.time()
             self._save(job)
             if state["fast_file"] and job.get("status") != "cancelled":
@@ -367,7 +384,7 @@ class Service:
         except SourceError as e:
             kodi.log(f"otomatik çeviri için indirme başarısız: {e}", "warning")
             return
-        store.new_job(m, best, src, fresh=False, load=True)
+        store.new_job(m, best, src, fresh=False, load=True, start_at=self.player.progress()[0])
         store.set_loaded(m, "ai", best)
         store.remember_choice(m, best)
         kodi.notify(f"{langs.tr_name(tgt)} altyazı yok · çeviri başladı")

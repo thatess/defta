@@ -19,10 +19,8 @@ class Media:
     season: int = 0
     episode: int = 0
     imdb: str = ""             # tt1234567 (dizide dizinin ya da bölümün)
-    tmdb: str = ""
     filename: str = ""         # sürüm adını taşıyan dosya adı
     path: str = ""             # oynatılan dosya/URL
-    episode_title: str = ""
     is_anime: bool = False
     duration: float = 0.0      # saniye (oynatıcıdan)
     hash: str = ""             # OpenSubtitles video karması (dosyanın baş/son 64 KB'ı + boyut)
@@ -60,7 +58,7 @@ class Media:
         """Sıradaki bölümün bilgisi (sürüm adındaki bölüm numarası da kaydırılır, sürüm uyumu için)."""
         n = Media.from_dict(self.to_dict())
         n.season, n.episode = (self.season + 1, 1) if next_season else (self.season, self.episode + 1)
-        n.imdb, n.path, n.hash, n.size, n.duration, n.episode_title = "", "", "", 0, 0.0, ""
+        n.imdb, n.path, n.hash, n.size, n.duration = "", "", "", 0, 0.0
         if self.filename:
             import re as _re
             n.filename = _re.sub(r"([sS])\d{1,2}([ ._-]?[eE])\d{1,4}",
@@ -184,14 +182,12 @@ def from_player() -> Media:
     show = il("VideoPlayer.TVShowTitle")
     title = il("VideoPlayer.OriginalTitle") or il("VideoPlayer.Title")
     m.imdb = _imdb(il("VideoPlayer.UniqueID(imdb)") or il("VideoPlayer.IMDBNumber"))
-    m.tmdb = il("VideoPlayer.UniqueID(tmdb)")
     m.year = _int(il("VideoPlayer.Year"))
     m.season = _int(il("VideoPlayer.Season"))
     m.episode = _int(il("VideoPlayer.Episode"))
     parsed = parse_filename(m.filename)
     if show:
         m.title = show
-        m.episode_title = title
     elif title and not title.lower().endswith(VIDEO_EXT) and title != m.filename and m.episode <= 0:
         m.title = title
     else:

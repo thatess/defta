@@ -759,6 +759,168 @@ class TestLoadedAndJimaku(Base):
                 xbmcaddon.SETTINGS.pop(k, None)
 
 
+class TestV310(Base):
+    def _long_srt(self, path, minutes=30):
+        lines = []
+        for i in range(minutes * 6):                     # her 10 sn bir satır
+            t = i * 10
+            lines.append(f"{i + 1}\n00:{t // 60:02d}:{t % 60:02d},000 --> 00:{t // 60:02d}:{t % 60:02d},900\n"
+                         f"Line number {i} here.\n")
+        Path(path).write_text("\n".join(lines), encoding="utf-8")
+
+    def test_fast_covers_five_minutes_from_position(self):
+        from defta import store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        from defta.translate import Translator
+        m = Media(title="Uzun Film", year=2001)
+        sub = Sub("opensubtitles", "901", "en", release="Uzun.Film.2001")
+        src = store.download_path(sub, ".srt")
+        self._long_srt(src)
+        ups = []
+        job = store.new_job(m, sub, src, fresh=True, load=True, start_at=20 * 60)   # 20. dakikada seçildi
+        Translator(job, lambda p, st, pct: ups.append((st, p))).run()
+        self.assertEqual([u[0] for u in ups], ["fast", "final"])
+        fast = Path(ups[0][1]).read_text(encoding="utf-8")
+        self.assertIn("Line number 2", fast)                                  # 5 dakikanın dışı: orijinal
+        self.assertNotIn("TR[Line number 2 here.]", fast)
+        self.assertIn("TR[Line number 125 here.]", fast)                      # 20:50 → çevrildi
+        final = Path(ups[1][1]).read_text(encoding="utf-8")
+        self.assertIn("TR[Line number 2 here.]", final)
+        store.clean("ai")
+
+    def test_unchecked_when_review_step_fails(self):
+        from defta import store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        from defta.translate import Translator
+        from subtrans.engine import Engine
+        m = Media(title="Kontrol", season=1, episode=1)
+        sub = Sub("opensubtitles", "902", "en", release="Kontrol.S01E01")
+        src = store.download_path(sub, ".srt")
+        shutil.copy(SAMPLE, src)
+        orig = Engine.finish_phase
+
+        async def broken(self_, job):
+            raise RuntimeError("review service down")
+        Engine.finish_phase = broken
+        try:
+            ups = []
+            t = Translator(store.new_job(m, sub, src, fresh=True, load=False), lambda p, st, pct: ups.append(st))
+            out = t.run()
+        finally:
+            Engine.finish_phase = orig
+        self.assertTrue(t.unchecked)
+        self.assertEqual(ups[-1], "unchecked")
+        self.assertIn("TR[", Path(out).read_text(encoding="utf-8"))
+        self.assertEqual(store.tr_meta(m)[0]["stage"], "unchecked")
+        store.clean("ai")
+
+    def test_dedupe_across_sources(self):
+        from defta import search, store
+        from defta.sources.base import Sub
+        self.assertEqual(search.release_key("attack.on.titan.s01e03.720p.bluray.x264-debtvid.en"),
+                         search.release_key("Attack.on.Titan.S01E03.720p.BluRay.x264-DEBTVID"))
+        a = Sub("opensubtitles", "1", "en", release="Show.S01E03.720p-GRP.en.srt", downloads=10)
+        b = Sub("subdl", "/s/2", "en", release="Show S01E03 720p GRP", hash_match=False, sync=True)
+        c = Sub("subsource", "3", "en", release="Totally.Different.Name")
+        d = Sub("subdl", "/s/4", "en", release="Another.Name.Again")
+        for x in (c, d):                                      # içerikleri birebir aynı
+            pth = store.download_path(x, ".srt")
+            self._long_srt(pth, minutes=1)
+            store.remember_fingerprint(x, pth)
+        out = search._dedupe([a, b, c, d])
+        self.assertEqual(len(out), 2)
+        kept = next(x for x in out if search.release_key(x.release) == search.release_key(a.release))
+        self.assertEqual(kept.source, "opensubtitles")
+        self.assertTrue(kept.sync, "birleşen satırın senkron bilgisi korunur")
+        e = Sub("subdl", "/s/5", "en", release="Shifted")
+        pth = store.download_path(e, ".srt")
+        Path(pth).write_text(Path(store.download_path(c, ".srt")).read_text().replace("00:00:1", "00:00:2"))
+        store.remember_fingerprint(e, pth)
+        self.assertEqual(len(search._dedupe([c, d, e])), 2, "zamanlaması farklıysa ayrı altyazıdır")
+
+    def test_auto_clean(self):
+        import sqlite3
+        import time as _t
+        from defta import kodi, store
+        old = _t.time() - 7 * 3600
+        tmp_old = Path(kodi.temp_dir()) / "eski.tr.srt"
+        tmp_new = Path(kodi.temp_dir()) / "yeni.tr.srt"
+        for f in (tmp_old, tmp_new):
+            f.write_text("x")
+        os.utime(tmp_old, (old, old))
+        dl_old = Path(kodi.profile_dir("downloads")) / "opensubtitles-old.srt"
+        dl_old.write_text("x")
+        very_old = _t.time() - 31 * 24 * 3600
+        os.utime(dl_old, (very_old, very_old))
+        db = Path(kodi.profile_dir()) / "cache.sqlite"
+        con = sqlite3.connect(db)
+        con.execute("CREATE TABLE IF NOT EXISTS calls (key TEXT PRIMARY KEY, data TEXT, created REAL)")
+        con.execute("INSERT OR REPLACE INTO calls VALUES ('eski', '{}', ?)", (very_old,))
+        con.execute("INSERT OR REPLACE INTO calls VALUES ('yeni', '{}', ?)", (_t.time(),))
+        con.commit()
+        con.close()
+        j = store.new_job(__import__("defta.media", fromlist=["Media"]).Media(title="x"),
+                          __import__("defta.sources.base", fromlist=["Sub"]).Sub("opensubtitles", "1", "en"), "x", False, False)
+        j["status"], j["finished"] = "cancelled", old
+        store.save_job(j)
+        n = store.auto_clean()
+        self.assertFalse(tmp_old.exists())
+        self.assertTrue(tmp_new.exists())
+        self.assertFalse(dl_old.exists())
+        self.assertFalse(any(x["id"] == j["id"] for x in store.list_jobs()))
+        con = sqlite3.connect(db)
+        keys = {r[0] for r in con.execute("SELECT key FROM calls")}
+        con.close()
+        self.assertIn("yeni", keys)
+        self.assertNotIn("eski", keys)
+        self.assertGreaterEqual(n["cache"], 1)
+        self.assertGreater(store.last_clean(), 0)
+        tmp_new.unlink()
+
+    def test_manual_cache_clean(self):
+        import sqlite3
+        from defta import kodi, store
+        db = Path(kodi.profile_dir()) / "cache.sqlite"
+        con = sqlite3.connect(db)
+        for t in ("calls", "stages"):
+            con.execute(f"CREATE TABLE IF NOT EXISTS {t} (key TEXT PRIMARY KEY, data TEXT, created REAL)")
+            con.execute(f"INSERT OR REPLACE INTO {t} VALUES ('k', '{{}}', 0)")
+        con.commit()
+        con.close()
+        self.assertRegex(store.clean("apicache"), r"[1-9]\d* kayıt silindi")
+        con = sqlite3.connect(db)
+        self.assertEqual(con.execute("SELECT COUNT(*) FROM calls").fetchone()[0], 0)
+        con.close()
+        self.assertIn("silindi", store.clean("all"))
+
+    def test_active_sync_flag_is_honest(self):
+        from defta import plugin, store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        m = Media(title="Senkron", year=2010, filename="Senkron.2010.mkv")
+        h = Sub("opensubtitles", "61", "tr", release="Senkron.2010.WEB", sync=False)
+        store.set_loaded(m, "human", h)
+        from defta.sources import opensubtitles, subdl
+        orig = (opensubtitles.search, subdl.search)
+        opensubtitles.search = lambda mm, w: [h]
+        subdl.search = lambda mm, w: []
+        try:
+            xbmc.INFO.clear()
+            xbmc.INFO["Player.Filenameandpath"] = "Senkron.2010.mkv"
+            xbmcplugin.ITEMS.clear()
+            sys.argv = ["plugin://x/", "1", "?action=search"]
+            plugin.main()
+            first = xbmcplugin.ITEMS[0][1]
+            self.assertTrue(first.label2.startswith(plugin.MARK))
+            self.assertEqual(first.props["sync"], "false", "etkin satır her zaman SYNC almaz")
+        finally:
+            opensubtitles.search, subdl.search = orig
+            xbmc.INFO.clear()
+            store.clean("syncmarks")
+
+
 class TestTools(Base):
     def test_export_and_smb_log(self):
         import xbmcgui

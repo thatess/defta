@@ -97,6 +97,9 @@ Kodi'nin *İlk altyazıyı otomatik indir* ayarı açıksa Kodi ilk satırı ken
 - **Bir site açılmıyor:** İnternet sağlayıcısı sitenin adını engelliyorsa Defta, Cloudflare/Google güvenli
   DNS'i ile adresi kendisi bulur.
 - **Kodi kapanırsa:** süren çeviri, Kodi açılınca kaldığı yerden devam eder (biten parçalar tekrar ödenmez).
+- **Kendiliğinden temizlik** (Kodi açılınca, her çeviri bitince ve 6 saatte bir): geçici dosyalar, hızlı çeviriler,
+  iptal edilen işlerin artıkları 6 saat sonra; indirilen yabancı altyazılar ve yarım çevirilerin parçaları 30 gün
+  sonra silinir. Hazır AI çevirileri ve seri sözlükleri silinmez.
 
 ## Geliştirme
 

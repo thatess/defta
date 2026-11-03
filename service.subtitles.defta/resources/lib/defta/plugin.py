@@ -70,6 +70,12 @@ MARK = "[B]•[/B]"     # etkin altyazının işareti (beyaz: seçili mavi satı
 READY_MAX = 3
 
 
+def _synced(sub: Sub, bad: set) -> bool:
+    """SYNC işareti yalnızca hak ediliyorsa: video karması eşleşmiş ya da sürüm adı uyuyor, kaymış değil.
+    AI çevirisi zamanlamayı değiştirmez; kaynağının durumunu taşır."""
+    return bool(sub.sync or sub.hash_match) and sub.uid() not in bad
+
+
 def _ai(src: Sub) -> str:
     """'AI (EN)': hangi dilden çevrildiği."""
     return f"[B]AI[/B] ({(langs.norm(src.lang) or src.lang or '?').upper()})"
@@ -101,6 +107,12 @@ def do_search(handle: int, params: dict) -> None:
     cur_kind = (loaded or {}).get("kind", "")
     cur_uid = cur.uid() if cur else ""
     run_cur = next((j for j in running if Sub.from_dict(j["sub"]).uid() == cur_uid), None) if cur else None
+    prints = store.fingerprints()
+    cur_fp = prints.get(cur_uid, "") if cur else ""
+
+    def same_as_active(uid: str) -> bool:
+        """Etkin altyazının kendisi ya da içeriği aynı başka kaynaktaki kopyası."""
+        return bool(cur) and (uid == cur_uid or (bool(cur_fp) and prints.get(uid) == cur_fp))
     ready_cur = next((e for e in ready if e.get("uid") == cur_uid), None) if cur else None
 
     # 1. Etkin altyazı (Defta'nın bu videoya en son yüklediği): en üstte, yalnızca işaretle; aşağıda tekrarlanmaz.
@@ -109,16 +121,16 @@ def do_search(handle: int, params: dict) -> None:
     if cur is not None and cur_kind == "human":
         _add(handle, langs.kodi_name(tgt), f"{MARK} {_short(cur.release or cur.sid, 60)}  ·  "
              f"{LABEL.get(cur.source, cur.source)}", tgt,
-             _url(action="download", kind="human", sub=json.dumps(cur.to_dict()), media=md), sync=True, rating="5")
+             _url(action="download", kind="human", sub=json.dumps(cur.to_dict()), media=md), sync=_synced(cur, bad), rating="5")
         active = True
     elif run_cur is not None:
         _add(handle, langs.kodi_name(tgt), f"{MARK} {_ai(cur)} çevriliyor  ·  {_short(cur.release or cur.sid, 50)}",
-             tgt, _url(action="download", kind="running", job=run_cur["id"]), sync=True, rating="5")
+             tgt, _url(action="download", kind="running", job=run_cur["id"]), sync=_synced(cur, bad), rating="5")
         active = True
     elif ready_cur is not None:
         _add(handle, langs.kodi_name(tgt), f"{MARK} {_ai(cur)}  ·  {_short(cur.release or cur.sid, 55)}", tgt,
              _url(action="download", kind="ai", path=ready_cur["path"], sub=json.dumps(cur.to_dict()), media=md),
-             sync=True, rating="5")
+             sync=_synced(cur, bad), rating="5")
         active = True
     if not active:
         free_first = bool(res.human or ready)
@@ -132,7 +144,7 @@ def do_search(handle: int, params: dict) -> None:
              _url(action="download", kind="badsync", media=md))
     # 3. İnsan çevirileri
     for s in res.human:
-        if active and cur_kind == "human" and s.uid() == cur_uid:
+        if active and cur_kind == "human" and same_as_active(s.uid()):
             continue
         _add(handle, langs.kodi_name(tgt), f"{_short(s.release or s.sid)}  ·  {LABEL[s.source]}{_note(s)}", tgt,
              _url(action="download", kind="human", sub=json.dumps(s.to_dict()), media=md),
@@ -143,14 +155,19 @@ def do_search(handle: int, params: dict) -> None:
         if run_cur is not None and j["id"] == run_cur["id"]:
             continue
         _add(handle, langs.kodi_name(tgt), f"{_ai(sub)} çevriliyor  ·  {_short(sub.release or sub.sid, 50)}",
-             tgt, _url(action="download", kind="running", job=j["id"]), sync=True, rating="5")
-    shown = 0
+             tgt, _url(action="download", kind="running", job=j["id"]), sync=_synced(sub, bad), rating="5")
+    shown, seen_fp = 0, set()
     for e in ready:
-        if active and e.get("uid") == cur_uid:
+        if active and same_as_active(e.get("uid", "")):
             continue
+        fp = prints.get(e.get("uid", ""))
+        if fp and fp in seen_fp:
+            continue                            # aynı kaynaktan (başka siteden) yapılmış ikinci çeviri
         if shown >= READY_MAX:
             break
         shown += 1
+        if fp:
+            seen_fp.add(fp)
         src = Sub.from_dict(e["src"])
         mark = "  ·  [I]kaymış[/I]" if e.get("uid") in bad else ""
         _add(handle, langs.kodi_name(tgt), f"{_ai(src)}  ·  {_short(src.release or src.sid, 55)}{mark}", tgt,
@@ -158,7 +175,7 @@ def do_search(handle: int, params: dict) -> None:
              sync=src.sync and not mark, rating="5" if not mark else "1")
     # 5. Çevrilecek yabancı altyazılar
     for s in res.foreign:
-        if active and cur_kind != "human" and s.uid() == cur_uid:
+        if active and cur_kind != "human" and same_as_active(s.uid()):
             continue                            # etkin çevirinin kaynağı: yeniden çevirmek için "Baştan çevir"
         _add(handle, langs.kodi_name(s.lang), f"→ Çevir  ·  {_short(s.release or s.sid, 50)}  ·  "
              f"{LABEL[s.source]}" + ("  ·  SDH" if s.hi else "") + _note(s), s.lang,
@@ -187,6 +204,15 @@ def _give(handle: int, path: str) -> None:
     xbmcplugin.addDirectoryItem(handle=handle, url=path, listitem=li, isFolder=False)
 
 
+def _position() -> float:
+    """Videonun şu anki yeri (sn); oynatılmıyorsa 0."""
+    try:
+        p = xbmc.Player()
+        return float(p.getTime() or 0) if p.isPlayingVideo() else 0.0
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 def _start_job(m: Media, sub: Sub, src: str, fresh: bool) -> bool:
     if not kodi.secret("openai_key"):
         kodi.notify("OpenAI anahtarı yok (Ayarlar > Genel)", error=True)
@@ -196,7 +222,7 @@ def _start_job(m: Media, sub: Sub, src: str, fresh: bool) -> bool:
         kodi.log(f"Bu video için önceki {n} çeviri işi iptal edildi (yeni seçim)")
     job = store.running_job_for(m, sub)
     if job is None:
-        job = store.new_job(m, sub, src, fresh=fresh, load=True)
+        job = store.new_job(m, sub, src, fresh=fresh, load=True, start_at=_position())
     elif not job.get("load"):
         job["load"] = True                                       # önceden başlamış (sıradaki bölüm) iş: bitince yüklensin
         store.save_job(job)

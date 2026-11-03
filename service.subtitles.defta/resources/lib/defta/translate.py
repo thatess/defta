@@ -1,9 +1,11 @@
 """Bir altyazıyı masaüstü motoruyla (subtrans) çevirir.
 
 'Hızlı önce, kaliteli sonra' modunda iki çeviri aynı anda başlar:
-  - hızlı: bölüm analizi ve anlam kontrolü yok, mevcut seri sözlüğüyle; bitince bir kez yüklenir (geçici dosya)
+  - hızlı: yalnızca izlenen yerden itibaren 5 dakika; bölüm analizi ve anlam kontrolü yok, mevcut seri
+    sözlüğüyle; bitince bir kez yüklenir (geçici dosya, kalanı orijinal dilde)
   - kaliteli: bölüm analizi + seri sözlüğü güncellemesi -> çeviri -> anlam kontrolü -> kalıcı dosya, yüklenir
-Sözlük yalnızca analizden beslenir; kaydedilen tek dosya kaliteli olandır.
+Sözlük yalnızca analizden beslenir; kaydedilen tek dosya kaliteli olandır. Anlam kontrolü olmazsa
+kontrolsüz tam çeviri kaydedilip yüklenir.
 Hızlı çeviri atlanır: iş yüklenmeyecekse (sıradaki bölüm), mod başkaysa ya da bölüm analizi kayıtlıysa
 (yeniden çeviri, yarıda kalan iş): o zaman kaliteli çeviri de hızlı çeviri kadar sürer, ikisini yüklemek gereksiz.
 API yanıtları cache.sqlite'ta tutulur: yarıda kalan iş yeniden başlarsa biten parçalar tekrar ödenmez."""
@@ -19,6 +21,7 @@ from pathlib import Path
 from . import kodi, langs, net
 
 FAST_FIRST, QUALITY_ONLY, FAST_ONLY = 0, 1, 2
+FAST_WINDOW = 300          # hızlı çeviri: izlenen yerden itibaren bu kadar saniye (kalanı kaliteli çeviriyle gelir)
 
 
 def _prices() -> dict:
@@ -64,9 +67,8 @@ class Translator:
         self.job = job
         self.on_update = on_update
         self.should_stop = should_stop
-        self.done_chunks = 0
-        self.total_chunks = 1
         self.cost = None
+        self.unchecked = False      # anlam kontrolü olmadı, kontrolsüz tam çeviri yüklendi
         self._loop = None
         self._task = None
 
@@ -162,7 +164,6 @@ class Translator:
         rel = f"{m.label()} [{sub.uid()}]{src_path.suffix}"
         fj = make_job(engine, rel, None)
         fj.memory = store.memory(sapp.memory_series(fj))
-        self.total_chunks = max(1, len(fj.chunks))
 
         # Hızlı çeviri gerekli mi? Analiz kayıtlıysa (yarıda kalmış iş sürüyor) kaliteli çeviri zaten hızlı gelir.
         analysed = fj.glossary is not None and store.get_stage(
@@ -178,6 +179,13 @@ class Translator:
             fast_engine.main_price = price
             fast_engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
             fast_job = make_job(fast_engine, "fast-" + rel, None)
+            # Yalnızca izlenen yerden itibaren 5 dakika çevrilir: kaliteli çeviri o süre dolmadan gelir
+            start_ms = int(float(job.get("start_at") or 0) * 1000)
+            win = (start_ms - 5000, start_ms + FAST_WINDOW * 1000)
+            times = {b.pos: (b.start_ms, b.end_ms) for b in fast_job.srt.blocks}
+            near = [c for c in fast_job.chunks
+                    if any(times.get(p, (0, 0))[1] >= win[0] and times.get(p, (0, 0))[0] <= win[1] for p in c.targets)]
+            fast_job.chunks = near or fast_job.chunks[:1]
         kodi.log(f"Çeviri başladı: {m.label()} <- {sub.source}:{sub.release or sub.sid} ({src_lang}->{target}), "
                  f"{len(fj.srt.blocks)} blok, {len(fj.chunks)} parça, mod={mode}, hızlı={'evet' if use_fast else 'hayır'}")
         t0 = time.monotonic()
@@ -189,22 +197,21 @@ class Translator:
                 if fast_job.status != "çevrildi":
                     kodi.log("hızlı çeviri başarısız: " + "; ".join(fast_job.errors), "warning")
                     return
+                for pos in fast_job.translate_pos:         # pencere dışı: orijinal metin kalır
+                    fast_job.results.setdefault(pos, fast_job.prepared[pos].send_text)
                 await fast_engine.finish_phase(fast_job)
                 if fast_job.status != "tamam" or state["final"] or self.should_stop():
                     return
                 path = os.path.join(kodi.temp_dir(), f"defta-{self.job['id']}-fast.{target}.srt")
                 write_atomic(Path(path), fast_engine.final_blocks(fast_job), "srt", fast_job.srt.doc)
-                kodi.log(f"Hızlı çeviri hazır: {time.monotonic() - t0:.0f} sn")
+                kodi.log(f"Hızlı çeviri hazır: {time.monotonic() - t0:.0f} sn, {len(fast_job.chunks)} parça "
+                         f"({start_ms // 60000}. dakikadan itibaren)")
                 self.on_update(path, "fast", 100)
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001  (hızlı çeviri olmazsa kaliteli olan yine gelir)
                 kodi.log(f"hızlı çeviri hatası: {type(e).__name__}: {e}", "warning")
 
-        def on_chunk(job_, res):
-            self.done_chunks += 1
-
-        engine.on_chunk = on_chunk
         try:
             if use_fast:
                 fast_task = asyncio.ensure_future(run_fast())
@@ -214,9 +221,22 @@ class Translator:
             await engine.translate_phase(fj)
             if fj.status != "çevrildi":
                 raise RuntimeError("; ".join(fj.errors) or "çeviri başarısız")
-            await engine.finish_phase(fj)
+            try:
+                await engine.finish_phase(fj)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                fj.status = "başarısız"
+                fj.errors.append(f"{type(e).__name__}: {e}")
             if fj.status != "tamam":
-                raise RuntimeError("; ".join(fj.errors) or "anlam kontrolü başarısız")
+                # Çeviri tamam, yalnızca anlam kontrolü/son adım olmadı: kontrolsüz tam çeviri kullanılır
+                if fj.translate_pos and all(p in fj.results for p in fj.translate_pos):
+                    kodi.log("anlam kontrolü olmadı (" + "; ".join(fj.errors)[:200] + "); kontrolsüz çeviri "
+                             "kullanılıyor", "warning")
+                    engine._assemble(fj)
+                    self.unchecked = True
+                else:
+                    raise RuntimeError("; ".join(fj.errors) or "anlam kontrolü başarısız")
             errs = verify_structure(fj.srt.blocks, fj.out_blocks, allow_empty=fj.dropped)
             if errs:
                 raise RuntimeError("yapı kontrolü: " + "; ".join(errs[:3]))
@@ -252,6 +272,6 @@ class Translator:
                  f"{'$%.4f' % self.cost if self.cost is not None else '?'}"
                  + (" (hızlı çeviri dahil)" if fast_job is not None else "")
                  + f", {time.monotonic() - t0:.0f} sn, anlam kontrolü {fj.review_fixes} düzeltme")
-        dstore.tr_record(m, sub, str(out_path), "final", self.cost)
-        self.on_update(str(out_path), "final", 100)
+        dstore.tr_record(m, sub, str(out_path), "unchecked" if self.unchecked else "final", self.cost)
+        self.on_update(str(out_path), "unchecked" if self.unchecked else "final", 100)
         return str(out_path)

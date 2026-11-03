@@ -83,18 +83,3 @@ def parse_list(text: str) -> list[str]:
         if c and c not in out:
             out.append(c)
     return out
-
-
-def _back(word: str) -> bool:
-    vowels = [ch for ch in word.lower() if ch in "aıouüöei"]
-    return bool(vowels) and vowels[-1] in "aıou"
-
-
-def ablative(name: str) -> str:
-    """'İngilizce' -> 'İngilizceden', 'Japonca' -> 'Japoncadan' (dil adları kesme işareti almaz)."""
-    return name + ("dan" if _back(name) else "den")
-
-
-def dative(name: str) -> str:
-    """'Türkçe' -> 'Türkçeye', 'Japonca' -> 'Japoncaya'."""
-    return name + ("ya" if _back(name) else "ye")

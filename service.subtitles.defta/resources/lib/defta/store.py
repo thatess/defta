@@ -22,6 +22,9 @@ from .media import Media
 from .sources.base import Sub
 
 SEARCH_TTL = 6 * 3600
+TEMP_AGE = 6 * 3600            # geçici dosyalar, hızlı çeviriler, biten/iptal işlerin kaydı
+KEEP_AGE = 30 * 24 * 3600      # indirilen yabancı altyazılar, yarım çevirilerin parçaları (API önbelleği)
+CLEAN_EVERY = 6 * 3600
 
 
 def _read(path: str, default=None):
@@ -76,11 +79,53 @@ def download_path(sub: Sub, ext: str) -> str:
     return os.path.join(kodi.profile_dir("downloads"), sub.uid() + ext)
 
 
+def content_fingerprint(path: str) -> str:
+    """Altyazının metni + zamanlaması (boşluk, satır sonu, BOM, biçim etiketleri yok sayılır).
+    Aynı metin ama farklı zamanlama = farklı altyazı (senkronu farklıdır)."""
+    import hashlib
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except OSError:
+        return ""
+    text = raw.decode("utf-8-sig", "ignore").replace("\r", "")
+    text = re.sub(r"<[^>]+>|\{[^}]*\}", "", text)
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip() and not ln.strip().isdigit()]
+    if len(lines) < 5:
+        return ""
+    return hashlib.sha1("\n".join(lines).encode("utf-8")).hexdigest()[:16]
+
+
+def remember_fingerprint(sub: Sub, path: str) -> None:
+    fp = content_fingerprint(path)
+    if not fp:
+        return
+    d = _read(os.path.join(kodi.profile_dir(), "fingerprints.json"), {}) or {}
+    if d.get(sub.uid()) == fp:
+        return
+    d[sub.uid()] = fp
+    if len(d) > 3000:
+        for k in list(d)[:1000]:
+            d.pop(k, None)
+    try:
+        _write(os.path.join(kodi.profile_dir(), "fingerprints.json"), d)
+    except OSError:
+        pass
+
+
+def fingerprints() -> dict:
+    return _read(os.path.join(kodi.profile_dir(), "fingerprints.json"), {}) or {}
+
+
 def find_download(sub: Sub) -> str:
     d = kodi.profile_dir("downloads")
     for ext in (".srt", ".ass", ".ssa", ".vtt"):
         p = os.path.join(d, sub.uid() + ext)
         if os.path.exists(p):
+            try:
+                os.utime(p, None)          # kullanıldı: 30 günlük süre baştan başlar
+            except OSError:
+                pass
             return p
     return ""
 
@@ -198,10 +243,11 @@ def series_pref(m: Media) -> dict | None:
 
 # ------------------------------------------------------------------ işler
 
-def new_job(m: Media, sub: Sub, src_file: str, fresh: bool, load: bool) -> dict:
+def new_job(m: Media, sub: Sub, src_file: str, fresh: bool, load: bool, start_at: float = 0.0) -> dict:
+    """start_at: seçildiği an videonun neresindeydi (sn); hızlı çeviri oradan başlar."""
     job = {"id": time.strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:6], "media": m.to_dict(),
            "sub": sub.to_dict(), "src_file": src_file, "fresh": fresh, "load": load, "status": "pending",
-           "created": time.time(), "target": kodi.target_lang()}
+           "created": time.time(), "target": kodi.target_lang(), "start_at": start_at}
     save_job(job)
     return job
 
@@ -232,7 +278,7 @@ def queue_stamp() -> float:
         return 0.0
 
 
-def prune_jobs(max_age: float = 3 * 24 * 3600) -> int:
+def prune_jobs(max_age: float = TEMP_AGE) -> int:
     """Biten/başarısız eski işlerin dosyalarını siler (hazır çeviriler silinmez)."""
     n = 0
     now = time.time()
@@ -302,6 +348,83 @@ def running_job_for(m: Media, sub: Sub) -> dict | None:
 
 # ------------------------------------------------------------------ temizlik
 
+def _remove_older(folder: str, max_age: float) -> int:
+    n = 0
+    now = time.time()
+    for name in os.listdir(folder):
+        path = os.path.join(folder, name)
+        try:
+            if os.path.isfile(path) and now - os.path.getmtime(path) > max_age:
+                os.remove(path)
+                n += 1
+        except OSError:
+            pass
+    return n
+
+
+def auto_clean() -> dict:
+    """Kendiliğinden temizlik (Kodi açılınca, her çeviri bitince ve 6 saatte bir):
+    6 saat: geçici dosyalar (hızlı çeviriler, Kodi'ye verilen kopyalar, iptal edilenlerin artıkları),
+            biten/başarısız/iptal işlerin kayıtları, eski arama sonuçları
+    30 gün: indirilen yabancı altyazılar (kullanıldıkça süre yenilenir), yarım çevirilerin parçaları
+    Kalıcı: hazır AI çevirileri, seri sözlükleri, çeviri hafızası."""
+    import sqlite3
+    out = {"temp": _remove_older(kodi.temp_dir(), TEMP_AGE),
+           "search": _remove_older(kodi.profile_dir("search"), SEARCH_TTL),
+           "downloads": _remove_older(kodi.profile_dir("downloads"), KEEP_AGE),
+           "jobs": prune_jobs(TEMP_AGE), "cache": 0, "fingerprints": _backfill_fingerprints()}
+    db = os.path.join(kodi.profile_dir(), "cache.sqlite")
+    if os.path.exists(db):
+        try:
+            con = sqlite3.connect(db, timeout=10)
+            try:
+                cut = time.time() - KEEP_AGE
+                for table in ("calls", "stages"):
+                    try:
+                        out["cache"] += con.execute(f"DELETE FROM {table} WHERE created < ?", (cut,)).rowcount
+                    except sqlite3.Error:
+                        pass
+                con.commit()
+            finally:
+                con.close()
+        except sqlite3.Error:
+            pass
+    try:
+        with open(os.path.join(kodi.profile_dir(), "cleaned"), "w", encoding="utf-8") as f:
+            f.write(str(time.time()))
+    except OSError:
+        pass
+    return out
+
+
+def _backfill_fingerprints() -> int:
+    """Önceki sürümlerde indirilmiş dosyaların içerik parmak izi (aynı altyazıyı tek göstermek için)."""
+    d = fingerprints()
+    folder = kodi.profile_dir("downloads")
+    added = 0
+    for name in os.listdir(folder):
+        uid, ext = os.path.splitext(name)
+        if ext.lower() not in (".srt", ".ass", ".ssa", ".vtt") or uid.endswith(".fps") or uid in d:
+            continue
+        fp = content_fingerprint(os.path.join(folder, name))
+        if fp:
+            d[uid] = fp
+            added += 1
+    if added:
+        try:
+            _write(os.path.join(kodi.profile_dir(), "fingerprints.json"), d)
+        except OSError:
+            pass
+    return added
+
+
+def last_clean() -> float:
+    try:
+        return os.path.getmtime(os.path.join(kodi.profile_dir(), "cleaned"))
+    except OSError:
+        return 0.0
+
+
 def _rm_dir(name: str) -> int:
     d = kodi.profile_dir(name)
     n = 0
@@ -349,17 +472,24 @@ def clean(what: str, series: str = "") -> str:
     if what in ("memory", "apicache"):
         if not os.path.exists(db):
             return "silinecek bir şey yok"
-        con = sqlite3.connect(db)
+        try:
+            con = sqlite3.connect(db, timeout=15)       # çeviri sürüyorsa bitmesini bekler
+        except sqlite3.Error as e:
+            return f"önbellek açılamadı: {e}"
         try:
             tables = ["memory", "written"] if what == "memory" else ["calls", "stages"]
             n = 0
             for t in tables:
                 try:
                     n += con.execute(f"DELETE FROM {t}").rowcount
-                except sqlite3.Error:
-                    pass
+                except sqlite3.OperationalError as e:
+                    if "no such table" not in str(e):
+                        return f"önbellek şu an kullanımda, biraz sonra yeniden deneyin ({e})"
             con.commit()
-            con.execute("VACUUM")
+            try:
+                con.execute("VACUUM")                     # dosya gerçekten küçülsün
+            except sqlite3.Error:
+                pass
         finally:
             con.close()
         return f"{n} kayıt silindi"
