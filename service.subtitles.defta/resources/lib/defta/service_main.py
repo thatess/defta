@@ -17,7 +17,7 @@ from .media import Media, from_player
 from .sources.base import SourceError
 
 
-PREFETCH_AT = 0.95          # bölümün bu kadarı izlenince sıradaki bölüm denetlenir
+PREFETCH_AT = 0.90          # bölümün bu kadarı izlenince sıradaki bölüm denetlenir (Red Light vb. %95te sorar)
 
 
 class Player(xbmc.Player):

@@ -599,10 +599,10 @@ class TestJobsAndPrefetch(Base):
             xbmc.Player.time = 600.0
             svc._check_prefetch()
             self.assertEqual(started, [])
-            xbmc.Player.time = 1250.0                        # %89: henüz değil
+            xbmc.Player.time = 1225.0                        # %87: henüz değil
             svc._check_prefetch()
             self.assertEqual(started, [])
-            xbmc.Player.time = 1340.0                        # %96
+            xbmc.Player.time = 1270.0                        # %91
             svc._check_prefetch()
             svc.prefetcher.join(2)
             svc._check_prefetch()                            # aynı bölüm için bir kez

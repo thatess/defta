@@ -51,7 +51,7 @@ GUIDE = """[B]Defta kurulum rehberi[/B]
  Altyazı videodan uzunsa uyarılır; fark yalnızca kare hızındansa (25 / 23.976) zamanlama kendiliğinden düzeltilir.
 
 [B]4. Sıradaki bölüm[/B]  (Ayarlar > Otomatik)
- Bölümün %95'i izlenince sıradaki bölüm arkada çevrilir. 'Sor' seçiliyse 15 saniyelik bir soru çıkar;
+ Bölümün %90'ı izlenince sıradaki bölüm arkada çevrilir. 'Sor' seçiliyse 15 saniyelik bir soru çıkar;
  bir şeye basmazsanız çevrilir, 'İptal' ile vazgeçersiniz. Sıradaki bölümde Türkçe altyazı varsa sorulmaz.
 
 [B]5. Maliyet[/B]
