@@ -63,8 +63,24 @@ def build_repo() -> None:
         shutil.rmtree(DOCS)          # yalnızca güncel sürümler yayımlanır
     DOCS.mkdir()
     xmls = []
+    # Eski sürümler (releases/): Kodi'de eklenti sayfası > Sürümler'den geri dönülebilsin.
+    # 0.1.x eklenmez (Kodi'yi çökertiyordu, SubDL anahtarını kayda yazıyordu).
+    cur = version(ADDON)
+    for old in sorted((ROOT / "releases").glob(f"{ADDON.name}-*.zip")):
+        v = old.stem.rsplit("-", 1)[1]
+        if v == cur:
+            continue
+        (DOCS / ADDON.name).mkdir(parents=True, exist_ok=True)
+        shutil.copy(old, DOCS / ADDON.name / old.name)
+        with zipfile.ZipFile(old) as zf:
+            xml = zf.read(f"{ADDON.name}/addon.xml").decode("utf-8")
+        xmls.append(re.sub(r"<\?xml[^>]*\?>\s*", "", xml).strip())
+        print("   eski sürüm:", old.name)
     for addon_dir in (ADDON, REPO_ADDON):
         z = make_zip(addon_dir, DOCS / addon_dir.name)
+        if addon_dir == ADDON:
+            (ROOT / "releases").mkdir(exist_ok=True)
+            shutil.copy(z, ROOT / "releases" / z.name)        # bir sonraki sürümde "eski sürüm" olarak kalır
         for asset in ("icon.png", "fanart.jpg"):
             if (addon_dir / asset).exists():
                 shutil.copy(addon_dir / asset, DOCS / addon_dir.name / asset)
