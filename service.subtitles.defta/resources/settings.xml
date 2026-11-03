@@ -38,8 +38,9 @@
     <setting id="auto_human" type="bool" label="Hedef dilde insan çevirisi varsa kendiliğinden yükle" default="false"/>
     <setting id="auto_ai" type="bool" label="Hazır AI çevirisi varsa kendiliğinden yükle" default="false"/>
     <setting id="auto_translate" type="bool" label="Hedef dilde altyazı yoksa AI çevirisini kendiliğinden başlat" default="false"/>
-    <setting type="lsep" label="Dizide sıradaki bölüm (bölümün %90’ı izlenince)"/>
+    <setting type="lsep" label="Dizide sıradaki bölüm"/>
     <setting id="prefetch_next" type="enum" label="Sıradaki bölümü önceden çevir" values="Kapalı|Sor (15 sn)|Otomatik" default="0"/>
+    <setting id="prefetch_at" type="enum" label="Bölümün yüzde kaçı izlenince (Red Light gibi eklentilerden önce olmalı)" values="%80|%85|%90|%95" default="2" enable="!eq(-1,0)"/>
   </category>
   <category label="Altyazı">
     <setting id="sound_notes" type="enum" label="Ses notları  [kapı çarpar]" values="Kaldır|Koru|Çevir" default="0"/>

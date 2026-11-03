@@ -13,7 +13,8 @@ import xbmcgui
 
 from . import kodi
 
-BTN_YES, BTN_NO, BAR, TITLE, LINE2 = 3001, 3002, 3003, 3010, 3011
+BTN_YES, BTN_NO, BAR, TITLE, LINE2, ICON = 3001, 3002, 3003, 3010, 3011, 3020
+OPEN_PROP = "defta.box_open"       # kutu açıkken Defta bildirim göndermez (üst üste binmesin)
 ACTION_BACK = (9, 10, 92)          # üst klasör, önceki menü, geri
 ACTION_STOP = 13
 
@@ -37,6 +38,13 @@ class NextDialog(xbmcgui.WindowXMLDialog):
                 self.getControl(cid).setLabel(text)
             except Exception:  # noqa: BLE001
                 pass
+        try:
+            import os
+            icon = os.path.join(kodi.addon_dir(), "icon.png")
+            if os.path.exists(icon):
+                self.getControl(ICON).setImage(icon)
+        except Exception:  # noqa: BLE001
+            pass
         self._bar(100)
         try:
             self.setFocusId(BTN_YES)
@@ -103,9 +111,12 @@ def ask(title: str, line2: str, seconds: float = 15, should_close=lambda: False)
     except Exception as e:  # noqa: BLE001
         kodi.log(f"sağ üst kutu açılamadı ({type(e).__name__}: {e}); standart pencere kullanılıyor", "warning")
         return _fallback(title, line2, seconds)
+    home = xbmcgui.Window(10000)
+    home.setProperty(OPEN_PROP, str(time.time()))
     try:
         d.doModal()
     finally:
+        home.clearProperty(OPEN_PROP)
         d._done.set()
         if d._thread is not None:
             d._thread.join(2)

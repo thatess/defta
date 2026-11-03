@@ -1,95 +1,104 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Sıradaki bölüm sorusu: sağ üstte küçük kutu, video oynamaya devam eder.
-     Alttaki çubuk 15 saniyede boşalır; boşalınca çevrilir. Geri tuşu = İptal. -->
+     Kendi dokularıyla çizilir (temaya bağlı değil). Alttaki ince çubuk süre boyunca boşalır;
+     boşalınca çevrilir. Geri tuşu = İptal. -->
 <window>
   <defaultcontrol always="true">3001</defaultcontrol>
   <zorder>2</zorder>
   <coordinates>
-    <left>1320</left>
-    <top>40</top>
+    <left>1290</left>
+    <top>36</top>
   </coordinates>
   <animation type="WindowOpen" reversible="false">
-    <effect type="slide" start="80,0" end="0,0" time="250" tween="cubic" easing="out"/>
-    <effect type="fade" start="0" end="100" time="250"/>
+    <effect type="slide" start="60,0" end="0,0" time="260" tween="cubic" easing="out"/>
+    <effect type="fade" start="0" end="100" time="260"/>
   </animation>
   <animation type="WindowClose" reversible="false">
+    <effect type="slide" start="0,0" end="60,0" time="200" tween="cubic" easing="in"/>
     <effect type="fade" start="100" end="0" time="200"/>
   </animation>
   <controls>
+    <!-- gölge ve kutu -->
     <control type="image">
-      <left>0</left>
-      <top>0</top>
-      <width>560</width>
-      <height>168</height>
-      <texture colordiffuse="E6101418">defta-white.png</texture>
+      <left>-6</left>
+      <top>-4</top>
+      <width>612</width>
+      <height>166</height>
+      <texture border="20" colordiffuse="55000000">defta-panel.png</texture>
     </control>
     <control type="image">
       <left>0</left>
       <top>0</top>
-      <width>6</width>
-      <height>168</height>
-      <texture colordiffuse="FFF2B705">defta-white.png</texture>
+      <width>600</width>
+      <height>156</height>
+      <texture border="20" colordiffuse="EB161A20">defta-panel.png</texture>
+    </control>
+    <!-- Defta simgesi (Python yükler) -->
+    <control type="image" id="3020">
+      <left>22</left>
+      <top>22</top>
+      <width>58</width>
+      <height>58</height>
+      <aspectratio>keep</aspectratio>
     </control>
     <control type="label" id="3010">
-      <left>26</left>
-      <top>14</top>
-      <width>514</width>
-      <height>36</height>
+      <left>100</left>
+      <top>18</top>
+      <width>476</width>
+      <height>34</height>
       <font>font13</font>
       <textcolor>FFFFFFFF</textcolor>
-      <scroll>false</scroll>
       <label></label>
     </control>
     <control type="label" id="3011">
-      <left>26</left>
+      <left>100</left>
       <top>50</top>
-      <width>514</width>
-      <height>30</height>
+      <width>476</width>
+      <height>28</height>
       <font>font12</font>
-      <textcolor>FFB0B8C0</textcolor>
-      <scroll>false</scroll>
+      <textcolor>B3FFFFFF</textcolor>
       <label></label>
     </control>
     <control type="button" id="3001">
-      <left>26</left>
-      <top>92</top>
-      <width>246</width>
-      <height>52</height>
+      <left>100</left>
+      <top>88</top>
+      <width>230</width>
+      <height>44</height>
       <label>Çevir</label>
-      <font>font13</font>
+      <font>font12</font>
       <align>center</align>
       <aligny>center</aligny>
-      <textcolor>FFB0B8C0</textcolor>
-      <focusedcolor>FF101418</focusedcolor>
-      <texturefocus colordiffuse="FFF2B705">defta-white.png</texturefocus>
-      <texturenofocus colordiffuse="33FFFFFF">defta-white.png</texturenofocus>
+      <textcolor>CCFFFFFF</textcolor>
+      <focusedcolor>FFFFFFFF</focusedcolor>
+      <texturefocus border="22" colordiffuse="FF17B2E7">defta-pill.png</texturefocus>
+      <texturenofocus border="22" colordiffuse="59FFFFFF">defta-pill-line.png</texturenofocus>
       <onright>3002</onright>
       <onleft>3002</onleft>
     </control>
     <control type="button" id="3002">
-      <left>288</left>
-      <top>92</top>
-      <width>246</width>
-      <height>52</height>
+      <left>346</left>
+      <top>88</top>
+      <width>230</width>
+      <height>44</height>
       <label>İptal</label>
-      <font>font13</font>
+      <font>font12</font>
       <align>center</align>
       <aligny>center</aligny>
-      <textcolor>FFB0B8C0</textcolor>
-      <focusedcolor>FF101418</focusedcolor>
-      <texturefocus colordiffuse="FFF2B705">defta-white.png</texturefocus>
-      <texturenofocus colordiffuse="33FFFFFF">defta-white.png</texturenofocus>
+      <textcolor>CCFFFFFF</textcolor>
+      <focusedcolor>FFFFFFFF</focusedcolor>
+      <texturefocus border="22" colordiffuse="FF17B2E7">defta-pill.png</texturefocus>
+      <texturenofocus border="22" colordiffuse="59FFFFFF">defta-pill-line.png</texturenofocus>
       <onleft>3001</onleft>
       <onright>3001</onright>
     </control>
     <control type="progress" id="3003">
-      <left>6</left>
-      <top>160</top>
-      <width>554</width>
-      <height>8</height>
-      <texturebg colordiffuse="22FFFFFF">defta-white.png</texturebg>
+      <left>100</left>
+      <top>142</top>
+      <width>476</width>
+      <height>5</height>
+      <texturebg border="3" colordiffuse="26FFFFFF">defta-bar.png</texturebg>
       <lefttexture></lefttexture>
-      <midtexture colordiffuse="FFF2B705">defta-white.png</midtexture>
+      <midtexture border="3" colordiffuse="FF17B2E7">defta-bar.png</midtexture>
       <righttexture></righttexture>
     </control>
   </controls>

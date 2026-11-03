@@ -69,7 +69,10 @@ DIALOGS = {"script": None, "opened": []}   # script(dialog): testin kutuya ne ya
 
 class _Control:
     def __init__(self):
-        self.label, self.percent = "", None
+        self.label, self.percent, self.image = "", None, ""
+
+    def setImage(self, path):
+        self.image = path
 
     def setLabel(self, text):
         self.label = text

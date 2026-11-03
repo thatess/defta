@@ -10,7 +10,7 @@ Kodi için altyazı eklentisi. OpenSubtitles, SubDL, SubSource ve Jimaku'da alty
   Yüklenen altyazı kaymışsa listedeki **Şu anki altyazı kaymış** satırı onu işaretler ve sıradakine geçer.
 - Dizide bir önceki bölümde seçtiğin çevirmenin/sürümün devamı **önceki bölümde kullandığın** yazısıyla öne alınır.
 - Başka bir satır seçersen süren çeviri durur (son seçilen kazanır); aynı satırı yeniden seçersen kaldığı yerden sürer.
-- İsteğe bağlı: bölümün %90'ı izlenince sıradaki bölümü arkada çevirir (Ayarlar → Otomatik: Kapalı / Sor / Otomatik).
+- İsteğe bağlı: bölümün %90'ı (ayarlanabilir: %80–95) izlenince sıradaki bölümü arkada çevirir (Ayarlar → Otomatik: Kapalı / Sor / Otomatik).
 - Yapılan çeviriler saklanır: aynı bölüm ikinci kez açıldığında **Defta AI** satırından ücretsiz yüklenir.
 - Jimaku açıksa her videoda sorulur: animenin Japonca altyazısı doğru sezondan listeye gelir.
 - Seri sözlüğü: isimler her bölümde aynı yazılır. Hitap ekleri (-san, senpai) korunur, şarkılar çevrilir.
@@ -63,16 +63,17 @@ Anahtarlar hiçbir zaman kayda yazılmaz; ekranda yalnızca uzunlukları görün
 
 Video oynarken altyazı simgesi → **İndir** → Defta. Liste yukarıdan aşağı şöyledir:
 
-0. **Şu anki altyazı kaymış** (yalnızca Defta bu videoya altyazı yüklediyse): işaretler, sıradakini yükler/çevirir.
-   Kodi'nin *İlk altyazıyı otomatik indir* ayarı açıksa bu satır en altta durur.
-1. Hedef dildeki insan çevirileri (en fazla 10; senkron uyumlu, sonra önceki bölümün devamı, sonra sürümü uyan)
-2. **Defta AI**: daha önce yaptığın çeviriler (ücretsiz) ve *Baştan yeniden çevir*
-3. **→ AI çeviri**: çevrilecek yabancı altyazılar. Seçince çeviri başlar.
-4. **Yüklenen altyazıyı çevir**: bu video başladıktan sonra başka bir eklentiyle (a4k vb.) altyazı seçtiysen
+1. **• Etkin altyazı**: Defta'nın bu videoya en son yüklediği (insan çevirisi ya da AI çevirisi). Aşağıda tekrar çıkmaz.
+2. **Kaymış · sıradakine geç**: yüklenen altyazı senkron değilse; işaretler, sıradakini yükler ya da çevirir.
+3. Hedef dildeki insan çevirileri (en fazla 10; senkron uyumlu, sonra önceki bölümün devamı, sonra sürümü uyan)
+4. **AI (EN)**: daha önce yaptığın çeviriler (ücretsiz, en çok 3; parantezde hangi dilden çevrildiği)
+5. **→ Çevir**: çevrilecek yabancı altyazılar. Seçince çeviri başlar.
+6. **Baştan çevir (ücretli)**: yalnızca etkin AI çevirisi için. Başka bir çeviriyi baştan çevirmek için önce onu seç.
+7. **Yükleneni çevir**: bu video başladıktan sonra başka bir eklentiyle (a4k vb.) altyazı seçtiysen
    dosya adıyla görünür ve onu çevirir; yoksa bu satır çıkmaz.
 
-Kodi'nin *İlk altyazıyı otomatik indir* ayarı açıksa, ücretli çeviri satırı (otomatik çeviri kapalıyken)
-hiçbir zaman ilk sırada olmaz.
+Kodi'nin *İlk altyazıyı otomatik indir* ayarı açıksa Kodi ilk satırı kendisi yükler: etkin altyazı varsa o
+(ücretsiz), yoksa en iyi insan çevirisi; ikisi de yoksa zararsız bir bilgi satırı. Ücretli çeviri kendiliğinden başlamaz.
 
 ## Ayarlar
 
@@ -81,7 +82,7 @@ hiçbir zaman ilk sırada olmaz.
 - **Kaynaklar:** her kaynak için aç/kapat ve anahtar, listede kaç altyazı çıkacağı (3/5/10/tümü), SDH'yi alta indir
 - **Otomatik** (hepsi varsayılan kapalı): insan çevirisini, hazır AI çevirisini kendiliğinden yükle;
   hedef dilde altyazı yoksa çeviriyi kendiliğinden başlat; sıradaki bölümü önceden çevir (*Kapalı / Sor / Otomatik*).
-  *Sor*: bölümün %90'ı izlenince sağ üstte küçük bir kutu çıkar, video durmaz. İmleç *Çevir*de durur, alttaki
+  *Sor*: bölümün ayardaki kadarı (varsayılan %90) izlenince sağ üstte küçük bir kutu çıkar, video durmaz. İmleç *Çevir*de durur, alttaki
   çubuk 15 saniyede boşalınca çevrilir; *İptal* ya da Geri tuşuyla vazgeçersin.
   Sıradaki bölümde Türkçe altyazı ya da hazır çeviri varsa sorulmaz.
 - **Altyazı:** ses notları, konuşan etiketleri, tireler, şarkı sözleri, italik/biçim etiketleri (varsayılan *Kaldır*)

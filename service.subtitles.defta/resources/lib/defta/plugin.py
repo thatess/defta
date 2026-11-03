@@ -1,16 +1,18 @@
 """Kodi'nin altyazı penceresi: arama listesi ve seçilen satırın indirilmesi.
 
 Liste sırası (yukarıdan aşağı):
-  0. 'şu anki altyazı kaymış' (Defta bu videoya altyazı yüklediyse; Kodi ilk satırı kendiliğinden
-     indiriyorsa en altta)
-  1. hedef dilde insan çevirileri (en fazla 10)
-  2. hazır AI çevirileri + 'baştan yeniden çevir'  (+ süren çeviri)
-  3. çevrilecek yabancı altyazılar (her kaynaktan ayardaki sayı kadar)
-  4. 'yüklenen altyazıyı çevir' (yalnızca bu video başladıktan sonra başka eklentiyle altyazı yüklendiyse)
+  1. ▸ etkin altyazı: Defta'nın bu videoya en son yüklediği (insan çevirisi, hazır ya da süren AI çevirisi);
+     aşağıda tekrarlanmaz. Kodi ilk satırı kendiliğinden indirirse bunu indirir (zararsız, ücretsiz).
+  2. 'Kaymış · sıradakine geç' (etkin altyazı varsa; hep ikinci, Kodi kendiliğinden seçmez)
+  3. hedef dilde insan çevirileri (en fazla 10)
+  4. hazır AI çevirileri (etkin olan hariç, en çok 3) ve süren çeviriler
+  5. çevrilecek yabancı altyazılar (her kaynaktan ayardaki sayı kadar)
+  6. 'Baştan çevir (ücretli)' — yalnızca etkin AI çevirisi için
+  7. 'Yükleneni çevir' — yalnızca bu video başladıktan sonra başka eklentiyle altyazı yüklendiyse
 Her grupta: video karması eşleşen ('senkron uyumlu') en üstte, sonra önceki bölümde seçilenin devamı,
 sonra sürüm uyumu; 'kaymış' işaretlenenler en altta.
-Ücretli çeviri satırı, 'otomatik çeviri' kapalıyken hiçbir zaman ilk sırada olmaz: Kodi'nin
-'ilk altyazıyı otomatik indir' ayarı açıksa en üste zararsız bir bilgi satırı konur."""
+Etkin altyazı yokken ücretli çeviri satırı, 'otomatik çeviri' kapalıyken hiçbir zaman ilk sırada olmaz:
+Kodi'nin 'ilk altyazıyı otomatik indir' ayarı açıksa en üste zararsız bir bilgi satırı konur."""
 from __future__ import annotations
 
 import json
@@ -64,6 +66,15 @@ def _note(s: Sub) -> str:
     return f"  ·  [I]{s.note}[/I]" if s.note else ""
 
 
+MARK = "[B]•[/B]"     # etkin altyazının işareti (beyaz: seçili mavi satırda da görünsün; ▸ Kodi yazı tipinde yok)
+READY_MAX = 3
+
+
+def _ai(src: Sub) -> str:
+    """'AI (EN)': hangi dilden çevrildiği."""
+    return f"[B]AI[/B] ({(langs.norm(src.lang) or src.lang or '?').upper()})"
+
+
 def do_search(handle: int, params: dict) -> None:
     m = from_player()
     manual = (params.get("searchstring") or "").strip()
@@ -84,51 +95,84 @@ def do_search(handle: int, params: dict) -> None:
     running = [j for j in store.list_jobs() if j.get("status") in ("pending", "running")
                and Media.from_dict(j["media"]).key() == m.key()]
     md = json.dumps(m.to_dict(), ensure_ascii=False)
-    downloadfirst = _kodi_downloadfirst()
-    loaded = store.get_loaded(m)
-    free_first = bool(res.human or ready)
-    if not free_first and res.foreign and not kodi.setting_bool("auto_translate") and downloadfirst:
-        _add(handle, langs.kodi_name(tgt), f"Defta: {langs.tr_name(tgt)} altyazı yok — çevirmek için "
-             "aşağıdan bir altyazı seçin", tgt, _url(action="download", kind="info"))
-
-    def bad_row():
-        what = "sıradakini yükle" if loaded["kind"] == "human" else "sıradakini yükle ya da çevir"
-        _add(handle, langs.kodi_name(tgt), f"[B]Şu anki altyazı kaymış[/B]: işaretle, {what}", tgt,
-             _url(action="download", kind="badsync", media=md))
-
-    # Kodi ilk satırı kendiliğinden indiriyorsa "kaymış" satırı en üste konmaz (yanlışlıkla işaretlenmesin)
-    if loaded and not downloadfirst:
-        bad_row()
     tname = langs.tr_name(tgt)
+    loaded = store.get_loaded(m)
+    cur = Sub.from_dict(loaded["sub"]) if loaded else None
+    cur_kind = (loaded or {}).get("kind", "")
+    cur_uid = cur.uid() if cur else ""
+    run_cur = next((j for j in running if Sub.from_dict(j["sub"]).uid() == cur_uid), None) if cur else None
+    ready_cur = next((e for e in ready if e.get("uid") == cur_uid), None) if cur else None
+
+    # 1. Etkin altyazı (Defta'nın bu videoya en son yüklediği): en üstte, yalnızca işaretle; aşağıda tekrarlanmaz.
+    #    Kodi ilk satırı kendiliğinden indirirse bu satırı indirir: zararsız ve ücretsiz.
+    active = False
+    if cur is not None and cur_kind == "human":
+        _add(handle, langs.kodi_name(tgt), f"{MARK} {_short(cur.release or cur.sid, 60)}  ·  "
+             f"{LABEL.get(cur.source, cur.source)}", tgt,
+             _url(action="download", kind="human", sub=json.dumps(cur.to_dict()), media=md), sync=True, rating="5")
+        active = True
+    elif run_cur is not None:
+        _add(handle, langs.kodi_name(tgt), f"{MARK} {_ai(cur)} çevriliyor  ·  {_short(cur.release or cur.sid, 50)}",
+             tgt, _url(action="download", kind="running", job=run_cur["id"]), sync=True, rating="5")
+        active = True
+    elif ready_cur is not None:
+        _add(handle, langs.kodi_name(tgt), f"{MARK} {_ai(cur)}  ·  {_short(cur.release or cur.sid, 55)}", tgt,
+             _url(action="download", kind="ai", path=ready_cur["path"], sub=json.dumps(cur.to_dict()), media=md),
+             sync=True, rating="5")
+        active = True
+    if not active:
+        free_first = bool(res.human or ready)
+        if not free_first and res.foreign and not kodi.setting_bool("auto_translate") and _kodi_downloadfirst():
+            # Kodi ilk satırı kendiliğinden indirecek: ücretli çeviri ilk sırada olmasın
+            _add(handle, langs.kodi_name(tgt), f"{tname} altyazı yok · çevirmek için aşağıdan seç", tgt,
+                 _url(action="download", kind="info"))
+    else:
+        # 2. Kaymış: her zaman ikinci (Kodi'nin kendiliğinden seçtiği ilk satır asla bu değildir)
+        _add(handle, langs.kodi_name(tgt), "Kaymış  ·  sıradakine geç", tgt,
+             _url(action="download", kind="badsync", media=md))
+    # 3. İnsan çevirileri
     for s in res.human:
+        if active and cur_kind == "human" and s.uid() == cur_uid:
+            continue
         _add(handle, langs.kodi_name(tgt), f"{_short(s.release or s.sid)}  ·  {LABEL[s.source]}{_note(s)}", tgt,
              _url(action="download", kind="human", sub=json.dumps(s.to_dict()), media=md),
              sync=s.sync, hi=s.hi, rating=_rating(s))
+    # 4. Hazır AI çevirileri (etkin olan hariç, en çok 3) ve süren başka çeviriler
     for j in running:
         sub = Sub.from_dict(j["sub"])
-        _add(handle, langs.kodi_name(tgt), f"[B]Defta AI çeviri sürüyor[/B]  ·  {_short(sub.release or sub.sid, 50)}",
+        if run_cur is not None and j["id"] == run_cur["id"]:
+            continue
+        _add(handle, langs.kodi_name(tgt), f"{_ai(sub)} çevriliyor  ·  {_short(sub.release or sub.sid, 50)}",
              tgt, _url(action="download", kind="running", job=j["id"]), sync=True, rating="5")
+    shown = 0
     for e in ready:
+        if active and e.get("uid") == cur_uid:
+            continue
+        if shown >= READY_MAX:
+            break
+        shown += 1
         src = Sub.from_dict(e["src"])
         mark = "  ·  [I]kaymış[/I]" if e.get("uid") in bad else ""
-        _add(handle, langs.kodi_name(tgt), f"[B]Defta AI[/B] ({langs.ablative(langs.tr_name(src.lang))})  ·  "
-             f"{_short(src.release or src.sid, 50)}{mark}", tgt,
+        _add(handle, langs.kodi_name(tgt), f"{_ai(src)}  ·  {_short(src.release or src.sid, 55)}{mark}", tgt,
              _url(action="download", kind="ai", path=e["path"], sub=json.dumps(src.to_dict()), media=md),
              sync=src.sync and not mark, rating="5" if not mark else "1")
-        _add(handle, langs.kodi_name(tgt), f"[I]Baştan yeniden çevir[/I]  ·  {_short(src.release or src.sid, 50)}", tgt,
-             _url(action="download", kind="retranslate", sub=json.dumps(src.to_dict()), media=md), rating="0")
+    # 5. Çevrilecek yabancı altyazılar
     for s in res.foreign:
-        _add(handle, langs.kodi_name(s.lang), f"→ {tname} AI çeviri  ·  {_short(s.release or s.sid, 50)}  ·  "
+        if active and cur_kind != "human" and s.uid() == cur_uid:
+            continue                            # etkin çevirinin kaynağı: yeniden çevirmek için "Baştan çevir"
+        _add(handle, langs.kodi_name(s.lang), f"→ Çevir  ·  {_short(s.release or s.sid, 50)}  ·  "
              f"{LABEL[s.source]}" + ("  ·  SDH" if s.hi else "") + _note(s), s.lang,
              _url(action="download", kind="translate", sub=json.dumps(s.to_dict()), media=md),
              sync=s.sync, hi=s.hi, rating=_rating(s))
+    # 6. Sondan ikinci: etkin AI çevirisini baştan çevir (yalnızca etkin olan için; başkası için önce onu seç)
+    if ready_cur is not None and run_cur is None and cur_kind != "human":
+        _add(handle, langs.kodi_name(tgt), f"Baştan çevir (ücretli)  ·  {_short(cur.release or cur.sid, 50)}", tgt,
+             _url(action="download", kind="retranslate", sub=json.dumps(cur.to_dict()), media=md), rating="0")
+    # 7. En altta: bu video başladıktan sonra başka eklentiyle yüklenen altyazı
     other = fetch.loaded_subtitle(fetch.playback_started(), tgt)
-    if other:                                  # yalnızca bu video başladıktan sonra başka eklentiyle yüklenen
-        _add(handle, langs.kodi_name(tgt), f"→ Yüklenen altyazıyı {langs.dative(tname)} çevir  ·  "
-             f"{_short(os.path.basename(other), 50)}", tgt,
+    if other:
+        _add(handle, langs.kodi_name(tgt), f"Yükleneni çevir  ·  {_short(os.path.basename(other), 55)}", tgt,
              _url(action="download", kind="loaded", path=other, media=md))
-    if loaded and downloadfirst:
-        bad_row()
     kodi.log(f"Liste: {len(res.human)} insan çevirisi, {len(ready)} hazır AI, {len(res.foreign)} çevrilecek"
              + (f", {n_hash} karma eşleşmesi" if (n_hash := sum(1 for s in res.human + res.foreign if s.hash_match)) else "")
              + (f"; hatalar: {' | '.join(res.errors)}" if res.errors else ""))
@@ -178,7 +222,13 @@ def _load_human(handle: int, m: Media, sub: Sub, tgt: str) -> None:
 
 
 def _translate(handle: int, m: Media, sub: Sub, fresh: bool) -> None:
-    src, state = fetch.get_checked(sub, m)
+    if sub.source == "local":                   # başka eklentinin yüklediği dosya: indirilmez, kendisi çevrilir
+        if not os.path.exists(sub.sid):
+            kodi.notify("Altyazı dosyası artık yok", error=True)
+            return
+        src, state = sub.sid, "unknown"
+    else:
+        src, state = fetch.get_checked(sub, m)
     if _start_job(m, sub, src, fresh=fresh):
         store.set_loaded(m, "ai", sub)
         store.remember_choice(m, sub)

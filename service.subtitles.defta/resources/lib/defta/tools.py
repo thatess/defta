@@ -38,22 +38,23 @@ GUIDE = """[B]Defta kurulum rehberi[/B]
 
 [B]3. Kullanım[/B]
  Video oynarken altyazı simgesi > İndir > Defta. Liste:
- • En üstte hedef dildeki insan çevirileri. 'senkron uyumlu' yazanlar tam bu video dosyası için yapılmıştır.
+ • En üstte '•' işaretli satır: şu an yüklü (etkin) altyazı. Hemen altında 'Kaymış · sıradakine geç':
+   altyazı senkron değilse seçin; işaretlenir, alta iner, sıradaki yüklenir ya da çevrilir.
+ • Hedef dildeki insan çevirileri. 'senkron uyumlu' yazanlar tam bu video dosyası için yapılmıştır.
    Dizide 'önceki bölümde kullandığın' yazan, bir önceki bölümde seçtiğiniz çevirmenin/sürümün devamıdır.
- • Defta AI: daha önce yaptığınız çeviriler (ücretsiz) ve 'baştan yeniden çevir'
- • → AI çeviri: seçince çeviri başlar. Önce orijinal altyazı görünür, birkaç saniyede hızlı çeviri,
+ • AI (EN): daha önce yaptığınız çeviriler (ücretsiz; parantezde hangi dilden çevrildiği).
+ • → Çevir: seçince çeviri başlar. Önce orijinal altyazı görünür, birkaç saniyede hızlı çeviri,
    anlam kontrolü bitince kontrol edilmiş hali yüklenir. Başka bir satır seçerseniz önceki çeviri durur;
    aynı satırı yeniden seçerseniz kaldığı yerden sürer (biten kısım tekrar ödenmez).
- • 'Şu anki altyazı kaymış': yüklenen altyazı senkron değilse seçin. İşaretlenir, listede alta iner
-   ve sıradaki altyazı yüklenir ya da çevrilir.
- • Yüklenen altyazıyı çevir: bu video başladıktan sonra başka eklentiyle (a4k vb.) altyazı seçtiyseniz
+ • Baştan çevir (ücretli): yalnızca etkin AI çevirisi için. Başkasını baştan çevirmek için önce onu seçin.
+ • Yükleneni çevir: bu video başladıktan sonra başka eklentiyle (a4k vb.) altyazı seçtiyseniz
    dosya adıyla görünür ve onu çevirir. Videonun içine gömülü altyazılar çevrilemez.
  • Jimaku açıksa her videoda sorulur; animenin Japonca altyazısı (doğru sezonun) listeye gelir.
    "Animede Japonca altyazıyı öne al" açıksa en üstte, kapalıysa İngilizcelerin altında.
  Altyazı videodan uzunsa uyarılır; fark yalnızca kare hızındansa (25 / 23.976) zamanlama kendiliğinden düzeltilir.
 
 [B]4. Sıradaki bölüm[/B]  (Ayarlar > Otomatik)
- Bölümün %90'ı izlenince sıradaki bölüm arkada çevrilir. 'Sor' seçiliyse sağ üstte küçük bir kutu çıkar,
+ Bölümün %90'ı (ayardan %80–95) izlenince sıradaki bölüm arkada çevrilir. 'Sor' seçiliyse sağ üstte küçük bir kutu çıkar,
  video durmaz; alttaki çubuk 15 saniyede boşalınca çevrilir. 'İptal' ya da Geri tuşuyla vazgeçersiniz.
  Kutuyu Yardım > 'Sıradaki bölüm kutusunu dene' ile görebilirsiniz. Sıradaki bölümde Türkçe altyazı varsa sorulmaz.
 

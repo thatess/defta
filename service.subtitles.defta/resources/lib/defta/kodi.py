@@ -234,6 +234,12 @@ def notify(msg: str, heading: str = "Defta", ms: int | None = None, error: bool 
     """Kısa bildirim: bilgi 3 sn, hata 6 sn."""
     ms = ms or (ERROR_MS if error else INFO_MS)
     try:
+        opened = float(xbmcgui.Window(10000).getProperty("defta.box_open") or 0)
+        if opened and time.time() - opened < 60 and not error:
+            return                       # sıradaki bölüm kutusu açık: bilgi bildirimi gösterilmez
+    except (ValueError, RuntimeError):
+        pass
+    try:
         icon = os.path.join(addon_dir(), "icon.png")
         xbmcgui.Dialog().notification(heading, msg, icon if os.path.exists(icon) else xbmcgui.NOTIFICATION_INFO,
                                       ms, False)

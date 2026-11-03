@@ -499,13 +499,17 @@ class TestSyncRanking(Base):
             {"action": "download", "kind": "human", "sub": json.dumps(h1.to_dict()), "media": json.dumps(m.to_dict())})]
         plugin.main()
         self.assertEqual(store.get_loaded(m)["sub"]["sid"], "21")
-        # liste: "kaymış" satırı en üstte (Kodi ilk satırı kendiliğinden indirmiyor)
+        # liste: etkin altyazı işaretle en üstte, "Kaymış" ikinci; etkin olan aşağıda tekrarlanmaz
         xbmc.INFO.clear()
         xbmc.INFO["Player.Filenameandpath"] = "Film.2020.1080p-A.mkv"
         xbmcplugin.ITEMS.clear()
         sys.argv = ["plugin://x/", "1", "?action=search"]
         plugin.main()
-        self.assertIn("kaymış", xbmcplugin.ITEMS[0][1].label2)
+        labels = [li.label2 for _, li in xbmcplugin.ITEMS]
+        self.assertTrue(labels[0].startswith(plugin.MARK) and "1080p-A" in labels[0])
+        self.assertTrue(labels[1].startswith("Kaymış"))
+        self.assertEqual(sum("1080p-A" in x for x in labels), 1)
+        self.assertFalse(any("Baştan çevir" in x for x in labels), "insan çevirisi baştan çevrilmez")
         xbmcplugin.ITEMS.clear()
         sys.argv = ["plugin://x/", "1", "?" + __import__("urllib.parse").parse.urlencode(
             {"action": "download", "kind": "badsync", "media": json.dumps(m.to_dict())})]
@@ -513,19 +517,55 @@ class TestSyncRanking(Base):
         self.assertEqual(len(xbmcplugin.ITEMS), 1)
         self.assertEqual(store.get_loaded(m)["sub"]["sid"], "22")
         self.assertIn("opensubtitles-21", store.bad_uids(m))
-        # Kodi ilk satırı indiriyorsa "kaymış" satırı en altta
+        # Kodi ilk satırı kendiliğinden indirse de ilk satır etkin altyazıdır, "Kaymış" yine ikinci
         xbmc.JSONRPC["subtitles.downloadfirst"] = True
         try:
             xbmcplugin.ITEMS.clear()
             sys.argv = ["plugin://x/", "1", "?action=search"]
             plugin.main()
-            self.assertNotIn("kaymış", xbmcplugin.ITEMS[0][1].label2)
-            self.assertIn("Şu anki altyazı kaymış", xbmcplugin.ITEMS[-1][1].label2)
+            labels = [li.label2 for _, li in xbmcplugin.ITEMS]
+            self.assertTrue(labels[0].startswith(plugin.MARK) and "720p-B" in labels[0])
+            self.assertTrue(labels[1].startswith("Kaymış"))
         finally:
             xbmc.JSONRPC.clear()
             xbmc.INFO.clear()
             store.clean("syncmarks")
 
+
+    def test_list_with_active_ai(self):
+        from defta import plugin, store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        m = Media(title="Liste", season=1, episode=3, filename="Liste.S01E03.mkv")
+        en = Sub("opensubtitles", "81", "en", release="Liste.S01E03.WEB")
+        subs = [Sub("subdl", f"/s/{i}", "en", release=f"Liste.S01E03.v{i}") for i in range(3)]
+        old = [Sub("jimaku", f"https://jimaku.cc/x{i}", "ja", release=f"Liste - 03 v{i}") for i in range(5)]
+        for s_ in [en] + old:
+            p = store.tr_path(m, s_, "tr")
+            Path(p).write_text("1\n00:00:01,000 --> 00:00:02,000\nMerhaba\n", encoding="utf-8")
+            store.tr_record(m, s_, p, "final")
+        store.set_loaded(m, "ai", en)
+        self._patch([en], subs)
+        xbmc.INFO.clear()
+        xbmc.INFO["Player.Filenameandpath"] = "Liste.S01E03.mkv"
+        try:
+            xbmcplugin.ITEMS.clear()
+            sys.argv = ["plugin://x/", "1", "?action=search"]
+            plugin.main()
+            labels = [li.label2 for _, li in xbmcplugin.ITEMS]
+            self.assertTrue(labels[0].startswith(plugin.MARK) and "AI[/B] (EN)" in labels[0])
+            self.assertTrue(labels[1].startswith("Kaymış"))
+            self.assertEqual(sum("(JA)" in x for x in labels), 3, "en çok 3 hazır çeviri")
+            self.assertEqual(sum("Baştan çevir" in x for x in labels), 1)
+            self.assertTrue(labels[-1].startswith("Baştan çevir (ücretli)"), "başka eklenti dosyası yokken en altta")
+            self.assertTrue(any(x.startswith("→ Çevir") for x in labels))
+            self.assertFalse(any("İngilizceden" in x or "Defta AI" in x for x in labels))
+            self.assertFalse(any(x.startswith("→ Çevir") and "Liste.S01E03.WEB" in x for x in labels),
+                             "etkin çevirinin kaynağı ayrıca 'Çevir' satırı olarak çıkmaz")
+        finally:
+            xbmc.INFO.clear()
+            store.clean("ai")
+            store.clean("syncmarks")
 
 class TestJobsAndPrefetch(Base):
     def test_latest_selection_wins(self):

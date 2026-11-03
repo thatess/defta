@@ -17,7 +17,11 @@ from .media import Media, from_player
 from .sources.base import SourceError
 
 
-PREFETCH_AT = 0.90          # bölümün bu kadarı izlenince sıradaki bölüm denetlenir (Red Light vb. %95te sorar)
+PREFETCH_STEPS = (0.80, 0.85, 0.90, 0.95)   # ayar: bölümün bu kadarı izlenince (varsayılan %90; Red Light %95'te sorar)
+
+
+def prefetch_at() -> float:
+    return PREFETCH_STEPS[min(3, max(0, kodi.setting_int("prefetch_at", 2)))]
 
 
 class Player(xbmc.Player):
@@ -232,7 +236,7 @@ class Service:
         if key in self.prefetched:
             return
         pos, total = self.player.progress()
-        if total < 300 or pos < PREFETCH_AT * total:
+        if total < 300 or pos < prefetch_at() * total:
             return
         self.prefetched.add(key)
         kodi.log(f"Sıradaki bölüm denetimi: {m.label()} %{int(100 * pos / total)} izlendi "
