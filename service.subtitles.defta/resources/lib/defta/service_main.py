@@ -17,6 +17,9 @@ from .media import Media, from_player
 from .sources.base import SourceError
 
 
+PREFETCH_AT = 0.95          # bölümün bu kadarı izlenince sıradaki bölüm denetlenir
+
+
 class Player(xbmc.Player):
     def __init__(self, service: "Service"):
         super().__init__()
@@ -120,7 +123,7 @@ class Service:
                         self.worker.start()
                     else:
                         seen = stamp
-            if tick % 5 == 0:
+            if tick % 2 == 0:
                 self._check_prefetch()
             if self.monitor.waitForAbort(1):
                 break
@@ -226,9 +229,11 @@ class Service:
         if key in self.prefetched:
             return
         pos, total = self.player.progress()
-        if total < 300 or not (pos >= 0.85 * total or total - pos <= 240):
+        if total < 300 or pos < PREFETCH_AT * total:
             return
         self.prefetched.add(key)
+        kodi.log(f"Sıradaki bölüm denetimi: {m.label()} %{int(100 * pos / total)} izlendi "
+                 f"({'sor' if mode == 1 else 'otomatik'})")
         self.prefetcher = threading.Thread(target=self._prefetch, args=(m, mode), daemon=True)
         self.prefetcher.start()
 
@@ -240,13 +245,16 @@ class Service:
 
     def _prefetch_inner(self, m: Media, mode: int) -> None:
         tgt = kodi.target_lang()
+        tname = langs.tr_name(tgt)
         if not kodi.secret("openai_key"):
+            kodi.notify("Sıradaki bölüm çevrilemedi: OpenAI API anahtarı girilmemiş.", "Defta", 5000)
             return
         nm, res = None, None
         for next_season in (False, True):
             cand = m.next_episode(next_season=next_season)
             if store.ready_translations(cand):
                 kodi.log(f"Sıradaki bölüm ({cand.label()}) için hazır çeviri var")
+                kodi.notify(f"Sıradaki bölümün ({cand.label()}) çevirisi zaten hazır.", "Defta", 5000)
                 return
             r = search.search(cand)
             if r.human or r.foreign:
@@ -254,18 +262,26 @@ class Service:
                 break
         if nm is None:
             kodi.log(f"Sıradaki bölüm için altyazı bulunamadı ({m.label()} sonrası)")
+            kodi.notify("Sıradaki bölüm için çevrilecek altyazı bulunamadı.", "Defta", 5000)
             return
         if res.human:
-            kodi.log(f"Sıradaki bölümde ({nm.label()}) {langs.tr_name(tgt)} altyazı var, çevrilmeyecek")
+            kodi.log(f"Sıradaki bölümde ({nm.label()}) {tname} altyazı var, çevrilmeyecek")
+            kodi.notify(f"Sıradaki bölümde ({nm.label()}) {tname} altyazı var, çeviri gerekmiyor.", "Defta", 5000)
             return
         best = search.best_foreign(res)
-        if best is None or any(Media.from_dict(j["media"]).key() == nm.key() for j in store.list_jobs()
-                               if j.get("status") in ("pending", "running")):
+        if best is None:
+            kodi.notify("Sıradaki bölüm için çevrilecek altyazı bulunamadı.", "Defta", 5000)
+            return
+        if any(Media.from_dict(j["media"]).key() == nm.key() for j in store.list_jobs()
+               if j.get("status") in ("pending", "running")):
+            kodi.notify(f"Sıradaki bölüm ({nm.label()}) zaten çevriliyor.", "Defta", 5000)
             return
         if mode == 1:
             t0 = time.monotonic()
-            msg = (f"Sıradaki bölüm ({nm.label()}) {langs.dative(langs.tr_name(tgt))} çevrilsin mi?\n"
-                   f"{best.release or best.sid}" + (f"  ({best.note})" if best.note else ""))
+            msg = (f"Sıradaki bölüm ({nm.label()}) {langs.dative(tname)} çevrilsin mi?\n"
+                   f"{best.release or best.sid}" + (f"  ({best.note})" if best.note else "")
+                   + "\n15 saniye içinde seçmezsen çevrilecek.")
+            kodi.log(f"Sıradaki bölüm soruluyor: {nm.label()}")
             kw = {"nolabel": "İptal", "yeslabel": "Çevir", "autoclose": 15000}
             if hasattr(xbmcgui, "DLG_YESNO_YES_BTN"):
                 kw["defaultbutton"] = xbmcgui.DLG_YESNO_YES_BTN       # imleç "Çevir"de dursun (Kodi 20+)
@@ -278,6 +294,7 @@ class Service:
             if not ok and time.monotonic() - t0 < 14.5:
                 kodi.log(f"Sıradaki bölüm çevirisi iptal edildi: {nm.label()}")
                 return
+            kodi.log(f"Sıradaki bölüm: {'Çevir seçildi' if ok else 'süre doldu, çevriliyor'}")
         try:
             src, state = fetch.get_checked(best, nm)
         except SourceError as e:

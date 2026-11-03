@@ -38,7 +38,7 @@
     <setting id="auto_human" type="bool" label="Hedef dilde insan çevirisi varsa kendiliğinden yükle" default="false"/>
     <setting id="auto_ai" type="bool" label="Hazır AI çevirisi varsa kendiliğinden yükle" default="false"/>
     <setting id="auto_translate" type="bool" label="Hedef dilde altyazı yoksa AI çevirisini kendiliğinden başlat" default="false"/>
-    <setting type="lsep" label="Dizide sıradaki bölüm (bölümün sonuna doğru)"/>
+    <setting type="lsep" label="Dizide sıradaki bölüm (bölümün %95’i izlenince)"/>
     <setting id="prefetch_next" type="enum" label="Sıradaki bölümü önceden çevir" values="Kapalı|Sor (15 sn)|Otomatik" default="0"/>
   </category>
   <category label="Altyazı">

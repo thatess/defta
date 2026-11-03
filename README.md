@@ -10,7 +10,7 @@ Kodi için altyazı eklentisi. OpenSubtitles, SubDL, SubSource ve Jimaku'da alty
   Yüklenen altyazı kaymışsa listedeki **Şu anki altyazı kaymış** satırı onu işaretler ve sıradakine geçer.
 - Dizide bir önceki bölümde seçtiğin çevirmenin/sürümün devamı **önceki bölümde kullandığın** yazısıyla öne alınır.
 - Başka bir satır seçersen süren çeviri durur (son seçilen kazanır); aynı satırı yeniden seçersen kaldığı yerden sürer.
-- İsteğe bağlı: bölümün sonuna doğru sıradaki bölümü arkada çevirir (Ayarlar → Otomatik: Kapalı / Sor / Otomatik).
+- İsteğe bağlı: bölümün %95'i izlenince sıradaki bölümü arkada çevirir (Ayarlar → Otomatik: Kapalı / Sor / Otomatik).
 - Yapılan çeviriler saklanır: aynı bölüm ikinci kez açıldığında **Defta AI** satırından ücretsiz yüklenir.
 - Seri sözlüğü: isimler her bölümde aynı yazılır. Hitap ekleri (-san, senpai) korunur, şarkılar çevrilir.
 - Kodi 21 (Omega), Windows ve Android/Nvidia Shield'da çalışır. Ek kütüphane gerekmez.
@@ -79,7 +79,7 @@ hiçbir zaman ilk sırada olmaz.
 - **Kaynaklar:** her kaynak için aç/kapat ve anahtar, listede kaç altyazı çıkacağı (3/5/10/tümü), SDH'yi alta indir
 - **Otomatik** (hepsi varsayılan kapalı): insan çevirisini, hazır AI çevirisini kendiliğinden yükle;
   hedef dilde altyazı yoksa çeviriyi kendiliğinden başlat; sıradaki bölümü önceden çevir (*Kapalı / Sor / Otomatik*).
-  *Sor*: bölümün son dakikalarında 15 saniyelik soru çıkar, imleç *Çevir*de durur; bir şeye basmazsan çevrilir.
+  *Sor*: bölümün %95'i izlenince 15 saniyelik soru çıkar, imleç *Çevir*de durur; bir şeye basmazsan çevrilir.
   Sıradaki bölümde Türkçe altyazı ya da hazır çeviri varsa sorulmaz.
 - **Altyazı:** ses notları, konuşan etiketleri, tireler, şarkı sözleri, italik/biçim etiketleri (varsayılan *Kaldır*)
 - **Temizlik:** AI çevirileri, arama sonuçları, indirilen altyazılar, seri sözlükleri, çeviri hafızası,
