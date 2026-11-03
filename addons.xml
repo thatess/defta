@@ -1,5 +1,50 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addons>
+<addon id="service.subtitles.defta" name="Defta" version="0.2.0" provider-name="Thates">
+  <requires>
+    <import addon="xbmc.python" version="3.0.1"/>
+    <import addon="script.module.certifi"/>
+  </requires>
+  <extension point="xbmc.subtitle.module" library="default.py"/>
+  <extension point="xbmc.service" library="service.py"/>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="tr_TR">Altyazı bul, yoksa yapay zekâyla Türkçeye çevir</summary>
+    <summary lang="en_GB">Find subtitles and translate them with AI</summary>
+    <description lang="tr_TR">OpenSubtitles, SubDL, SubSource ve Jimaku'da altyazı arar. Türkçe altyazı yoksa yabancı bir altyazıyı OpenAI ile doğal Türkçeye çevirir: seri sözlüğü, hitap ekleri, şarkılar, kurgusal diller. Çeviri parça parça yüklenir, kontrol edilmiş hali arkadan gelir.</description>
+    <description lang="en_GB">Searches OpenSubtitles, SubDL, SubSource and Jimaku. When no subtitle exists in your language, translates a foreign one with OpenAI.</description>
+    <platform>all</platform>
+    <license>MIT</license>
+    <source>https://github.com/thatess/defta</source>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+  </extension>
+</addon>
+<addon id="service.subtitles.defta" name="Defta" version="0.3.1" provider-name="Thates">
+  <requires>
+    <import addon="xbmc.python" version="3.0.1"/>
+    <import addon="script.module.certifi"/>
+  </requires>
+  <extension point="xbmc.subtitle.module" library="default.py"/>
+  <extension point="xbmc.service" library="service.py"/>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="tr_TR">Altyazı bul, yoksa yapay zekâyla Türkçeye çevir</summary>
+    <summary lang="en_GB">Find subtitles and translate them with AI</summary>
+    <description lang="tr_TR">OpenSubtitles, SubDL, SubSource ve Jimaku'da altyazı arar. Türkçe altyazı yoksa yabancı bir altyazıyı OpenAI ile doğal Türkçeye çevirir: seri sözlüğü, hitap ekleri, şarkılar, kurgusal diller. Hızlı çeviri birkaç saniyede yüklenir, kontrol edilmiş hali arkadan gelir. Video karmasıyla senkron uyumlu altyazıyı öne alır, kaymış altyazıyı işaretleyip sıradakine geçer, dizide sıradaki bölümü önceden çevirebilir.</description>
+    <description lang="en_GB">Searches OpenSubtitles, SubDL, SubSource and Jimaku. When no subtitle exists in your language, translates a foreign one with OpenAI.</description>
+    <platform>all</platform>
+    <news>0.3.1: senkron uyumlu altyazı (video karması) en üstte, süre/kare hızı kontrolü, 'kaymış' satırı,
+önceki bölümün çevirmeni öne, hızlı + kaliteli çeviri (en çok iki yükleme), son seçilen kazanır,
+yarım kalan çeviri kaldığı yerden sürer, sıradaki bölümü önceden çevir (Kapalı/Sor/Otomatik),
+italik etiketlerini kaldır, artık işaret temizliği, romaji şarkı sözleri çevrilir, çevirileri dışa aktar,
+kayıt kopyası ağ klasörüne (smb://) yazılabilir.</news>
+    <license>MIT</license>
+    <source>https://github.com/thatess/defta</source>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+  </extension>
+</addon>
 <addon id="service.subtitles.defta" name="Defta" version="0.3.2" provider-name="Thates">
   <requires>
     <import addon="xbmc.python" version="3.0.1"/>
