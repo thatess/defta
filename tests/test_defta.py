@@ -1462,6 +1462,30 @@ class TestV040(Base):
             xbmcaddon.SETTINGS.pop("auto_human", None)
         self.assertEqual(called, [m.key()], "önceden çeviri olmadıysa normal otomatik yol denenir")
 
+    def test_048_autoload_prefers_ready_ai(self):
+        """İnsan ve AI otomatik yükleme ikisi de açıksa hazır AI çevirisi önce gelir, arama yapılmaz."""
+        from defta import search, service_main
+        from defta.media import Media
+        svc = service_main.Service()
+        svc.player.is_playing = lambda mm: True
+        svc.monitor.waitForAbort = lambda t=0: False
+        svc._has_target_stream = lambda tgt: False
+        ready = {"uid": "opensubtitles-1", "path": "x.tr.srt", "src": {}}
+        svc._good_ready = lambda mm: ready
+        loaded, searched = [], []
+        svc._load_ready = lambda mm, e, tgt: loaded.append(e["uid"])
+        orig = search.search
+        search.search = lambda mm: searched.append(1)
+        xbmcaddon.SETTINGS.update(auto_human="true", auto_ai="true")
+        try:
+            svc._autoload(Media(title="Hazir", season=1, episode=1), "")
+        finally:
+            search.search = orig
+            xbmcaddon.SETTINGS.pop("auto_human", None)
+            xbmcaddon.SETTINGS.pop("auto_ai", None)
+        self.assertEqual(loaded, ["opensubtitles-1"])
+        self.assertEqual(searched, [], "hazır AI varken arama yapılmaz")
+
     def test_042_scan_both_review_estimate(self):
         import time as _t
         import xbmcgui

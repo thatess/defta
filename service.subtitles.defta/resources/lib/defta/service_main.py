@@ -440,8 +440,9 @@ class Service:
             kodi.log(f"Otomatik: videoda zaten {langs.tr_name(tgt)} altyazı var, bir şey yapılmadı")
             return
         if kodi.setting_bool("auto_ai"):
+            # Hazır AI çevirisi önce gelir (insan çevirisi de açık olsa bile): aramaya gerek kalmaz
             ready = self._good_ready(m)
-            if ready and not kodi.setting_bool("auto_human"):
+            if ready:
                 self._load_ready(m, ready, tgt)
                 return
         res = search.search(m)
@@ -461,7 +462,7 @@ class Service:
             except SourceError as e:
                 kodi.log(f"otomatik indirme başarısız: {e}", "warning")
         if kodi.setting_bool("auto_ai"):
-            ready = self._good_ready(m)
+            ready = self._good_ready(m)      # arama sürerken biten çeviri
             if ready:
                 self._load_ready(m, ready, tgt)
                 return

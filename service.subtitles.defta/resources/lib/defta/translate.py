@@ -189,31 +189,14 @@ class Translator:
         engine.main_price = price
         engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
         rel = f"{m.label()} [{sub.uid()}]{src_path.suffix}"
-        fj = make_job(engine, rel, None)
-        fj.memory = store.memory(sapp.memory_series(fj))
 
         # Hızlı çeviri: izlenen video için her zaman (yeniden çeviri, "Baştan çevir", yarıda kalmış iş dahil).
-        # Önceden "analiz kayıtlıysa kaliteli zaten hızlı gelir" diye atlanıyordu; parçalar kayıtlı değilse ya da
-        # baştan çevriliyorsa kaliteli çeviri yine ~1 dk sürüyor ve hiç altyazı gelmiyordu. Kayıtlı hızlı parçalar
-        # önbellekten anında ve ücretsiz gelir.
+        # Kayıtlı hızlı parçalar önbellekten anında ve ücretsiz gelir. Hızlı iş kaliteli işten ÖNCE hazırlanıp
+        # gönderilir: kaliteli işin hazırlığı (bütün altyazı) yanıt beklenirken yapılır (her cihazda;
+        # Shield gibi yavaş cihazda ~1-2 sn kazanç).
         use_fast = mode == FAST_FIRST and engine.review_on and bool(job.get("load"))
         fast_engine = fast_job = fast_task = None
-        if use_fast:
-            fast_settings, _ = build_settings()
-            fast_settings.raw["language"]["target"] = target
-            fast_settings.raw["quality"] = {"review": False, "episode_analysis": False}
-            fast_engine = Engine(fast_settings, None, rules, decisions)
-            fast_engine.estimate = False
-            fast_engine.store = store
-            fast_engine.main_price = price
-            fast_engine.conlang_both = False     # sözlüğü yalnızca kaliteli iş yazar (iki iş birbirini ezmesin)
-            fast_engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
-            fast_job = make_job(fast_engine, "fast-" + rel, None)
-            # Yalnızca izlenen yerden itibaren birkaç dakika (ayar), küçük parçalarla: kaliteli çeviri gelene kadar
-            start_ms = int(float(job.get("start_at") or 0) * 1000)
-            fast_job.chunks = window_chunks(fast_job, start_ms, fast_window(m.is_episode))
-        kodi.log(f"Çeviri başladı: {m.label()} <- {sub.source}:{sub.release or sub.sid} ({src_lang}->{target}), "
-                 f"{len(fj.srt.blocks)} blok, {len(fj.chunks)} parça, mod={mode}, hızlı={'evet' if use_fast else 'hayır'}")
+        start_ms = int(float(job.get("start_at") or 0) * 1000)
         t0 = time.monotonic()
         state = {"final": False}
 
@@ -240,7 +223,25 @@ class Translator:
 
         try:
             if use_fast:
+                fast_settings, _ = build_settings()
+                fast_settings.raw["language"]["target"] = target
+                fast_settings.raw["quality"] = {"review": False, "episode_analysis": False}
+                fast_engine = Engine(fast_settings, None, rules, decisions)
+                fast_engine.estimate = False
+                fast_engine.store = store
+                fast_engine.main_price = price
+                fast_engine.conlang_both = False   # sözlüğü yalnızca kaliteli iş yazar (iki iş birbirini ezmesin)
+                fast_engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
+                fast_job = make_job(fast_engine, "fast-" + rel, None)
+                # Yalnızca izlenen yerden itibaren birkaç dakika (ayar), küçük parçalarla
+                fast_job.chunks = window_chunks(fast_job, start_ms, fast_window(m.is_episode))
                 fast_task = asyncio.ensure_future(run_fast())
+                await asyncio.sleep(0.05)          # istekler yola çıksın, sonra kaliteli iş hazırlansın
+            fj = make_job(engine, rel, None)
+            fj.memory = store.memory(sapp.memory_series(fj))
+            kodi.log(f"Çeviri başladı: {m.label()} <- {sub.source}:{sub.release or sub.sid} ({src_lang}->{target}), "
+                     f"{len(fj.srt.blocks)} blok, {len(fj.chunks)} parça, mod={mode}, "
+                     f"hızlı={'evet' if use_fast else 'hayır'}")
             await sapp._build_glossaries(engine, [fj])
             if self.should_stop():
                 raise asyncio.CancelledError()
