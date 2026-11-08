@@ -190,6 +190,7 @@ class Translator:
             store.close()
             raise RuntimeError(str(e)) from e
         engine = Engine(settings, None, rules, decisions)
+        engine.estimate = False                  # maliyet tahmini yalnızca masaüstünün onay ekranı için
         engine.store = store
         engine.main_price = price
         engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
@@ -207,6 +208,7 @@ class Translator:
             fast_settings.raw["language"]["target"] = target
             fast_settings.raw["quality"] = {"review": False, "episode_analysis": False}
             fast_engine = Engine(fast_settings, None, rules, decisions)
+            fast_engine.estimate = False
             fast_engine.store = store
             fast_engine.main_price = price
             fast_engine.conlang_both = False     # sözlüğü yalnızca kaliteli iş yazar (iki iş birbirini ezmesin)

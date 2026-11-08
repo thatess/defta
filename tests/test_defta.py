@@ -1453,3 +1453,51 @@ class TestV040(Base):
         finally:
             xbmcaddon.SETTINGS.pop("auto_human", None)
         self.assertEqual(called, [m.key()], "önceden çeviri olmadıysa normal otomatik yol denenir")
+
+    def test_042_scan_both_review_estimate(self):
+        import time as _t
+        import xbmcgui
+        from defta import fetch
+        # "Yükleneni çevir": altyazı eklentisi ve video eklentisi klasörü taranır, diğer eklentiler taranmaz
+        data = self.tmp / "addon_data"
+        sub_dir = data / "service.subtitles.a4ksubtitles" / "temp"
+        other = data / "script.weather.x"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        other.mkdir(parents=True, exist_ok=True)
+        xbmcgui.Window.PROPS["defta.play_start"] = str(_t.time() - 60)
+        try:
+            (other / "x.en.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nNo\n", encoding="utf-8")
+            self.assertEqual(fetch.loaded_subtitle(fetch.playback_started(), "tr"), "")
+            a4k = sub_dir / "Dizi.S01E01.en.srt"
+            a4k.write_text("1\n00:00:01,000 --> 00:00:02,000\nYes\n", encoding="utf-8")
+            self.assertEqual(fetch.loaded_subtitle(fetch.playback_started(), "tr"), str(a4k))
+        finally:
+            xbmcgui.Window.PROPS.pop("defta.play_start", None)
+            os.remove(a4k)
+        # İkisi birden: anlam tek satırda
+        from subtrans.lyrics import wrap_meaning
+        self.assertEqual(wrap_meaning("Rüzgârda sana sesleniyorum,\n♪ uzak gökte ışık düşüyor. ♪"),
+                         "(Rüzgârda sana sesleniyorum, uzak gökte ışık düşüyor)")
+        # küfür kuralı: dublaj kalıbı örnek olarak verilmiyor
+        rules = json.loads((ADDON / "resources" / "lib" / "rules" / "tr.json").read_text(encoding="utf-8"))["instructions"]
+        self.assertIn("dubbed film", rules)
+        self.assertNotIn("'Damn it!' -> 'Kahretsin!'", rules)
+
+    def test_042_review_context_has_translation_and_no_estimate(self):
+        from types import SimpleNamespace
+        from subtrans.chunking import Chunk
+        from subtrans.reviewer import ReviewMixin
+        from subtrans.textprep import Prepared
+        prepared = [Prepared(send_text=t) for t in ("If you don't come tomorrow...", "...I'll never forgive you.",
+                                                    "Go home.")]
+        job = SimpleNamespace(prepared=prepared, results={0: "Eğer yarın gelmezsen...", 1: "...seni affetmem.",
+                                                          2: "Eve git."}, glossary=None)
+        me = SimpleNamespace(_trivial=lambda t: False, _scene=lambda j, c: "")
+        user, n = ReviewMixin._review_request(me, job, Chunk(2, targets=[1], before=[0], after=[2]))
+        payload = json.loads(user)
+        self.assertEqual(payload["context_before"][0]["translation"], "Eğer yarın gelmezsen...")
+        self.assertEqual(payload["context_after"][0]["translation"], "Eve git.")
+        # Kodi'de maliyet tahmini yapılmaz
+        from defta import translate
+        src = Path(translate.__file__).read_text(encoding="utf-8")
+        self.assertEqual(src.count(".estimate = False"), 2)

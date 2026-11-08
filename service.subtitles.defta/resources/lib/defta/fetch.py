@@ -162,17 +162,22 @@ def loaded_subtitle(since: float, tgt: str = "", video: str = "") -> str:
     Bulunamazsa videonun yanındaki altyazı dosyası."""
     if since <= 0:
         return sidecar_subtitle(video, tgt)
-    roots = [kodi.translate_path("special://temp/"),
-             kodi.translate_path("special://profile/addon_data/")]
-    mine = os.path.normcase(kodi.profile_dir())
+    # Yalnızca altyazının konabileceği yerler: Kodi'nin geçici klasörü ve adında "subtitle" geçen ya da video
+    # eklentilerinin (Fen vb.) veri klasörleri. Bütün eklentileri derinlemesine taramak Shield'da listeyi yavaşlatır.
+    data = kodi.translate_path("special://profile/addon_data/")
+    roots = [(kodi.translate_path("special://temp/"), 3)]
+    try:
+        roots += [(os.path.join(data, n), 3 if "subtitle" in n.lower() else 2) for n in sorted(os.listdir(data))
+                  if n != kodi.ADDON_ID and ("subtitle" in n.lower() or n.startswith("plugin.video."))]
+    except OSError:
+        pass
     own = None                          # Defta'nın kendi verdiği dosyalar: yalnızca aday çıkınca hesaplanır
     best, best_t = "", 0.0
-    for root in roots:
+    for root, depth in roots:
         base_depth = root.rstrip(os.sep).count(os.sep)
         for dirpath, dirnames, files in os.walk(root):
-            if os.path.normcase(dirpath).startswith(mine) or dirpath.count(os.sep) - base_depth >= 4:
+            if dirpath.count(os.sep) - base_depth >= depth:
                 dirnames[:] = []
-                continue
             for name in files:
                 if not name.lower().endswith(SUB_EXTS):
                     continue

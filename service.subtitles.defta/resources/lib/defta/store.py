@@ -85,16 +85,12 @@ def search_cache_put(m: Media, sig: str, results: list[Sub]) -> None:
 
 
 def should_warn(message: str, every: float = 24 * 3600) -> bool:
-    path = os.path.join(kodi.profile_dir(), "warned.json")
-    d = _read(path, {}) or {}
+    d = _state("warned.json")
     now = time.time()
     if now - d.get(message, 0) < every:
         return False
     d[message] = now
-    try:
-        _write(path, d)
-    except OSError:
-        pass
+    _put_state("warned.json", d)
     return True
 
 
@@ -125,21 +121,18 @@ def remember_fingerprint(sub: Sub, path: str) -> None:
     fp = content_fingerprint(path)
     if not fp:
         return
-    d = _read(os.path.join(kodi.profile_dir(), "fingerprints.json"), {}) or {}
+    d = _state("fingerprints.json")
     if d.get(sub.uid()) == fp:
         return
     d[sub.uid()] = fp
     if len(d) > 3000:
         for k in list(d)[:1000]:
             d.pop(k, None)
-    try:
-        _write(os.path.join(kodi.profile_dir(), "fingerprints.json"), d)
-    except OSError:
-        pass
+    _put_state("fingerprints.json", d)
 
 
 def fingerprints() -> dict:
-    return _read(os.path.join(kodi.profile_dir(), "fingerprints.json"), {}) or {}
+    return _state("fingerprints.json")
 
 
 def find_download(sub: Sub) -> str:
