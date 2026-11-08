@@ -281,11 +281,28 @@ def _bad_sync(handle: int, m: Media, tgt: str) -> None:
             kodi.notify("Kaymış · hazır çeviri yüklendi")
             return
     res = search.search(m)
-    kind, nxt = search.next_candidate(res, cur.uid(), loaded.get("kind", ""))
-    if nxt is None:
-        store.cancel_jobs_for(m)
-        kodi.notify("Kaymış · başka altyazı yok")
-        return
+    # Aynı altyazının başka sitedeki kopyası (içerik ve zamanlama aynı) da kaymıştır: atlanır
+    prints = store.fingerprints()
+    bad_fps = {prints.get(u) for u in store.bad_uids(m)} - {None, ""}
+    skip: set = set()
+    while True:
+        kind, nxt = search.next_candidate(res, cur.uid(), loaded.get("kind", ""), skip)
+        if nxt is None:
+            store.cancel_jobs_for(m)
+            kodi.notify("Kaymış · başka altyazı yok")
+            return
+        try:
+            fetch.get(nxt, m)                                        # indirilir, parmak izi kaydedilir
+        except SourceError as e:
+            kodi.log(f"Kaymış: sıradaki indirilemedi ({nxt.source}: {e}), bir sonraki deneniyor", "warning")
+            skip.add(nxt.uid())
+            continue
+        if store.fingerprints().get(nxt.uid()) in bad_fps:
+            kodi.log(f"Kaymış: {nxt.source}:{nxt.release or nxt.sid} kaymış olanın aynısı, atlandı")
+            store.mark_bad(m, nxt)
+            skip.add(nxt.uid())
+            continue
+        break
     kodi.notify("Kaymış · sıradaki " + ("yüklendi" if kind == "human" else "çevriliyor"))
     if kind == "human":
         _load_human(handle, m, nxt, tgt)

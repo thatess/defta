@@ -242,11 +242,13 @@ def best_foreign(res: Results) -> Sub | None:
     return next((s for s in res.foreign if s.note != "kaymış" and _reachable(s, blocked)), None)
 
 
-def next_candidate(res: Results, current_uid: str, kind: str):
+def next_candidate(res: Results, current_uid: str, kind: str, skip: set | None = None):
     """"Kaymış" denince yüklenecek sıradaki aday: (tür, altyazı). Şu anki insan çevirisiyse önce sıradaki
     insan çevirisi; yoksa ya da şu anki bir AI çevirisiyse sıradaki çevrilecek altyazı."""
+    skip = skip or set()
+
     def ok(s):
-        return s.uid() != current_uid and s.note != "kaymış"
+        return s.uid() != current_uid and s.note != "kaymış" and s.uid() not in skip
     if kind == "human":
         h = next((s for s in res.human if ok(s)), None)
         if h is not None:

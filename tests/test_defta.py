@@ -337,6 +337,13 @@ class TestTranslate(Base):
         Translator(store.new_job(m, sub, src, fresh=False, load=False), lambda p, st, pct: up2.append(st)).run()
         self.assertEqual(FakeOpenAI.requests, n1, "ikinci çeviri önbellekten gelmeli")
         self.assertEqual(up2, ["final"], "yüklenmeyecek işte hızlı çeviri yapılmaz")
+        # 0.4.3: aynı altyazı yeniden ya da baştan çevrilince de (analiz kayıtlı) hızlı çeviri gelir
+        up3 = []
+        Translator(store.new_job(m, sub, src, fresh=True, load=True), lambda p, st, pct: up3.append(st)).run()
+        self.assertEqual(up3, ["fast", "final"], "baştan çeviride de önce hızlı çeviri yüklenir")
+        up4 = []
+        Translator(store.new_job(m, sub, src, fresh=False, load=True), lambda p, st, pct: up4.append(st)).run()
+        self.assertIn("final", up4)
         # Temizlik
         self.assertIn("silindi", store.clean("ai"))
         self.assertFalse(store.ready_translations(m))
@@ -814,8 +821,9 @@ class TestV310(Base):
             translate_pos = [b.pos for b in srt.blocks]
         chunks = window_chunks(J, 10 * 60 * 1000, 120)
         targets = [p for c in chunks for p in c.targets]
-        self.assertTrue(all(len(c.targets) <= FAST_CHUNK for c in chunks))
-        self.assertEqual(len(chunks), 2)                                       # 2 dk = 12-13 satır, 12'lik parçalar
+        # ~12'lik parçalar, doğal durakta kesilir (en fazla 1,2 katı); 2 dk = 12-13 satır
+        self.assertTrue(all(len(c.targets) <= FAST_CHUNK * 1.2 for c in chunks))
+        self.assertIn(len(chunks), (1, 2))
         self.assertIn(60, targets)                                             # 10:00
         self.assertNotIn(80, targets)                                          # 13:20 pencere dışı
         self.assertEqual(len(chunks[0].before), 3)                             # bağlam için önceki 3 satır
@@ -1491,7 +1499,7 @@ class TestV040(Base):
         prepared = [Prepared(send_text=t) for t in ("If you don't come tomorrow...", "...I'll never forgive you.",
                                                     "Go home.")]
         job = SimpleNamespace(prepared=prepared, results={0: "Eğer yarın gelmezsen...", 1: "...seni affetmem.",
-                                                          2: "Eve git."}, glossary=None)
+                                                          2: "Eve git."}, glossary=None, draft={})
         me = SimpleNamespace(_trivial=lambda t: False, _scene=lambda j, c: "")
         user, n = ReviewMixin._review_request(me, job, Chunk(2, targets=[1], before=[0], after=[2]))
         payload = json.loads(user)
@@ -1501,3 +1509,185 @@ class TestV040(Base):
         from defta import translate
         src = Path(translate.__file__).read_text(encoding="utf-8")
         self.assertEqual(src.count(".estimate = False"), 2)
+
+    def test_043_song_flag_reading_speed_spelling(self):
+        import io
+        from defta.translate import Translator
+        seen = []
+        orig = FakeOpenAI.do_POST
+
+        def spy(h):
+            raw = h.rfile.read(int(h.headers["Content-Length"]))
+            seen.append(json.loads(raw))
+            h.rfile = io.BytesIO(raw)
+            return orig(h)
+        FakeOpenAI.do_POST = spy
+        try:
+            Translator(self._job("Hiz", SONG_SRT), lambda *a: None).run()
+        finally:
+            FakeOpenAI.do_POST = orig
+        items, systems = [], []
+        for b in seen:
+            if "subtitle localizer" in b["messages"][0]["content"]:
+                systems.append(b["messages"][0]["content"])
+                items += json.loads(b["messages"][1]["content"])["translate"]
+        song = [it for it in items if it.get("song")]
+        self.assertTrue(song and all("dream" in it["text"] or "far away" in it["text"] or "light" in it["text"]
+                                     or "arrow" in it["text"] for it in song), song)
+        self.assertFalse([it for it in items if it.get("song") and "doing here" in it["text"]])
+        self.assertTrue(any(it.get("max_chars") for it in items), "kısa süreli uzun satıra sınır")
+        self.assertTrue(any("READING SPEED" in s and "SONG LYRICS" in s for s in systems))
+        rules = json.loads((ADDON / "resources" / "lib" / "rules" / "tr.json").read_text(encoding="utf-8"))
+        self.assertIn("question particle", rules["instructions"])
+
+    def test_043_fast_chunks_cut_at_sentence_end(self):
+        from types import SimpleNamespace
+        from defta.translate import window_chunks
+        blocks = []
+        for i in range(30):
+            text = "and then we" if i % 13 == 11 else "It is over."     # 11 ve 24 cümle ortası
+            blocks.append(SimpleNamespace(pos=i, start_ms=i * 3000, end_ms=i * 3000 + 2500, text=text))
+        job = SimpleNamespace(srt=SimpleNamespace(blocks=blocks), translate_pos=list(range(30)))
+        chunks = window_chunks(job, 0, 90)
+        for c in chunks[:-1]:
+            self.assertNotEqual(blocks[c.targets[-1]].text, "and then we", "cümle ortasında kesilmez")
+
+class TestBadSyncAI(TestSyncRanking):
+    def test_badsync_on_ai_translates_next(self):
+        from defta import plugin, store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        import re as _re
+        e1 = Sub("opensubtitles", "31", "en", release="Dizi.S01E04.1080p-A", downloads=50)
+        copy = Sub("subdl", "https://dl.subdl.com/subtitle/c.zip", "en", release="Dizi.S01E04.WEB-C", downloads=45)
+        e2 = Sub("opensubtitles", "32", "en", release="Dizi.S01E04.720p-B", downloads=40)
+        text = SAMPLE.read_text(encoding="utf-8")
+        shifted = _re.sub(r"(\d\d:\d\d:)(\d\d)", lambda mm: mm.group(1) + f"{(int(mm.group(2)) + 1) % 60:02d}", text)
+        for e, t in ((e1, text), (e2, shifted)):
+            Path(store.download_path(e, ".srt")).write_text(t, encoding="utf-8")
+            store.remember_fingerprint(e, store.download_path(e, ".srt"))
+        store.clean("syncmarks")
+        self._patch([e1, copy, e2])
+        from defta.sources import subdl
+        orig_dl = subdl.download
+        subdl.download = lambda sub, mm: ("c.srt", text.encode("utf-8"))   # henüz indirilmemiş aynı içerik
+        self.addCleanup(setattr, subdl, "download", orig_dl)
+        m = Media(title="Dizi", season=1, episode=4, filename="Dizi.S01E04.1080p-A.mkv")
+        from defta.translate import Translator
+        Translator(store.new_job(m, e1, store.download_path(e1, ".srt"), fresh=False, load=False),
+                   lambda *a: None).run()
+        store.set_loaded(m, "ai", e1)                       # e1'den yapılan AI çevirisi yüklü
+        xbmc.INFO.clear()
+        xbmc.INFO["Player.Filenameandpath"] = m.filename
+        xbmcplugin.ITEMS.clear()
+        sys.argv = ["plugin://x/", "1", "?action=search"]
+        plugin.main()
+        labels = [li.label2 for _, li in xbmcplugin.ITEMS]
+        self.assertTrue(any(x.startswith("Kaymış") for x in labels), labels)
+        xbmcplugin.ITEMS.clear()
+        sys.argv = ["plugin://x/", "1", "?" + __import__("urllib.parse").parse.urlencode(
+            {"action": "download", "kind": "badsync", "media": json.dumps(m.to_dict())})]
+        plugin.main()
+        self.assertIn("opensubtitles-31", store.bad_uids(m))
+        self.assertIn(copy.uid(), store.bad_uids(m), "kaymış olanın başka sitedeki aynısı da atlanır")
+        jobs = store.active_jobs(m)
+        self.assertEqual([j["sub"]["sid"] for j in jobs], ["32"], "sıradaki (farklı) kaynak çevrilir")
+        self.assertEqual(store.get_loaded(m)["sub"]["sid"], "32")
+        for j in jobs:
+            j["status"] = "cancelled"
+            store.save_job(j)
+
+    def test_044_bleeped_swearing_kept_for_model(self):
+        from subtrans.textprep import prepare
+        dec = {"sound_notes": "remove", "speaker_labels": "remove", "speaker_dashes": "keep", "lyrics": "translate",
+               "format_tags": "remove"}
+        self.assertEqual(prepare("It's (bleep) rotten, you (bleep) idiot!", dec).send_text,
+                         "It's (bleep) rotten, you (bleep) idiot!")
+        self.assertEqual(prepare("(BLEEP) off!", dec).send_text, "(BLEEP) off!")
+        self.assertEqual(prepare("[DOOR SLAMS] Get out!", dec).send_text, "Get out!")
+        rules = json.loads((ADDON / "resources" / "lib" / "rules" / "tr.json").read_text(encoding="utf-8"))
+        self.assertIn("Censored swearing", rules["instructions"])
+
+    def test_046_glossary_twins_and_nationality(self):
+        from subtrans.glossary import Glossary
+        g = Glossary(self.tmp / "g.json", "Test", "tr", lower_races=True)
+        txt = "Connie Springer Conny Springer Shiganshina Zhiganshina Italian Hank Frank elves"
+        g.merge([{"source": "Connie Springer", "target": "Connie Springer", "type": "character"},
+                 {"source": "Conny Springer", "target": "Conny Springer", "type": "character"},
+                 {"source": "Shiganshina", "target": "Shiganshina", "type": "place"},
+                 {"source": "Zhiganshina", "target": "Zhiganshina", "type": "place"},
+                 {"source": "Italian", "target": "İtalyan", "type": "race"},
+                 {"source": "Hank", "target": "Hank", "type": "character"},
+                 {"source": "Frank", "target": "Frank", "type": "character"},
+                 {"source": "elves", "target": "Elfler", "type": "race"}], txt)
+        by = {t["target"]: t for t in g.terms}
+        self.assertIn("Conny Springer", by["Connie Springer"]["forms"], "aynı adın başka yazımı tek terim")
+        self.assertIn("Zhiganshina", by["Shiganshina"]["forms"])
+        self.assertIn("İtalyan", by, "milliyet küçültülmez")
+        self.assertIn("Hank", by)
+        self.assertIn("Frank", by)
+        self.assertIn("elfler", by, "kurgusal ırk küçük harf")
+
+
+class TestReviewCache(unittest.TestCase):
+    def test_047_review_context_stable_on_rerun(self):
+        """Parçalar aynı anda kontrol edilir; komşunun düzeltmesi bağlamı değiştirmemeli,
+        ikinci çalışmada anlam kontrolü tamamen önbellekten gelmeli."""
+        import asyncio
+        from subtrans.cache import CachedProvider, Store
+        from subtrans.config import DEFAULTS, Settings, _merge, load_rule_pack
+        from subtrans.engine import Engine, FileJob
+        from subtrans.provider import Provider, Usage
+        from subtrans.srt_io import Block, SrtFile
+
+        class Fake(Provider):
+            name = "fake"
+
+            def __init__(self):
+                self.reviews = 0
+
+            async def complete_json(self, system, user, max_out, schema=None, schema_name=""):
+                await asyncio.sleep(0.01)
+                u = json.loads(user)
+                if "check" in u:
+                    self.reviews += 1
+                    return {"fixes": [{"id": it["id"], "text": it["translation"] + " düzeltildi", "problem": "x",
+                                       "certainty": "certain"} for it in u["check"] if it["id"] == 10]}, Usage(requests=1)
+                return {"translations": [{"id": it["id"], "text": "Çeviri " + it["text"]}
+                                         for it in u["translate"]]}, Usage(requests=1)
+
+            async def close(self):
+                pass
+
+        tmp = Path(tempfile.mkdtemp())
+        raw = _merge(DEFAULTS, {"language": {"target": "tr", "source": "en"},
+                                "provider": {"model": "m", "base_url": "http://x"}, "chunking": {"chunk_size": 10},
+                                "quality": {"review": True, "episode_analysis": False}})
+
+        def run():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)        # 3.8: asyncio.Condition döngü ister
+            eng = Engine(Settings(raw=raw, base_dir=tmp), None, load_rule_pack("tr"),
+                         {"sound_notes": "remove", "speaker_labels": "remove", "speaker_dashes": "keep",
+                          "lyrics": "translate"})
+            eng.estimate = False
+            st = Store(tmp / "c.sqlite")
+            fake = Fake()
+            eng.provider = CachedProvider(fake, st, "m")
+            eng.store = st
+            blocks = [Block(i, i + 1, i * 3000, i * 3000 + 2500, f"This is sentence number {i} for testing.")
+                      for i in range(20)]
+            job = FileJob(srt=SrtFile(path=Path("x.srt"), encoding="utf-8", had_bom=False, encoding_confidence=1.0,
+                                      blocks=blocks), rel=Path("x.srt"), out_path=Path("/dev/null"), src_lang="en")
+            eng.plan(job)
+            loop.run_until_complete(eng.translate_file(job))
+            st.close()
+            loop.close()
+            asyncio.set_event_loop(None)
+            return job, fake
+
+        j1, f1 = run()
+        self.assertEqual(j1.review_fixes, 1)
+        self.assertEqual(f1.reviews, 2)
+        _, f2 = run()
+        self.assertEqual(f2.reviews, 0, "ikinci çalışmada kontrol önbellekten")

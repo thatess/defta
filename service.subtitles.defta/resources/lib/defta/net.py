@@ -170,7 +170,10 @@ def request(method: str, url: str, params: dict | list | None = None, headers: d
             with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:
                 return r.status, r.read(), dict(r.headers)
         except urllib.error.HTTPError as e:
-            raw = e.read() if hasattr(e, "read") else b""
+            try:
+                raw = e.read() if hasattr(e, "read") else b""
+            finally:
+                e.close()                              # yanıtın soketi açık kalmasın
             if e.code in (429, 502, 503, 504) and attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
                 last = e

@@ -33,22 +33,16 @@ def fast_window(is_episode: bool) -> int:
 
 
 def window_chunks(job, start_ms: int, window_s: int, size: int = FAST_CHUNK) -> list:
-    """İzlenen yerden itibaren window_s saniyedeki satırlar, size'lık küçük parçalara bölünür (hepsi aynı
-    anda gönderilir). Bağlam için önceki 3, sonraki 2 satır da gider."""
-    from subtrans.chunking import Chunk
+    """İzlenen yerden itibaren window_s saniyedeki satırlar, ~size'lık küçük parçalara bölünür (hepsi aynı
+    anda gönderilir). Parçalar cümle ortasından değil doğal duraklardan (cümle sonu, sahne arası) kesilir;
+    bağlam için önceki 3, sonraki 4 satır da gider."""
+    from subtrans.chunking import make_chunks
     times = {b.pos: (b.start_ms, b.end_ms) for b in job.srt.blocks}
     lo, hi = start_ms - 5000, start_ms + window_s * 1000
     order = list(job.translate_pos)
     sel = [p for p in order if times.get(p, (0, 0))[1] >= lo and times.get(p, (0, 0))[0] <= hi]
-    if not sel:
-        sel = order[:size]
-    index = {p: i for i, p in enumerate(order)}
-    out = []
-    for n, i in enumerate(range(0, len(sel), size), 1):
-        part = sel[i:i + size]
-        a, b = index[part[0]], index[part[-1]]
-        out.append(Chunk(number=n, targets=part, before=order[max(0, a - 3):a], after=order[b + 1:b + 3]))
-    return out
+    return make_chunks(job.srt.blocks, sel or order[:size], size, strict=False, before_n=3, after_n=4,
+                       scene_gap_ms=2000)
 
 
 class CreditError(RuntimeError):
@@ -134,7 +128,7 @@ class Translator:
 
     async def _run(self) -> str:
         from subtrans import app as sapp
-        from subtrans.cache import CachedProvider, Store, sha
+        from subtrans.cache import CachedProvider, Store
         from subtrans.config import load_rule_pack
         from subtrans.engine import Engine, FatalError, FileJob
         from subtrans.glossary import Glossary
@@ -198,10 +192,11 @@ class Translator:
         fj = make_job(engine, rel, None)
         fj.memory = store.memory(sapp.memory_series(fj))
 
-        # Hızlı çeviri gerekli mi? Analiz kayıtlıysa (yarıda kalmış iş sürüyor) kaliteli çeviri zaten hızlı gelir.
-        analysed = fj.glossary is not None and store.get_stage(
-            "an:" + sha(fj.glossary.series, str(model), "\n".join(b.text for b in fj.srt.blocks))) is not None
-        use_fast = mode == FAST_FIRST and engine.review_on and bool(job.get("load")) and not analysed
+        # Hızlı çeviri: izlenen video için her zaman (yeniden çeviri, "Baştan çevir", yarıda kalmış iş dahil).
+        # Önceden "analiz kayıtlıysa kaliteli zaten hızlı gelir" diye atlanıyordu; parçalar kayıtlı değilse ya da
+        # baştan çevriliyorsa kaliteli çeviri yine ~1 dk sürüyor ve hiç altyazı gelmiyordu. Kayıtlı hızlı parçalar
+        # önbellekten anında ve ücretsiz gelir.
+        use_fast = mode == FAST_FIRST and engine.review_on and bool(job.get("load"))
         fast_engine = fast_job = fast_task = None
         if use_fast:
             fast_settings, _ = build_settings()

@@ -68,7 +68,7 @@
     <setting type="action" option="close" label="Kurulum rehberi" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,guide)"/>
     <setting type="action" option="close" label="Sıradaki bölüm kutusunu dene (sağ üst)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,nextdemo)"/>
     <setting type="action" option="close" label="Kodi kayıtlarını kayıt klasörüne kopyala" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,logs)"/>
-    <setting type="action" option="close" label="AI çevirilerini dışa aktar (klasöre kopyala)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,export)"/>
+    <setting type="action" option="close" label="AI çevirilerini ve sözlükleri dışa aktar (klasöre kopyala)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,export)"/>
     <setting id="debug" type="bool" label="Ayrıntılı kayıt (hata ayıklama)" default="false"/>
     <setting id="debug_dir" type="text" label="Kayıtların kopyası bu klasöre de yazılsın (ağ klasörü olabilir: smb://...)" default=""/>
     <setting type="action" option="close" label="Kayıt klasörünü seç (ağ klasörü: Gözat > Ağ konumu ekle)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,pickdebugdir)"/>
