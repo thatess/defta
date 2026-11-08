@@ -57,10 +57,16 @@ def translate_path(p: str) -> str:
     return xbmcvfs.translatePath(p)
 
 
+_DIRS: dict = {}
+
+
 def profile_dir(*parts: str) -> str:
-    base = translate_path(f"special://profile/addon_data/{ADDON_ID}/")
-    path = os.path.join(base, *parts)
-    os.makedirs(path, exist_ok=True)
+    """Defta'nın veri klasörü (yoksa oluşturulur; bir kez oluşturulan yol ezberlenir)."""
+    path = _DIRS.get(parts)
+    if path is None or not os.path.isdir(path):
+        path = os.path.join(translate_path(f"special://profile/addon_data/{ADDON_ID}/"), *parts)
+        os.makedirs(path, exist_ok=True)
+        _DIRS[parts] = path
     return path
 
 

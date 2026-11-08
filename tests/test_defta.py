@@ -1333,3 +1333,123 @@ class TestV040(Base):
         (self.tmp / "Yanında.S01E01.tr.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nMerhaba\n", encoding="utf-8")
         self.assertEqual(fetch.loaded_subtitle(0, "tr", str(video)), str(side))
         self.assertEqual(fetch.loaded_subtitle(0, "tr", "http://x/y.mkv"), "")
+
+    def test_lyrics_no_false_positives(self):
+        """İnceleme bulguları: konuşma şarkı sanılmasın (Orijinal bırak modunda çevrilmeden kalırdı)."""
+        from subtrans import lyrics
+        from subtrans.srt_io import Block
+
+        def B(p, s, e, t):
+            return Block(p, p + 1, s, e, t)
+        cases = {
+            "baştaki ♪ sonra konuşma": ([B(0, 0, 2000, "♪ I've been waiting all night"), B(1, 2100, 4000, "♪ for you"),
+                                        B(2, 5000, 6500, "Hey, you're late."), B(3, 7000, 9000, "I know, I'm sorry.")],
+                                       {0, 1}),
+            "ses notu": ([B(0, 0, 2000, "♪ upbeat music playing"), B(1, 2500, 4000, "So what did the doctor say?")],
+                         set()),
+            "romajiye benzeyen İngilizce": ([B(0, 0, 2000, "No, no, no!"), B(1, 3000, 5000, "No, no. Go to Mama."),
+                                             B(2, 6000, 8000, "Take me home")], set()),
+            "şarkıdan sonra isimler": ([B(0, 0, 3000, "Sono yume wa kokoro no ibasho"), B(1, 4000, 5000, "Naruto!"),
+                                        B(2, 6000, 7000, "Sasuke!")], {0}),
+            "hashtag": ([B(0, 0, 2000, "#1 fan of the team")], set()),
+            "Japonca ♪～": ([B(0, 0, 2000, "♪～"), B(1, 2500, 4000, "何してるの？"), B(2, 4500, 6000, "べつに")], set()),
+        }
+        for name, (blocks, want) in cases.items():
+            self.assertEqual(lyrics.find_lyrics(blocks), want, name)
+        # romaji şarkı + aynı anda başlayan italik olmayan konuşma: konuşma atılmaz, normal çevrilir
+        bl = [B(0, 0, 3000, "♪ Sono yume wa kokoro no ibasho"), B(1, 100, 3000, "Where are you going?")]
+        found = lyrics.find_lyrics(bl) | {1}
+        for mode in ("translate", "keep", "both"):
+            p = lyrics.plan(bl, found, mode)[1]
+            self.assertTrue(p.plain and not p.drop, mode)
+
+    def test_review_fixes_041(self):
+        """0.4.1: bağımsız incelemenin bulduğu hatalar."""
+        import time
+        from defta import fetch, search, store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        from subtrans.provider import is_credit_error
+        # hız sınırı mesajındaki "billing" bağlantısı kredi bitti sayılmaz
+        msg = ("Rate limit reached for gpt in organization org-x on requests per day (RPD): Limit 200. "
+               "Add a payment method to your account to increase your rate limit. Visit "
+               "https://platform.openai.com/account/billing to add a payment method.")
+        self.assertFalse(is_credit_error(429, {"error": {"message": msg, "type": "requests", "code": "rate_limit_exceeded"}}))
+        self.assertTrue(is_credit_error(429, {"error": {"message": "x", "type": "insufficient_quota"}}))
+        # kaymış işareti, tercihin seçildiği bölümde de yükleyenin önceliğini kaldırır
+        m = Media(title="Kay", season=1, episode=2)
+        s = Sub("opensubtitles", "k1", "en", release="Kay.S01E02-GRP", uploader="bob")
+        store.remember_choice(m, s)
+        store.mark_bad(m, s)
+        self.assertIsNone(store.series_pref(m.next_episode()))
+        # OpenSubtitles son hakkı kullanılınca işaret kalır
+        from defta.sources import opensubtitles
+        orig = opensubtitles.download
+
+        def last(sub, mm):
+            store.set_quota("opensubtitles", time.time() + 3600, True)
+            return "x.srt", b"1\n00:00:01,000 --> 00:00:02,000\nHi\n"
+        opensubtitles.download = last
+        try:
+            fetch.get(Sub("opensubtitles", "last1", "en"), m)
+        finally:
+            opensubtitles.download = orig
+        self.assertIn("opensubtitles", store.quota_blocked())
+        # yedeği aynı (engelli) sitedeyse "indirilebilir" sayılmaz
+        blocked = store.quota_blocked()
+        same = Sub("opensubtitles", "a1", "en", alts=[Sub("opensubtitles", "a2", "en").to_dict()])
+        other = Sub("opensubtitles", "b1", "en", alts=[Sub("subdl", "b2", "en").to_dict()])
+        self.assertFalse(search._reachable(same, blocked))
+        self.assertTrue(search._reachable(other, blocked))
+        store.clear_quota("opensubtitles")
+        # "Ep1" için "Ep10.en.srt" alınmaz
+        video = self.tmp / "Ep1.mkv"
+        video.write_bytes(b"\0")
+        (self.tmp / "Ep10.en.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nX\n", encoding="utf-8")
+        self.assertEqual(fetch.loaded_subtitle(0, "tr", str(video)), "")
+
+    def test_next_season_needs_exact_season_041(self):
+        """Yayındaki anime: sıradaki bölüm yok diye Jimaku'nun sezonsuz 1. bölümü '2. sezon' sanılmaz."""
+        from defta import service_main, store
+        from defta.media import Media
+        from defta.sources import jimaku, opensubtitles, subdl
+        from defta.sources.base import Sub
+        wrong = Sub("jimaku", "https://jimaku.cc/x/ep1.srt", "ja", release="Anime - 01", season=2, episode=1)
+        orig = (opensubtitles.search, subdl.search, jimaku.search, jimaku.download)
+        jimaku.download = lambda sub, mm: ("ep1.srt", "1\n00:00:01,000 --> 00:00:02,000\nやあ\n".encode())
+        opensubtitles.search = lambda m, w: []
+        subdl.search = lambda m, w: []
+        jimaku.search = lambda m, w: [wrong] if (m.season, m.episode) == (2, 1) else []
+        xbmcaddon.SETTINGS.update(jimaku_enabled="true", jimaku_key="test")
+        from defta import kodi
+        kodi.forget_secret_cache()
+        svc = service_main.Service()
+        svc.player.is_playing = lambda mm: True
+        called = []
+        jimaku_search = jimaku.search
+        jimaku.search = lambda m, w: called.append((m.season, m.episode)) or jimaku_search(m, w)
+        try:
+            svc._prefetch_inner(Media(title="Anime", season=1, episode=5), 2)
+            self.assertIn((2, 1), called, "yeni sezon da arandı")
+            self.assertFalse([j for j in store.list_jobs("pending") if j["media"]["title"] == "Anime"])
+        finally:
+            opensubtitles.search, subdl.search, jimaku.search, jimaku.download = orig
+            xbmcaddon.SETTINGS.update(jimaku_enabled="false", jimaku_key="")
+            kodi.forget_secret_cache()
+            store.clean("search")
+
+    def test_requested_failed_falls_back_to_autoload_041(self):
+        from defta import service_main
+        from defta.media import Media
+        svc = service_main.Service()
+        svc.player.is_playing = lambda mm: True
+        svc.monitor.waitForAbort = lambda t=0: False
+        called = []
+        svc._autoload = lambda m, f: called.append(m.key())
+        m = Media(title="Istek", season=1, episode=3)
+        xbmcaddon.SETTINGS["auto_human"] = "true"
+        try:
+            svc.load_requested(m, "opensubtitles-yok")
+        finally:
+            xbmcaddon.SETTINGS.pop("auto_human", None)
+        self.assertEqual(called, [m.key()], "önceden çeviri olmadıysa normal otomatik yol denenir")

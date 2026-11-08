@@ -325,14 +325,22 @@ class Service:
             return
         # Önce aynı sezonun sıradaki bölümü, sonra (sezon finali) yeni sezonun ilk bölümü. Tam bölüm eşleşmesi
         # olan aday paketten önce gelir; paket yalnızca son çare (indirmede bölüm yoksa sıradakine geçilir).
+        # Yeni sezon yalnızca aynı sezonun sıradaki bölümünde tam eşleşme yoksa aranır, ve orada yalnızca o sezonun
+        # o bölümü olduğu kesin olan altyazılar sayılır: Jimaku sezon ayırmadığından yeni sezonda kullanılmaz
+        # (yayındaki animede "2. sezon 1. bölüm" diye 1. sezonun 1. bölümü çevrilmesin).
         found = []
         for next_season in (False, True):
             cand = m.next_episode(next_season=next_season)
+            if next_season and found and self._exact(found[0][1].human + found[0][1].foreign, found[0][0]):
+                break
             if store.ready_translations(cand):
                 kodi.log(f"Sıradaki bölüm ({cand.label()}) için hazır çeviri var")
                 kodi.notify(f"{cand.short()} çevirisi hazır")
                 return
             r = search.search(cand)
+            if next_season:
+                r.human = [x for x in self._exact(r.human, cand) if x.source != "jimaku" and x.season == cand.season]
+                r.foreign = [x for x in self._exact(r.foreign, cand) if x.source != "jimaku" and x.season == cand.season]
             kodi.log(f"Sıradaki bölüm adayı {cand.label()}: {len(r.human)} {tname}, {len(r.foreign)} yabancı "
                      f"({len(self._exact(r.human + r.foreign, cand))} tam eşleşme)")
             found.append((cand, r))
@@ -392,7 +400,14 @@ class Service:
                 return
             e = next((e for e in store.ready_translations(m) if e.get("uid") == uid), None)
             if e is None:
-                return              # henüz bitmedi: iş "bitince yükle" olarak işaretlendi (want_load)
+                if store.active_jobs(m):
+                    return          # henüz bitmedi: iş "bitince yükle" olarak işaretlendi (want_load)
+                # Önceden çeviri olmadı (ör. kredi bitti): otomatik ayarlar açıksa normal yol denenir
+                kodi.log(f"İstenen sıradaki bölüm çevirisi yok: {m.label()}", "warning")
+                if any(kodi.setting_bool(k) for k in ("auto_human", "auto_ai", "auto_translate")) \
+                        and not m.auto_skip():
+                    self._autoload(m, self.player.file)
+                return
             tgt = kodi.target_lang()
             self.player.setSubtitles(fetch.for_kodi(e["path"], m.label() + " Defta", tgt))
             store.set_loaded(m, "ai", Sub.from_dict(e["src"]))

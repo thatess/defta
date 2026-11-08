@@ -209,6 +209,7 @@ class Translator:
             fast_engine = Engine(fast_settings, None, rules, decisions)
             fast_engine.store = store
             fast_engine.main_price = price
+            fast_engine.conlang_both = False     # sözlüğü yalnızca kaliteli iş yazar (iki iş birbirini ezmesin)
             fast_engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
             fast_job = make_job(fast_engine, "fast-" + rel, None)
             # Yalnızca izlenen yerden itibaren birkaç dakika (ayar), küçük parçalarla: kaliteli çeviri gelene kadar

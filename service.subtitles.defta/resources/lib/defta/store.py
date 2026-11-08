@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import threading
 import time
 import uuid
 
@@ -36,7 +37,8 @@ def _read(path: str, default=None):
 
 
 def _write(path: str, data) -> None:
-    tmp = path + ".tmp"
+    # Geçici dosya adı süreç + iş parçacığına özgü: eklenti ve servis aynı dosyaya aynı anda yazabilir
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     os.replace(tmp, path)
@@ -228,7 +230,7 @@ def mark_bad(m: Media, sub: Sub) -> None:
     if sub.uid() not in lst:
         lst.append(sub.uid())
     _put_state("badsync.json", d)
-    pref = series_pref(m)
+    pref = _state("series_prefs.json").get(m.series_key())     # seçildiği bölüm dahil (series_pref orada boş döner)
     if pref and ((sub.uploader and pref.get("uploader") == sub.uploader) or
                  (pref.get("group") and pref.get("group") == _group(sub))):
         prefs = _state("series_prefs.json")
@@ -291,13 +293,17 @@ def series_pref(m: Media) -> dict | None:
 def set_quota(source: str, until: float, quota: bool) -> None:
     """Kaynak 'until' anına kadar indirmeye izin vermiyor: listede alta iner, indirmede başka kaynak denenir."""
     d = _state("quota.json")
-    d[source] = {"until": until, "quota": quota}
+    d[source] = {"until": until, "quota": quota, "t": time.time()}
     _put_state("quota.json", d)
 
 
-def clear_quota(source: str) -> None:
+def clear_quota(source: str, before: float = 0.0) -> None:
+    """Engel kalkar. before: yalnızca bu andan önce konmuşsa (indirme sırasında 'son hakkın buydu' diye
+    yeni konan işaret silinmesin)."""
     d = _state("quota.json")
-    if d.pop(source, None) is not None:
+    e = d.get(source)
+    if e is not None and not (before and float(e.get("t") or 0) >= before):
+        d.pop(source)
         _put_state("quota.json", d)
 
 

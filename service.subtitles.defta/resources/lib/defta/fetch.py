@@ -22,12 +22,13 @@ def _download(sub: Sub, m: Media) -> tuple[str, bytes]:
     mod = ALL.get(sub.source)
     if mod is None:
         raise SourceError("bilinmeyen kaynak")
+    t0 = time.time()
     try:
         out = mod.download(sub, m)
     except QuotaError as e:
         store.set_quota(sub.source, e.until, e.quota)
         raise
-    store.clear_quota(sub.source)
+    store.clear_quota(sub.source, before=t0)
     return out
 
 
@@ -148,7 +149,8 @@ def sidecar_subtitle(video: str, tgt: str = "") -> str:
         return ""
     for name in names:
         p = os.path.join(folder, name)
-        if name.startswith(stem) and name.lower().endswith(SUB_EXTS) and not (tgt and _looks_target(p, name, tgt)):
+        if name.startswith(stem) and name[len(stem):len(stem) + 1] == "." and name.lower().endswith(SUB_EXTS) \
+                and not (tgt and _looks_target(p, name, tgt)):       # "Ep1" için "Ep10.en.srt" değil
             return p
     return ""
 
@@ -163,7 +165,7 @@ def loaded_subtitle(since: float, tgt: str = "", video: str = "") -> str:
     roots = [kodi.translate_path("special://temp/"),
              kodi.translate_path("special://profile/addon_data/")]
     mine = os.path.normcase(kodi.profile_dir())
-    own = _own_given(since)
+    own = None                          # Defta'nın kendi verdiği dosyalar: yalnızca aday çıkınca hesaplanır
     best, best_t = "", 0.0
     for root in roots:
         base_depth = root.rstrip(os.sep).count(os.sep)
@@ -179,9 +181,11 @@ def loaded_subtitle(since: float, tgt: str = "", video: str = "") -> str:
                     t = os.path.getmtime(p)
                 except OSError:
                     continue
-                if t >= since and t > best_t and not (tgt and _looks_target(p, name, tgt)) \
-                        and _digest(p) not in own:
-                    best, best_t = p, t
+                if t >= since and t > best_t and not (tgt and _looks_target(p, name, tgt)):
+                    if own is None:
+                        own = _own_given(since)
+                    if _digest(p) not in own:
+                        best, best_t = p, t
     return best or sidecar_subtitle(video, tgt)
 
 

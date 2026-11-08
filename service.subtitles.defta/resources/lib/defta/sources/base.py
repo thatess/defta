@@ -33,7 +33,8 @@ class Sub:
     def to_dict(self) -> dict:
         d = asdict(self)
         d["releases"] = d["releases"][:3]
-        d["alts"] = [dict(a, alts=[], releases=a.get("releases", [])[:1]) for a in d["alts"][:3]]
+        # yedek: yalnızca indirmeye yeten alanlar (liste adresi ve iş dosyaları kısa kalsın)
+        d["alts"] = [{k: a[k] for k in ALT_KEYS if a.get(k)} for a in d["alts"][:3]]
         return d
 
     def __post_init__(self):
@@ -52,6 +53,9 @@ class Sub:
     def uid(self) -> str:
         sid = self.sid.split("?")[0]
         return f"{self.source}-{re.sub(r'[^A-Za-z0-9_.-]+', '_', sid)[-80:]}"
+
+
+ALT_KEYS = ("source", "sid", "lang", "release", "season", "episode", "pack", "hi", "uploader")
 
 
 class SourceError(Exception):

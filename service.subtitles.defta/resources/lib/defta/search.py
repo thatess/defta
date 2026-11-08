@@ -207,7 +207,7 @@ def search(m: Media, use_cache: bool = True) -> Results:
             s.note, pref_used = PREF, True       # tek satır: aynı yükleyenin her sürümü işaretlenmez
         if s.hash_match:
             s.note = "senkron uyumlu"
-        if s.source in blocked and not s.alts:
+        if not _reachable(s, blocked):
             s.note = blocked[s.source]           # yedeği yoksa: hak dolana kadar alta iner
         if s.uid() in bad:
             s.note = "kaymış"
@@ -216,7 +216,7 @@ def search(m: Media, use_cache: bool = True) -> Results:
     def key(s: Sub):
         # Sıra: kaymış en sonda, hakkı dolan kaynak onun üstünde; video karması eşleşen en üstte;
         # sonra önceki bölümün devamı; sonra sürüm uyumu
-        return (s.note == "kaymış", s.source in blocked and not s.alts, not s.hash_match, s.note != PREF,
+        return (s.note == "kaymış", not _reachable(s, blocked), not s.hash_match, s.note != PREF,
                 -s.score, s.hi if demote else False, -s.downloads, -s.rating)
 
     res.human = sorted([s for s in subs if s.lang == tgt and not s.ai], key=key)[:HUMAN_MAX]
@@ -231,10 +231,15 @@ def search(m: Media, use_cache: bool = True) -> Results:
     return res
 
 
+def _reachable(s: Sub, blocked: dict) -> bool:
+    """İndirilebilir mi: kaynağı engelli değil ya da engelli olmayan bir kaynakta yedeği var."""
+    return s.source not in blocked or any(a.get("source") not in blocked for a in s.alts)
+
+
 def best_foreign(res: Results) -> Sub | None:
     """Otomatik çeviri için en güvenilir aday (sıralamanın ilki; kaymış işaretliler ve hakkı dolanlar seçilmez)."""
     blocked = store.quota_blocked()
-    return next((s for s in res.foreign if s.note != "kaymış" and (s.source not in blocked or s.alts)), None)
+    return next((s for s in res.foreign if s.note != "kaymış" and _reachable(s, blocked)), None)
 
 
 def next_candidate(res: Results, current_uid: str, kind: str):
