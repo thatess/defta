@@ -55,9 +55,13 @@ SUBSOURCE_API_KEY=...
 JIMAKU_API_KEY=...
 ```
 
-Dosyayı `defta-anahtarlar.txt` adıyla USB belleğe ya da ağ klasörüne koy. Sonra Defta ayarları → Genel →
-**Anahtar dosyasını seç** ile göster. Ayarlara yazılan anahtar her zaman dosyadakinin önüne geçer.
-Anahtarlar hiçbir zaman kayda yazılmaz; ekranda yalnızca uzunlukları görünür.
+Dosyayı USB belleğe, Shield'ın kendi belleğine (ör. Download) ya da ağ klasörüne koy, Defta ayarları → **Genel** →
+**Anahtarları dosyadan içe aktar** ile seç. Anahtarlar Defta'nın ayarlarına kopyalanır (değişecek olan varsa önce sorar),
+ekranda yalnızca son 4 karakter görünür. Sonra dosya gerekmez: bilgisayar kapalıyken ya da USB çıkarılınca da çalışır,
+güvenlik için dosyayı silebilirsin. Anahtarlar hiçbir zaman kayda yazılmaz. Windows ortam değişkenleri okunmaz.
+
+Anahtarlar Kodi'deki Defta ayar dosyasında durur (`userdata/addon_data/service.subtitles.defta/settings.xml`):
+Defta güncellenince kalır; Defta kaldırılırken Kodi "eklenti verileri de silinsin mi?" diye sorar.
 
 ## Kullanım
 
@@ -87,7 +91,9 @@ Kodi'nin *İlk altyazıyı otomatik indir* ayarı açıksa Kodi ilk satırı ken
   çubuk 15 saniyede boşalınca çevrilir; *İptal* ya da Geri tuşuyla vazgeçersin.
   Sıradaki bölümde Türkçe altyazı ya da hazır çeviri varsa sorulmaz. "Çevir" dediğin bölüm açılınca çevirisi
   ayarlardan bağımsız olarak kendiliğinden yüklenir.
-- **Altyazı:** ses notları, konuşan etiketleri, tireler, şarkı sözleri, italik/biçim etiketleri (varsayılan *Kaldır*)
+- **Altyazı:** ses notları, konuşan etiketleri, tireler, italik/biçim etiketleri (varsayılan *Kaldır*); şarkı sözleri
+  (*Çevir*: yalnızca anlamı · *Orijinal bırak*: Latin harfleriyle olduğu gibi, Japonca yazı romajiye çevrilir ·
+  *İkisi birden*: orijinal, altında parantez içinde anlamı). Şarkı, yalnızca ilk satırı ♪ işaretli olsa da bütün olarak bulunur.
 - **Temizlik:** AI çevirileri, arama sonuçları, indirilen altyazılar, seri sözlükleri, çeviri hafızası,
   yarım işler, API önbelleği, senkron işaretleri ve *Tümünü sil* (anahtarlar ve ayarlar silinmez)
 - **Yardım:** bağlantı testi, kurulum rehberi, Kodi kayıtlarını kopyala, AI çevirilerini dışa aktar, ayrıntılı kayıt,
@@ -99,6 +105,11 @@ Kodi'nin *İlk altyazıyı otomatik indir* ayarı açıksa Kodi ilk satırı ken
 - **Bir site açılmıyor:** İnternet sağlayıcısı sitenin adını engelliyorsa Defta, Cloudflare/Google güvenli
   DNS'i ile adresi kendisi bulur.
 - **Kodi kapanırsa:** süren çeviri, Kodi açılınca kaldığı yerden devam eder (biten parçalar tekrar ödenmez).
+- **OpenAI kredisi biterse:** çeviri ilk hatada durur ("OpenAI kredisi bitti"), bekleyen ve kendiliğinden çeviriler
+  başlamaz. Kredi yükleyince listeden seçmen yeter; biten parçalar tekrar ödenmez.
+- **İndirme hakkı dolarsa:** satırda `hak doldu · 03:00` (sıfırlanma saati) ya da `bekleniyor · 10 dk` yazar, satır o
+  zamana kadar alta iner. Aynı altyazı başka sitede de varsa oradan sessizce indirilir ("SubDL'den indirildi").
+- **Canlı yayın:** TV kanallarında (PVR) ve tanınmayan videolarda kendiliğinden altyazı aranmaz.
 - **Kendiliğinden temizlik** (Kodi açılınca, her çeviri bitince ve 6 saatte bir): geçici dosyalar, hızlı çeviriler,
   iptal edilen işlerin artıkları 6 saat sonra; indirilen yabancı altyazılar ve yarım çevirilerin parçaları 30 gün
   sonra silinir. Hazır AI çevirileri ve seri sözlükleri silinmez.

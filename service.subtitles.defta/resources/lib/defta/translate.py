@@ -51,6 +51,10 @@ def window_chunks(job, start_ms: int, window_s: int, size: int = FAST_CHUNK) -> 
     return out
 
 
+class CreditError(RuntimeError):
+    """OpenAI kredisi bitti: iş durur, otomatik çeviriler kendiliğinden başlamaz."""
+
+
 def _prices() -> dict:
     try:
         with open(os.path.join(kodi.addon_dir(), "resources", "lib", "prices.json"), encoding="utf-8") as f:
@@ -74,7 +78,7 @@ def build_settings():
         "sdh": {"sound_notes": sdh3[min(2, kodi.setting_int("sound_notes", 0))],
                 "speaker_labels": sdh3[min(2, kodi.setting_int("speaker_labels", 0))],
                 "speaker_dashes": ["remove", "keep"][min(1, kodi.setting_int("speaker_dashes", 0))],
-                "lyrics": ["translate", "keep", "auto"][min(2, kodi.setting_int("lyrics", 0))],
+                "lyrics": ["translate", "keep", "auto", "both"][min(3, kodi.setting_int("lyrics", 0))],
                 "note_only_blocks": "delete"},
         "output": {"credit": kodi.setting("credit", "Thates").strip(), "format": "srt", "position_codes": "remove",
                    "suspect_report": False, "progress": "off", "residue_filter": True,
@@ -96,6 +100,7 @@ class Translator:
         self.should_stop = should_stop
         self.cost = None
         self.unchecked = False      # anlam kontrolü olmadı, kontrolsüz tam çeviri yüklendi
+        self.credit_out = False     # çeviri bitti ama kredi son adımda tükendi
         self._loop = None
         self._task = None
 
@@ -266,8 +271,13 @@ class Translator:
             state["final"] = True
             blocks = engine.final_blocks(fj)
             write_atomic(out_path, blocks, "srt", fj.srt.doc)
-        except FatalError as e:
-            raise RuntimeError(str(e)) from e
+        except Exception as e:
+            dead = getattr(inner, "dead", None)
+            if dead is not None and dead.credit:
+                raise CreditError(str(dead)) from e      # biten parçalar önbellekte kalır, tekrar ödenmez
+            if isinstance(e, FatalError):
+                raise RuntimeError(str(e)) from e
+            raise
         finally:
             state["final"] = True
             if fast_task is not None and not fast_task.done():
@@ -286,6 +296,8 @@ class Translator:
                 except Exception:  # noqa: BLE001
                     pass
             store.close()
+        dead = getattr(inner, "dead", None)
+        self.credit_out = bool(dead is not None and dead.credit)
         self.cost = fj.usage.cost(price)
         if fast_job is not None and self.cost is not None:
             fc = fast_job.usage.cost(price)

@@ -11,6 +11,7 @@ from .sources import ALL, LABEL
 from .sources.base import SourceError, Sub
 
 HUMAN_MAX = 10
+PREF = "önceki bölümde kullandığın"
 
 _SOURCES = {"bluray": "bluray", "blu-ray": "bluray", "bdrip": "bluray", "brrip": "bluray", "bdremux": "bluray",
             "remux": "bluray", "web-dl": "webdl", "webdl": "webdl", "web": "webdl", "webrip": "webrip",
@@ -123,40 +124,38 @@ def _better(a: Sub, b: Sub) -> bool:
            (b.hash_match, b.score, b.source == "opensubtitles", b.downloads, b.rating)
 
 
+def _merge(keep: Sub, drop: Sub) -> Sub:
+    """İki satır tek satır olur: kalan, birleşenin 'senkron uyumlu' bilgisini ve indirme yedeğini taşır."""
+    keep.hash_match = keep.hash_match or drop.hash_match
+    keep.sync = keep.sync or drop.sync
+    known = {keep.uid()} | {Sub.from_dict(a).uid() for a in keep.alts}
+    for a in [drop.to_dict()] + list(drop.alts):
+        if Sub.from_dict(a).uid() not in known and len(keep.alts) < 3:
+            keep.alts.append(dict(a, alts=[]))
+            known.add(Sub.from_dict(a).uid())
+    return keep
+
+
 def _dedupe(subs: list[Sub]) -> list[Sub]:
     """Aynı altyazı birden çok kaynakta (ya da aynı kaynakta iki kez) varsa tek satır kalır.
     1) aynı dil + aynı sürüm adı (eklerden arındırılmış) + aynı SDH durumu
     2) daha önce indirilmişse içerik parmak izi (metin + zamanlama) aynı olanlar
-    Kalan satır, birleşenlerin "senkron uyumlu" bilgisini taşır."""
+    Elenen kopya, kalanın indirme yedeği olur (kaynak indirmezse ondan indirilir)."""
     best: dict = {}
     for s in subs:
         k = (s.lang, release_key(s.release or s.sid) or s.uid(), s.hi)
         cur = best.get(k)
-        if cur is None:
-            best[k] = s
-            continue
-        keep, drop = (s, cur) if _better(s, cur) else (cur, s)
-        keep.hash_match = keep.hash_match or drop.hash_match
-        keep.sync = keep.sync or drop.sync
-        best[k] = keep
-    out = list(best.values())
+        best[k] = s if cur is None else _merge(s, cur) if _better(s, cur) else _merge(cur, s)
     prints = store.fingerprints()
     by_fp: dict = {}
     rest = []
-    for s in out:
+    for s in best.values():
         fp = prints.get(s.uid())
+        cur = by_fp.get(fp) if fp else None
         if not fp:
             rest.append(s)
-            continue
-        cur = by_fp.get(fp)
-        if cur is None or _better(s, cur):
-            if cur is not None:
-                s.hash_match = s.hash_match or cur.hash_match
-                s.sync = s.sync or cur.sync
-            by_fp[fp] = s
         else:
-            cur.hash_match = cur.hash_match or s.hash_match
-            cur.sync = cur.sync or s.sync
+            by_fp[fp] = s if cur is None else _merge(s, cur) if _better(s, cur) else _merge(cur, s)
     return rest + list(by_fp.values())
 
 
@@ -192,29 +191,34 @@ def search(m: Media, use_cache: bool = True) -> Results:
     if not m.is_anime and any(s.source == "jimaku" for s in subs):
         m.is_anime = True                       # Jimaku'da kaydı var: anime (Japonca ayarı sırayı belirler)
         srcs = kodi.source_langs(True)
-    video = m.filename
     pref = store.series_pref(m)
     bad = store.bad_uids(m)
     for s in subs:
-        s.score = match_score(video, s)
+        s.score = match_score(m.filename, s)
         s.sync = s.hash_match or s.sync or s.score >= 5
-        s.note = ""
-        if pref and s.source == pref.get("source") and s.lang == pref.get("lang", s.lang) and (
+        s.note, s.alts = "", []
+    subs = _dedupe(subs)
+    blocked = store.quota_blocked()
+    pref_used = False
+    for s in sorted(subs, key=lambda s: (not s.hash_match, -s.score, -s.downloads)):
+        if pref and not pref_used and s.source == pref.get("source") and s.lang == pref.get("lang", s.lang) and (
                 (pref.get("uploader") and s.uploader == pref["uploader"]) or
                 (pref.get("group") and features(s.release).get("group") == pref["group"])):
-            s.note = "önceki bölümde kullandığın"
+            s.note, pref_used = PREF, True       # tek satır: aynı yükleyenin her sürümü işaretlenmez
         if s.hash_match:
             s.note = "senkron uyumlu"
+        if s.source in blocked and not s.alts:
+            s.note = blocked[s.source]           # yedeği yoksa: hak dolana kadar alta iner
         if s.uid() in bad:
             s.note = "kaymış"
     demote = kodi.setting_bool("demote_sdh", True)
 
     def key(s: Sub):
-        # Sıra: kaymış en sonda; video karması eşleşen en üstte; sonra önceki bölümün devamı; sonra sürüm uyumu
-        return (s.note == "kaymış", not s.hash_match, s.note != "önceki bölümde kullandığın", -s.score,
-                s.hi if demote else False, -s.downloads, -s.rating)
+        # Sıra: kaymış en sonda, hakkı dolan kaynak onun üstünde; video karması eşleşen en üstte;
+        # sonra önceki bölümün devamı; sonra sürüm uyumu
+        return (s.note == "kaymış", s.source in blocked and not s.alts, not s.hash_match, s.note != PREF,
+                -s.score, s.hi if demote else False, -s.downloads, -s.rating)
 
-    subs = _dedupe(subs)
     res.human = sorted([s for s in subs if s.lang == tgt and not s.ai], key=key)[:HUMAN_MAX]
     per = {0: 3, 1: 5, 2: 10, 3: 10 ** 6}.get(kodi.setting_int("per_source", 1), 5)
     order = {c: i for i, c in enumerate(srcs)}
@@ -223,13 +227,14 @@ def search(m: Media, use_cache: bool = True) -> Results:
     for name in ALL:
         mine = sorted([s for s in foreign if s.source == name], key=lambda s: (order.get(s.lang, 99),) + key(s))
         picked += mine[:per]
-    res.foreign = sorted(picked, key=lambda s: key(s)[:3] + (order.get(s.lang, 99),) + key(s)[3:])
+    res.foreign = sorted(picked, key=lambda s: key(s)[:4] + (order.get(s.lang, 99),) + key(s)[4:])
     return res
 
 
 def best_foreign(res: Results) -> Sub | None:
-    """Otomatik çeviri için en güvenilir aday (sıralamanın ilki; kaymış işaretliler hiç seçilmez)."""
-    return next((s for s in res.foreign if s.note != "kaymış"), None)
+    """Otomatik çeviri için en güvenilir aday (sıralamanın ilki; kaymış işaretliler ve hakkı dolanlar seçilmez)."""
+    blocked = store.quota_blocked()
+    return next((s for s in res.foreign if s.note != "kaymış" and (s.source not in blocked or s.alts)), None)
 
 
 def next_candidate(res: Results, current_uid: str, kind: str):

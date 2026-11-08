@@ -33,6 +33,7 @@ SAMPLE = Path(os.environ.get("SUBTRANS_DIR", ROOT.parent / "altyazi_cevirici")) 
 class FakeOpenAI(BaseHTTPRequestHandler):
     requests = 0
     delay = 0.0
+    credit_out = False          # True: OpenAI "kredi bitti" (429 insufficient_quota) döner
 
     def log_message(self, *a):
         pass
@@ -56,6 +57,9 @@ class FakeOpenAI(BaseHTTPRequestHandler):
             import time
             time.sleep(FakeOpenAI.delay)
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if FakeOpenAI.credit_out:
+            return self._send(429, {"error": {"message": "You exceeded your current quota.", "type": "insufficient_quota",
+                                              "code": "insufficient_quota"}})
         user = json.loads(body["messages"][1]["content"])
         if "lines" in user:
             out = {"items": [{"i": it["i"], "translation": "TR-" + it["line"][::-1]} for it in user["lines"]]}
@@ -975,6 +979,50 @@ class TestV310(Base):
             os.environ.pop("SUBSOURCE_API_KEY", None)
             xbmcvfs.MAP.pop("special://logpath/", None)
 
+    def test_import_keys_from_file(self):
+        import xbmcgui
+        from defta import kodi, tools
+        env = self.tmp / "anahtarlar.env"
+        env.write_text("# yorum\nOPENAI_API_KEY=sk-test-key-000000000000000000000000000000000000\n"
+                       "export SUBDL_API_KEY=\"yeniSubdlAnahtar12345\"\nJIMAKU_API_KEY=jimakuAnahtar98765\n"
+                       "BASKA_BIR_SEY=1\n", encoding="utf-8")
+        keep = {k: xbmcaddon.SETTINGS.get(k) for k in ("subdl_key", "jimaku_key", "key_file", "openai_key")}
+        xbmcaddon.SETTINGS["subdl_key"] = "eskiSubdl"
+        xbmcaddon.SETTINGS["key_file"] = "smb://PC/subtitles/.env"
+        xbmcgui.YESNO["answer"] = True
+        xbmcgui.NOTES.clear()
+        xbmc.LOGS.clear()
+        try:
+            st = tools.import_keys(str(env))
+            self.assertEqual(st["subdl_key"], "değişti")
+            self.assertEqual(st["jimaku_key"], "yeni")
+            self.assertEqual(st["openai_key"], "aynı")
+            self.assertEqual(xbmcaddon.SETTINGS["subdl_key"], "yeniSubdlAnahtar12345")
+            self.assertEqual(xbmcaddon.SETTINGS["key_file"], "", "artık dosyaya bağlı değil")
+            self.assertEqual(kodi.describe_secret("jimaku_key").split(", ")[-1], "ayarlar)")
+            summary = xbmcgui.NOTES[-1][1]
+            self.assertIn("…2345", summary)
+            self.assertNotIn("yeniSubdlAnahtar12345", summary + " ".join(xbmc.LOGS), "anahtar ekrana/kayda yazılmaz")
+            self.assertTrue(env.exists(), "dosyaya dokunulmaz")
+            # Klasör seçilince içindeki .env bulunur (Kodi'nin seçicisi .env'i göstermez)
+            xbmcgui.SELECT["answer"], xbmcgui.BROWSE["path"] = 0, str(self.tmp)
+            (self.tmp / ".env").write_text(env.read_text(encoding="utf-8"), encoding="utf-8")
+            self.assertIn("subdl_key", tools.import_keys())
+            xbmcgui.BROWSE["path"] = ""
+            # İptal: değişecek anahtar varsa ve hayır denirse hiçbir şey yazılmaz
+            xbmcaddon.SETTINGS["subdl_key"] = "baskaEski"
+            xbmcgui.YESNO["answer"] = False
+            self.assertEqual(tools.import_keys(str(env)), {})
+            self.assertEqual(xbmcaddon.SETTINGS["subdl_key"], "baskaEski")
+        finally:
+            xbmcgui.YESNO["answer"] = True
+            for k, v in keep.items():
+                if v is None:
+                    xbmcaddon.SETTINGS.pop(k, None)
+                else:
+                    xbmcaddon.SETTINGS[k] = v
+            kodi.forget_secret_cache()
+
     def test_active_sync_flag_is_honest(self):
         from defta import plugin, store
         from defta.media import Media
@@ -1037,3 +1085,251 @@ class TestTools(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+SONG_SRT = """1
+00:00:01,000 --> 00:00:03,000
+♪ Sono yume wa kokoro no ibasho
+(That dream is the place of my heart)
+
+2
+00:00:03,500 --> 00:00:06,000
+Tooku made yukou yo
+(Let's go far away)
+
+3
+00:00:06,500 --> 00:00:09,000
+Hikari no naka e ♪
+(Into the light)
+
+4
+00:00:15,000 --> 00:00:17,000
+What are you doing here?
+
+5
+00:01:00,000 --> 00:01:03,000
+<i>Akai ya wo ima hanate</i>
+
+6
+00:01:00,000 --> 00:01:03,000
+<i>(Shoot the red arrow now)</i>
+
+7
+00:01:10,000 --> 00:01:12,000
+I am going home.
+"""
+
+
+class TestV040(Base):
+    def _job(self, name, text, load=False):
+        from defta import store
+        from defta.media import Media
+        from defta.sources.base import Sub
+        m = Media(title=name, season=1, episode=1)
+        sub = Sub("opensubtitles", name, "en", release=name)
+        src = store.download_path(sub, ".srt")
+        Path(src).write_text(text, encoding="utf-8")
+        return store.new_job(m, sub, src, fresh=True, load=load)
+
+    def _blocks(self, path):
+        from subtrans.subformats import read_subtitle
+        return [b.text for b in read_subtitle(Path(path)).blocks]
+
+    def test_lyrics_three_modes(self):
+        from defta.translate import Translator
+        out = {}
+        try:
+            for mode, idx in (("translate", "0"), ("keep", "1"), ("both", "3")):
+                xbmcaddon.SETTINGS["lyrics"] = idx
+                out[mode] = self._blocks(Translator(self._job("Sarki" + mode, SONG_SRT), lambda *a: None).run())
+        finally:
+            xbmcaddon.SETTINGS.pop("lyrics", None)
+        t, k, b = out["translate"], out["keep"], out["both"]
+        # Çevir: yalnızca anlamın çevirisi, romaji satırı yok
+        self.assertTrue(all("Sono yume" not in x and "Akai ya" not in x for x in t), t)
+        self.assertTrue(any("That dream" in x for x in t))
+        self.assertEqual(len(t), 6, "aynı anda gösterilen romaji bloğu atılır")
+        # Orijinal bırak: bütün sözler Latin harfleriyle olduğu gibi, İngilizce anlam satırı yok
+        self.assertIn("♪ Sono yume wa kokoro no ibasho", k[0])
+        self.assertEqual(k[1], "Tooku made yukou yo", "şarkının ilk satırından sonrası da orijinal kalmalı")
+        self.assertEqual(k[2], "Hikari no naka e ♪")
+        self.assertTrue(all("dream" not in x and "Shoot" not in x for x in k), k)
+        self.assertIn("Akai ya wo ima hanate", "\n".join(k))
+        self.assertTrue(k[3].startswith("TR["), "şarkıdan sonraki konuşma çevrilir")
+        # İkisi birden: orijinal, hemen altında parantez içinde çeviri
+        self.assertEqual(b[0].split("\n")[0], "♪ Sono yume wa kokoro no ibasho")
+        self.assertTrue(b[0].split("\n")[1].startswith("(TR["), b[0])
+        self.assertTrue(b[1].startswith("Tooku made yukou yo\n("), b[1])
+        self.assertTrue(b[3].startswith("TR[") and "(" not in b[3][:1])
+
+    def test_credit_out_stops_and_blocks_auto(self):
+        import xbmcgui
+        from defta import plugin, service_main, store
+        from defta.translate import CreditError, Translator
+        from subtrans.provider import is_credit_error
+        self.assertTrue(is_credit_error(429, {"error": {"code": "insufficient_quota", "message": "x"}}))
+        self.assertTrue(is_credit_error(400, {"error": {"code": "billing_hard_limit_reached"}}))
+        self.assertFalse(is_credit_error(429, {"error": {"message": "Rate limit reached for requests"}}))
+        FakeOpenAI.credit_out = True
+        n0 = FakeOpenAI.requests
+        try:
+            job = self._job("Kredi", SAMPLE.read_text(encoding="utf-8"))
+            with self.assertRaises(CreditError):
+                Translator(job, lambda *a: None).run()
+            self.assertLess(FakeOpenAI.requests - n0, 40, "kredi bitince istekler hemen durmalı")
+            # servis: bekleyen işler başlamaz, otomatik çeviri durur, bildirim
+            xbmcgui.NOTES.clear()
+            svc = service_main.Service()
+            waiting = self._job("Kredi2", SONG_SRT)
+            svc._run_job(self._job("Kredi3", SAMPLE.read_text(encoding="utf-8")))
+            self.assertTrue(store.credit_out())
+            self.assertEqual(store.get_job(waiting["id"])["status"], "failed")
+            self.assertIn("OpenAI kredisi bitti", [n[1] for n in xbmcgui.NOTES])
+            auto = self._job("Kredi4", SONG_SRT)
+            auto["auto"] = True
+            store.save_job(auto)
+            n1 = FakeOpenAI.requests
+            svc._run_job(auto)
+            self.assertEqual(FakeOpenAI.requests, n1, "otomatik iş kredi bitince hiç istek göndermez")
+        finally:
+            FakeOpenAI.credit_out = False
+        # elle seçince yeniden denenir
+        from defta.media import Media
+        from defta.sources.base import Sub
+        plugin._start_job(Media(title="Elle", season=1, episode=1), Sub("opensubtitles", "e1", "en"), str(SAMPLE), False)
+        self.assertFalse(store.credit_out())
+        for j in store.list_jobs("pending"):
+            j["status"] = "cancelled"
+            store.save_job(j)
+
+    def test_live_tv_and_unknown_video_skip_auto(self):
+        from defta.media import Media
+        self.assertEqual(Media(title="NBA TV", extra={"live": True}).auto_skip(), "canlı yayın")
+        self.assertEqual(Media(title="index").auto_skip(), "video tanınmadı")
+        self.assertEqual(Media(title="Dizi", season=1, episode=2).auto_skip(), "")
+        self.assertEqual(Media(title="Film", year=2014).auto_skip(), "")
+
+    def test_series_pref_not_in_same_episode(self):
+        from defta import search, store
+        from defta.media import Media
+        from defta.sources import opensubtitles, subdl
+        from defta.sources.base import Sub
+        m = Media(title="Pref", season=1, episode=3)
+        subs = [Sub("opensubtitles", f"p{i}", "en", release=f"Pref.S01E03.{q}-GRP", uploader="ali")
+                for i, q in enumerate(("1080p", "720p", "480p"))]
+        orig = (opensubtitles.search, subdl.search)
+        opensubtitles.search = lambda mm, w: [Sub.from_dict(s.to_dict()) for s in subs]
+        subdl.search = lambda mm, w: []
+        try:
+            store.remember_choice(m, subs[0])       # bu bölümde seçildi (sonra başka çeviriye geçildi)
+            res = search.search(m, use_cache=False)
+            self.assertFalse([s for s in res.foreign if s.note], "aynı bölümde 'önceki bölümde' notu çıkmamalı")
+            nxt = m.next_episode()
+            res = search.search(nxt, use_cache=False)
+            self.assertEqual(len([s for s in res.foreign if s.note == search.PREF]), 1, "yalnızca tek satır")
+        finally:
+            opensubtitles.search, subdl.search = orig
+            store.clean("syncmarks")
+
+    def test_season_finale_goes_to_next_season(self):
+        import xbmcgui
+        from defta import service_main, store
+        from defta.media import Media
+        from defta.sources import opensubtitles, subdl
+        from defta.sources.base import Sub
+        pack = Sub("subdl", "https://dl.subdl.com/subtitle/pack.zip", "en", release="Fin.S01.Complete", pack=True)
+        s2 = Sub("opensubtitles", "f201", "en", release="Fin.S02E01.1080p", season=2, episode=1)
+        Path(store.download_path(s2, ".srt")).write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n", encoding="utf-8")
+        orig = (opensubtitles.search, subdl.search)
+        opensubtitles.search = lambda m, w: [s2] if (m.season, m.episode) == (2, 1) else []
+        subdl.search = lambda m, w: [pack] if m.season == 1 else []
+        svc = service_main.Service()
+        svc.player.is_playing = lambda mm: True
+        try:
+            svc._prefetch_inner(Media(title="Fin", season=1, episode=10), 2)
+            jobs = [j for j in store.list_jobs("pending") if j["media"]["title"] == "Fin"]
+            self.assertEqual([(j["media"]["season"], j["media"]["episode"]) for j in jobs], [(2, 1)])
+            self.assertTrue(jobs[0]["auto"])
+            for j in jobs:
+                j["status"] = "cancelled"
+                store.save_job(j)
+            # yalnızca paket var ve indirilemiyor: sessiz kalmaz
+            opensubtitles.search = lambda m, w: []
+            store.clean("search")
+            xbmcgui.NOTES.clear()
+            from defta.sources import subdl as sd
+            orig_dl = sd.download
+
+            def bad(sub, m):
+                from defta.sources.base import SourceError
+                raise SourceError("arşivde 11. bölümün altyazısı bulunamadı")
+            sd.download = bad
+            try:
+                svc._prefetch_inner(Media(title="Fin", season=1, episode=10), 2)
+            finally:
+                sd.download = orig_dl
+            self.assertIn("Sıradaki bölüm indirilemedi", [n[1] for n in xbmcgui.NOTES])
+        finally:
+            opensubtitles.search, subdl.search = orig
+            store.clean("search")
+
+    def test_fallback_source_and_quota(self):
+        import time
+        import xbmcgui
+        from defta import fetch, search, store
+        from defta.media import Media
+        from defta.sources import opensubtitles, subdl
+        from defta.sources.base import QuotaError, Sub
+        m = Media(title="Yedek", season=1, episode=1)
+        a = Sub("opensubtitles", "y1", "en", release="Yedek.S01E01.1080p-GRP", downloads=50)
+        b = Sub("subdl", "https://dl.subdl.com/subtitle/y1.zip", "en", release="Yedek.S01E01.1080p-GRP.en.srt")
+        only_os = Sub("opensubtitles", "y2", "en", release="Yedek.S01E01.720p-XYZ", downloads=999)
+        orig = (opensubtitles.search, subdl.search, opensubtitles.download, subdl.download)
+        opensubtitles.search = lambda mm, w: [Sub.from_dict(a.to_dict()), Sub.from_dict(only_os.to_dict())]
+        subdl.search = lambda mm, w: [Sub.from_dict(b.to_dict())]
+        reset = time.time() + 3 * 3600
+
+        def os_dl(sub, mm):
+            raise QuotaError("OpenSubtitles hakkı doldu", reset)
+        opensubtitles.download = os_dl
+        subdl.download = lambda sub, mm: ("y1.srt", b"1\n00:00:01,000 --> 00:00:02,000\nHi\n")
+        xbmcgui.NOTES.clear()
+        try:
+            res = search.search(m, use_cache=False)
+            row = next(s for s in res.foreign if s.sid == "y1")
+            self.assertEqual(len(row.alts), 1, "birleşen satır başka kaynağı yedek olarak taşır")
+            row = Sub.from_dict(json.loads(json.dumps(row.to_dict())))        # listedeki adresten geri okunur
+            path = fetch.get(row, m)
+            self.assertTrue(os.path.exists(path))
+            self.assertIn("SubDL'den indirildi", [n[1] for n in xbmcgui.NOTES])
+            note = store.quota_blocked()["opensubtitles"]
+            self.assertEqual(note, "hak doldu · " + time.strftime("%H:%M", time.localtime(reset)))
+            res = search.search(m, use_cache=False)
+            self.assertEqual(res.foreign[-1].sid, "y2", "hakkı dolan kaynağın yedeksiz satırı alta iner")
+            self.assertEqual(res.foreign[-1].note, note)
+            with self.assertRaises(Exception) as cm:
+                fetch.get(next(s for s in res.foreign if s.sid == "y2"), m)
+            self.assertEqual(str(cm.exception), "OpenSubtitles hakkı doldu · " + note.split(" · ")[1])
+            # başarılı indirmede kendiliğinden kalkar
+            opensubtitles.download = lambda sub, mm: ("y2.srt", b"1\n00:00:01,000 --> 00:00:02,000\nYo\n")
+            store.clear_quota("opensubtitles")
+            fetch.get(Sub.from_dict(only_os.to_dict()), m)
+            self.assertNotIn("opensubtitles", store.quota_blocked())
+            store.set_quota("subdl", time.time() + 600, False)
+            self.assertEqual(store.quota_blocked()["subdl"], "bekleniyor · 10 dk")
+            store.set_quota("subdl", time.time() - 1, False)
+            self.assertNotIn("subdl", store.quota_blocked(), "süresi geçince kendiliğinden kalkar")
+        finally:
+            opensubtitles.search, subdl.search, opensubtitles.download, subdl.download = orig
+            store.clean("search")
+
+    def test_sidecar_subtitle(self):
+        from defta import fetch
+        video = self.tmp / "Yanında.S01E01.mkv"
+        video.write_bytes(b"\0" * 100)
+        self.assertEqual(fetch.loaded_subtitle(0, "tr", str(video)), "")
+        side = self.tmp / "Yanında.S01E01.en.srt"
+        side.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+        (self.tmp / "Yanında.S01E01.tr.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nMerhaba\n", encoding="utf-8")
+        self.assertEqual(fetch.loaded_subtitle(0, "tr", str(video)), str(side))
+        self.assertEqual(fetch.loaded_subtitle(0, "tr", "http://x/y.mkv"), "")

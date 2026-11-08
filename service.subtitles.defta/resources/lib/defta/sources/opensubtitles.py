@@ -10,7 +10,7 @@ import time
 
 from .. import kodi, langs, net
 from ..media import Media
-from .base import SourceError, Sub, pick_from_archive
+from .base import QuotaError, SourceError, Sub, busy_error, pick_from_archive
 
 API = "https://api.opensubtitles.com/api/v1"
 NAME = "opensubtitles"
@@ -119,8 +119,11 @@ def download(sub: Sub, m: Media) -> tuple[str, bytes]:
     try:
         r = net.post_json(api + "/download", {"file_id": int(sub.sid)}, _headers(token))
     except net.HttpError as e:
-        if e.status == 406 or e.status == 429:
-            raise SourceError("OpenSubtitles günlük indirme hakkı doldu (ayarlardan giriş yapabilirsiniz)") from e
+        p = e.payload if isinstance(e.payload, dict) else {}
+        if e.status == 406 or (e.status == 429 and ("remaining" in p or "reset_time_utc" in p)):
+            raise QuotaError("OpenSubtitles hakkı doldu", reset_time(p)) from e
+        if busy_error(e, "OpenSubtitles"):
+            raise busy_error(e, "OpenSubtitles") from e
         if e.status == 401:
             raise SourceError("OpenSubtitles indirmeye izin vermedi: anonim indirme kapalı olabilir; "
                               "ayarlara kullanıcı adı/şifre girin") from e
@@ -129,9 +132,23 @@ def download(sub: Sub, m: Media) -> tuple[str, bytes]:
     if not link:
         raise SourceError("OpenSubtitles indirme bağlantısı vermedi")
     kodi.log(f"OpenSubtitles indirme: kalan hak {r.get('remaining')}", "debug")
+    if str(r.get("remaining")) == "0":         # bu son hakkıydı: sıfırlanana kadar listede alta iner
+        from .. import store
+        store.set_quota(NAME, reset_time(r), True)
     raw = net.get_bytes(link)
     name, data = pick_from_archive(raw, m.season, m.episode)
     return (r.get("file_name") or name), data
+
+
+def reset_time(p: dict) -> float:
+    """Günlük hakkın sıfırlanacağı an (reset_time_utc, ör. "2026-11-09T00:00:00.000Z"); yoksa 24 saat sonra."""
+    import calendar
+    import time
+    v = str((p or {}).get("reset_time_utc") or "")
+    try:
+        return float(calendar.timegm(time.strptime(v[:19], "%Y-%m-%dT%H:%M:%S")))
+    except ValueError:
+        return time.time() + 24 * 3600
 
 
 def check() -> str:

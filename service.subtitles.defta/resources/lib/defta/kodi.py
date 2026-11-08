@@ -316,7 +316,7 @@ def source_langs(anime: bool = False) -> list[str]:
 
 # ------------------------------------------------------------------ anahtarlar
 
-_ENV_NAMES = {
+ENV_NAMES = {
     "openai_key": "OPENAI_API_KEY",
     "os_key": "OPENSUBTITLES_API_KEY",
     "os_user": "OPENSUBTITLES_USERNAME",
@@ -339,20 +339,19 @@ def _env_file_values() -> dict:
     now = time.time()
     if _env_cache["path"] == path and now - _env_cache["t"] < 60:
         return _env_cache["values"]
-    out = {}
     try:
-        if "://" in path:                 # smb://, nfs://, special:// (Shield: ağ klasörü ya da USB)
-            f = xbmcvfs.File(path)
-            try:
-                text = f.readBytes().decode("utf-8-sig", "replace")
-            finally:
-                f.close()
-        else:
-            with open(path, encoding="utf-8-sig") as fh:
-                text = fh.read()
+        text = read_text(path)            # smb://, nfs://, special:// (Shield: ağ klasörü ya da USB)
     except (OSError, RuntimeError):
         text = ""
-    for line in text.splitlines():
+    out = parse_env(text)
+    _env_cache.update(path=path, t=now, values=out)
+    return out
+
+
+def parse_env(text: str) -> dict:
+    """KEY=değer satırları (# yorum, export önekleri, tırnaklar yok sayılır)."""
+    out = {}
+    for line in (text or "").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -361,8 +360,30 @@ def _env_file_values() -> dict:
         if k.startswith("export "):
             k = k[7:].strip()
         out[k] = v.strip().strip('"').strip("'").strip()
-    _env_cache.update(path=path, t=now, values=out)
     return out
+
+
+def read_text(path: str) -> str:
+    """Yerel ya da Kodi yolu (smb://, special://, USB) — metin olarak."""
+    if "://" in path:
+        f = xbmcvfs.File(path)
+        try:
+            return bytes(f.readBytes()).decode("utf-8-sig", "replace")
+        finally:
+            f.close()
+    with open(path, encoding="utf-8-sig", errors="replace") as fh:
+        return fh.read()
+
+
+KEY_SETTINGS = ("openai_key", "os_key", "os_user", "os_pass", "subdl_key", "subsource_key", "jimaku_key")
+KEY_LABELS = {"openai_key": "OpenAI", "os_key": "OpenSubtitles anahtarı", "os_user": "OpenSubtitles kullanıcı adı",
+              "os_pass": "OpenSubtitles şifresi", "subdl_key": "SubDL", "subsource_key": "SubSource",
+              "jimaku_key": "Jimaku"}
+
+
+def forget_secret_cache() -> None:
+    _env_cache.update(path=None, t=0.0, values={})
+    _secret_cache.update(t=0.0, values=[])
 
 
 def secret(key: str) -> str:
@@ -370,7 +391,7 @@ def secret(key: str) -> str:
     v = setting(key).strip()
     if v:
         return v
-    env = _ENV_NAMES.get(key)
+    env = ENV_NAMES.get(key)
     if not env:
         return ""
     return _env_file_values().get(env, "").strip()     # Windows ortam değişkenleri okunmaz (eski anahtar karışmasın)

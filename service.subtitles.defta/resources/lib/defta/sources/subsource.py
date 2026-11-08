@@ -7,7 +7,7 @@ import re
 
 from .. import kodi, langs, net
 from ..media import Media
-from .base import SourceError, Sub, pick_from_archive
+from .base import SourceError, Sub, busy_error, pick_from_archive
 
 API = "https://api.subsource.net/api/v1"
 NAME = "subsource"
@@ -110,7 +110,7 @@ def download(sub: Sub, m: Media) -> tuple[str, bytes]:
     try:
         raw = net.get_bytes(f"{API}/subtitles/{sub.sid}/download", None, _h())
     except net.HttpError as e:
-        raise SourceError(f"SubSource indirme başarısız ({e})") from e
+        raise busy_error(e, "SubSource") or SourceError(f"SubSource indirme başarısız ({e})") from e
     return pick_from_archive(raw, m.season, m.episode)
 
 

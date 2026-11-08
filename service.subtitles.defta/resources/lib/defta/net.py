@@ -135,10 +135,18 @@ def redact(url: str) -> str:
 
 
 class HttpError(Exception):
-    def __init__(self, status: int, message: str, payload=None):
+    def __init__(self, status: int, message: str, payload=None, headers: dict | None = None):
         super().__init__(f"HTTP {status}: {message}")
         self.status = status
         self.payload = payload
+        self.headers = {k.lower(): v for k, v in (headers or {}).items()}
+
+    def retry_after(self) -> float:
+        """Sunucunun 'şu kadar sonra dene' dediği süre (sn), yoksa 0."""
+        try:
+            return max(0.0, float(self.headers.get("retry-after", 0)))
+        except ValueError:
+            return 0.0
 
 
 def request(method: str, url: str, params: dict | list | None = None, headers: dict | None = None,
@@ -193,27 +201,24 @@ def request(method: str, url: str, params: dict | list | None = None, headers: d
                        + (f" → {_resolved(host)}" if host else "") + ")")
 
 
+def _checked(method: str, url: str, params, headers, body, timeout: float) -> bytes:
+    status, raw, rh = request(method, url, params, headers, body=body, timeout=timeout)
+    if status not in (200, 201):
+        payload = _loads(raw)
+        raise HttpError(status, _msg(payload, raw), payload, rh)
+    return raw
+
+
 def get_json(url: str, params=None, headers=None, timeout: float = 15.0):
-    status, raw, _ = request("GET", url, params, headers, timeout=timeout)
-    payload = _loads(raw)
-    if status != 200:
-        raise HttpError(status, _msg(payload, raw), payload)
-    return payload
+    return _loads(_checked("GET", url, params, headers, None, timeout))
 
 
 def post_json(url: str, body: dict, headers=None, timeout: float = 15.0):
-    status, raw, _ = request("POST", url, None, headers, body=body, timeout=timeout)
-    payload = _loads(raw)
-    if status not in (200, 201):
-        raise HttpError(status, _msg(payload, raw), payload)
-    return payload
+    return _loads(_checked("POST", url, None, headers, body, timeout))
 
 
 def get_bytes(url: str, params=None, headers=None, timeout: float = 30.0) -> bytes:
-    status, raw, _ = request("GET", url, params, headers, timeout=timeout)
-    if status != 200:
-        raise HttpError(status, _msg(_loads(raw), raw))
-    return raw
+    return _checked("GET", url, params, headers, None, timeout)
 
 
 def _loads(raw: bytes):

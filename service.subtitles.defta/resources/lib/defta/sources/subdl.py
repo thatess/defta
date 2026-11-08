@@ -5,7 +5,7 @@ import re
 
 from .. import kodi, langs, net
 from ..media import Media
-from .base import SourceError, Sub, pick_from_archive
+from .base import SourceError, Sub, busy_error, pick_from_archive
 
 API = "https://api.subdl.com/api/v1/subtitles"
 DL = "https://dl.subdl.com"
@@ -71,11 +71,11 @@ def download(sub: Sub, m: Media) -> tuple[str, bytes]:
         raw = net.get_bytes(url)
     except net.HttpError as e:
         if e.status not in (401, 403):
-            raise SourceError(f"SubDL indirme başarısız ({e})") from e
+            raise busy_error(e, "SubDL") or SourceError(f"SubDL indirme başarısız ({e})") from e
         try:
             raw = net.get_bytes(url, {"api_key": kodi.secret("subdl_key")})
         except net.HttpError as e2:
-            raise SourceError(f"SubDL indirme başarısız ({e2})") from e2
+            raise busy_error(e2, "SubDL") or SourceError(f"SubDL indirme başarısız ({e2})") from e2
     return pick_from_archive(raw, m.season, m.episode)
 
 

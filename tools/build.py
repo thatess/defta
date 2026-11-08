@@ -93,10 +93,17 @@ def build_repo() -> None:
     shutil.copy(DOCS / REPO_ADDON.name / f"{REPO_ADDON.name}-{version(REPO_ADDON)}.zip",
                 DOCS / f"{REPO_ADDON.name}.zip")
     (DOCS / ".nojekyll").write_text("", encoding="utf-8")
+    # Kodi bu sayfayı klasör gibi okur: yalnızca bağlantılar dosya sayılır (logo <img>, bağlantı değil)
     links = "".join(f'<a href="{p.name}">{p.name}</a><br>\n' for p in sorted(DOCS.iterdir())
                     if p.name not in ("index.html", ".nojekyll"))
-    (DOCS / "index.html").write_text(f"<!doctype html><meta charset='utf-8'><title>Defta</title>\n{links}",
-                                     encoding="utf-8")
+    (DOCS / "index.html").write_text(
+        "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+        "<title>Defta</title><link rel='icon' href='service.subtitles.defta/icon.png'>\n"
+        "<style>body{background:#0b0e12;color:#e8edf2;font:16px system-ui,sans-serif;max-width:640px;"
+        "margin:40px auto;padding:0 16px}img{width:96px;height:96px}h1{margin:12px 0 4px}p{color:#8b96a1}"
+        "a{color:#17b2e7;line-height:1.9}</style>\n"
+        f"<img src='service.subtitles.defta/icon.png' alt=''><h1>Defta</h1>"
+        f"<p>Kodi için AI altyazı çevirisi · sürüm {cur}</p>\n{links}", encoding="utf-8")
 
 
 if __name__ == "__main__":

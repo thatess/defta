@@ -30,8 +30,9 @@ GUIDE = """[B]Defta kurulum rehberi[/B]
  • SubSource: subsource.net > hesap > API sekmesi
  • Jimaku (anime, isteğe bağlı): jimaku.cc > hesap
  Anahtarı olmayan kaynak atlanır. Her kaynak ayrı ayrı kapatılabilir.
- Kumandayla yazmak zorsa: anahtarları "OPENAI_API_KEY=..." satırlarıyla bir metin dosyasına yazın,
- USB belleğe ya da ağ klasörüne koyun ve Genel > "Anahtar dosyasını seç" ile gösterin.
+ Kumandayla yazmak zorsa: anahtarları "OPENAI_API_KEY=..." satırlarıyla bir metin dosyasına (.env / .txt) yazın,
+ USB belleğe, Shield'ın kendi belleğine ya da ağ klasörüne koyun ve Genel > "Anahtarları dosyadan içe aktar"
+ ile seçin. Anahtarlar Defta'nın ayarlarına kopyalanır; sonra dosya gerekmez (silebilirsiniz).
 
 [B]2. Kodi'de varsayılan altyazı servisi[/B]
  Ayarlar > Oynatıcı > Dil > Varsayılan film/dizi servisi: Defta
@@ -51,15 +52,25 @@ GUIDE = """[B]Defta kurulum rehberi[/B]
    dosya adıyla görünür ve onu çevirir. Videonun içine gömülü altyazılar çevrilemez.
  • Jimaku açıksa her videoda sorulur; animenin Japonca altyazısı (doğru sezonun) listeye gelir.
    "Animede Japonca altyazıyı öne al" açıksa en üstte, kapalıysa İngilizcelerin altında.
+ • 'hak doldu · 03:00': o sitenin günlük indirme hakkı doldu, satır o saate kadar alta iner.
+   'bekleniyor · 10 dk': site yoğun. Aynı altyazı başka sitede de varsa oradan sessizce indirilir.
  Altyazı videodan uzunsa uyarılır; fark yalnızca kare hızındansa (25 / 23.976) zamanlama kendiliğinden düzeltilir.
 
 [B]4. Sıradaki bölüm[/B]  (Ayarlar > Otomatik)
  Bölümün %90'ı (ayardan %80–95) izlenince sıradaki bölüm arkada çevrilir. 'Sor' seçiliyse sağ üstte küçük bir kutu çıkar,
  video durmaz; alttaki çubuk 15 saniyede boşalınca çevrilir. 'İptal' ya da Geri tuşuyla vazgeçersiniz.
  Kutuyu Yardım > 'Sıradaki bölüm kutusunu dene' ile görebilirsiniz. Sıradaki bölümde Türkçe altyazı varsa sorulmaz.
+ Sezon finalinde yeni sezonun ilk bölümü çevrilir. Olmazsa bildirim gelir.
+ Canlı yayında (TV kanalı) ve tanınmayan videolarda kendiliğinden altyazı aranmaz.
+
+[B]Şarkı sözleri[/B]  (Ayarlar > Altyazı)
+ Çevir: yalnızca anlamı. Orijinal bırak: sözler Latin harfleriyle olduğu gibi (Japonca yazı romajiye çevrilir).
+ İkisi birden: orijinal, hemen altında parantez içinde anlamı.
 
 [B]5. Maliyet[/B]
  Bir dizi bölümü genelde birkaç sent tutar. Aynı altyazı ikinci kez açıldığında hazır çeviri kullanılır, ücret yoktur.
+ OpenAI kredisi biterse çeviri hemen durur, bildirim gelir; kendiliğinden çeviriler başlamaz. Kredi yükleyince
+ listeden seçmen yeter: biten kısım tekrar ödenmez.
 
 [B]6. Sorun olursa[/B]
  Ayarlar > Yardım > Bağlantıları test et. Temizlik sekmesinden kalıntıları silebilirsiniz.
@@ -132,13 +143,98 @@ def test() -> None:
         prog.close()
     lines.append("")
     lines.append(f"Çeviri dili: {kodi.target_lang()}  ·  kaynak dilleri: {', '.join(kodi.source_langs())}")
-    lines.append(f"Anahtar dosyası: {kodi.setting('key_file') or 'yok'}  ·  OpenAI anahtarı: {kodi.describe_secret('openai_key')}")
+    old_file = kodi.setting("key_file").strip()
+    lines.append(f"OpenAI anahtarı: {kodi.describe_secret('openai_key')}"
+                 + (f"  ·  hâlâ dosyadan okunuyor: {old_file} (Genel > Anahtarları dosyadan içe aktar)" if old_file else ""))
     lines.append(f"Ayrıntılı kayıt: {'açık' if kodi.setting_bool('debug') else 'kapalı'}  ·  "
                  f"kayıt kopyası: {kodi.setting('debug_dir') or 'yok'}")
     lines.append(f"Defta {kodi.version()}  ·  Python {sys.version.split()[0]}")
     text = "\n".join(lines)
     kodi.log("Bağlantı testi:\n" + text.replace("[B]", "").replace("[/B]", ""))
     xbmcgui.Dialog().textviewer("Defta: bağlantı testi", text)
+
+
+KEY_FILE_NAMES = (".env", "defta-anahtarlar.txt", "anahtarlar.txt", "defta.env", ".env.txt", "env.txt", "keys.txt")
+
+
+def _find_key_file(folder: str) -> str:
+    import xbmcvfs
+    for name in KEY_FILE_NAMES:
+        p = kodi.vfs_join(folder, name)
+        try:
+            if xbmcvfs.exists(p):
+                return p
+        except Exception:  # noqa: BLE001
+            continue
+    return ""
+
+
+def _tail(v: str) -> str:
+    return f"…{v[-4:]}" if len(v) > 6 else "…"
+
+
+def import_keys(path: str = "") -> dict:
+    """Anahtar dosyasındaki (.env / .txt) değerleri Defta ayarlarına kopyalar. Dosyaya dokunulmaz.
+    Sonra dosya gerekmez: bilgisayar kapalıyken ya da USB çıkarılınca da çalışır.
+    Dönüş: {ayar: "yeni" | "değişti" | "aynı"}"""
+    dlg = xbmcgui.Dialog()
+    if not path:
+        # Kodi'nin dosya seçicisi adı noktayla başlayan dosyaları (.env) gizler: klasör seçilince içinde aranır
+        i = dlg.select("Anahtarlar nerede?", ["Klasörü seç (içindeki .env ya da defta-anahtarlar.txt)",
+                                              "Dosyayı seç (.txt)"])
+        if i < 0:
+            return {}
+        if i == 0:
+            folder = dlg.browse(0, "Anahtar dosyasının olduğu klasör", "files")
+            if not folder:
+                return {}
+            path = _find_key_file(folder)
+            if not path:
+                dlg.ok("Defta", "Bu klasörde anahtar dosyası bulunamadı.\nAranan adlar: " + ", ".join(KEY_FILE_NAMES))
+                return {}
+        else:
+            path = dlg.browse(1, "Anahtar dosyasını seçin (.env ya da .txt)", "files")
+            if not path:
+                return {}
+    try:
+        values = kodi.parse_env(kodi.read_text(path))
+    except (OSError, RuntimeError) as e:
+        dlg.ok("Defta", f"Dosya okunamadı: {e}")
+        return {}
+    found = {}
+    for key in kodi.KEY_SETTINGS:
+        v = values.get(kodi.ENV_NAMES[key], "").strip()
+        if v:
+            found[key] = v
+    if not found:
+        dlg.ok("Defta", "Dosyada tanınan anahtar yok.\nSatırlar şöyle olmalı: OPENAI_API_KEY=...  SUBDL_API_KEY=...")
+        return {}
+    addon = kodi.addon()
+    status = {}
+    for key, v in found.items():
+        cur = (addon.getSetting(key) or "").strip()
+        status[key] = "aynı" if cur == v else ("değişti" if cur else "yeni")
+    changed = [kodi.KEY_LABELS[k] for k, st in status.items() if st == "değişti"]
+    if changed and not dlg.yesno("Defta", ", ".join(changed) + " değişecek. Üzerine yazılsın mı?",
+                                 nolabel="İptal", yeslabel="Yaz"):
+        return {}
+    for key, v in found.items():
+        addon.setSetting(key, v)
+    addon.setSetting("key_file", "")                 # artık dosyaya bağlı değil
+    kodi.forget_secret_cache()
+    lines = []
+    for key in kodi.KEY_SETTINGS:
+        label = kodi.KEY_LABELS[key]
+        if key in found:
+            note = {"değişti": "  ← değişti", "aynı": "  (aynıydı)", "yeni": ""}[status[key]]
+            shown = "girildi" if key in ("os_user", "os_pass") else f"var ({_tail(found[key])})"
+            lines.append(f"{label}: {shown}{note}")
+        else:
+            lines.append(f"{label}: dosyada yok" + (" (ayardaki kaldı)" if (addon.getSetting(key) or "").strip() else ""))
+    kodi.log(f"Anahtarlar içe aktarıldı: {len(found)} değer ({', '.join(kodi.KEY_LABELS[k] for k in found)})")
+    dlg.textviewer("Defta: anahtarlar içe aktarıldı", "\n".join(lines) + "\n\nArtık dosya gerekmiyor. "
+                   "Güvenlik için dosyayı USB'den ya da indirilenlerden silebilirsin.")
+    return status
 
 
 def export() -> None:
@@ -178,13 +274,8 @@ def main(argv: list[str]) -> None:
             clean(argv[2] if len(argv) > 2 else "")
         elif cmd == "test":
             test()
-        elif cmd == "pickkeys":
-            path = xbmcgui.Dialog().browse(1, "Anahtar dosyasını seçin (.env ya da .txt)", "files")
-            if path:
-                kodi.addon().setSetting("key_file", path)
-                n = sum(1 for k in ("openai_key", "os_key", "subdl_key", "subsource_key", "jimaku_key")
-                        if kodi.secret(k))
-                xbmcgui.Dialog().ok("Defta", f"Anahtar dosyası: {path}\n{n} anahtar bulundu.")
+        elif cmd == "importkeys":
+            import_keys()
         elif cmd == "logs":
             dest = kodi.setting("debug_dir").strip()
             if not dest:

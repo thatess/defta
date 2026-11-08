@@ -28,10 +28,12 @@ class Sub:
     sync: bool = False
     hash_match: bool = False    # OpenSubtitles video karmasıyla eşleşti: senkronu kesin
     note: str = ""              # listede gösterilecek kısa not ("önceki bölümde kullandığın", "kaymış")
+    alts: list = field(default_factory=list)   # aynı altyazının başka kaynaktaki kopyaları (indirme olmazsa)
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["releases"] = d["releases"][:3]
+        d["alts"] = [dict(a, alts=[], releases=a.get("releases", [])[:1]) for a in d["alts"][:3]]
         return d
 
     def __post_init__(self):
@@ -54,6 +56,27 @@ class Sub:
 
 class SourceError(Exception):
     pass
+
+
+class QuotaError(SourceError):
+    """Kaynak şimdilik indirmeye izin vermiyor (günlük hak doldu ya da çok istek): until = yeniden denenecek an."""
+
+    def __init__(self, message: str, until: float, quota: bool = True):
+        super().__init__(message)
+        self.until = until
+        self.quota = quota          # True: günlük hak doldu, False: geçici yoğunluk (429)
+
+
+BUSY_WAIT = 600                     # sunucu süre söylemezse 10 dk
+
+
+def busy_error(e, label: str) -> QuotaError | None:
+    """HTTP 429 (çok istek): sunucunun söylediği süre ya da 10 dk sonra yeniden denenir."""
+    import time
+    if getattr(e, "status", 0) != 429:
+        return None
+    wait = e.retry_after() or BUSY_WAIT
+    return QuotaError(f"{label} meşgul", time.time() + min(wait, 6 * 3600), quota=False)
 
 
 _EP_PATTERNS = [

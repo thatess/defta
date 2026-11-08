@@ -5,7 +5,7 @@ import re
 
 from .. import kodi, net
 from ..media import Media
-from .base import SUB_EXTS, SourceError, Sub, pick_from_archive
+from .base import SUB_EXTS, SourceError, Sub, busy_error, pick_from_archive
 
 API = "https://jimaku.cc/api"
 NAME = "jimaku"
@@ -127,7 +127,10 @@ def search(m: Media, wanted: list[str] | None) -> list[Sub]:
 def download(sub: Sub, m: Media) -> tuple[str, bytes]:
     if not sub.sid.startswith("https://jimaku.cc/"):
         raise SourceError("Jimaku indirme adresi beklenmedik")
-    raw = net.get_bytes(sub.sid, None, _h())
+    try:
+        raw = net.get_bytes(sub.sid, None, _h())
+    except net.HttpError as e:
+        raise busy_error(e, "Jimaku") or SourceError(f"Jimaku indirme başarısız ({e})") from e
     name, data = pick_from_archive(raw, m.season, m.episode)
     return (sub.release if not sub.pack else name), data
 

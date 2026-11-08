@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="repository.defta" name="Defta Deposu" version="1.0.0" provider-name="Thates">
+<addon id="repository.defta" name="Defta Deposu" version="1.0.1" provider-name="Thates">
   <extension point="xbmc.addon.repository" name="Defta Deposu">
     <dir>
       <info compressed="false">https://thatess.github.io/defta/addons.xml</info>

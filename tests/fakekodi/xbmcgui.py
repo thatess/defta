@@ -3,6 +3,7 @@ DLG_YESNO_YES_BTN = 11
 NOTES = []
 YESNO = {"answer": True, "calls": []}
 BROWSE = {"path": ""}
+SELECT = {"answer": 0}
 
 
 class ListItem:
@@ -46,8 +47,8 @@ class Dialog:
     def browse(self, *a, **k):
         return BROWSE["path"]
 
-    def select(self, *a):
-        return 0
+    def select(self, *a, **k):
+        return SELECT["answer"]
 
     def textviewer(self, h, t):
         NOTES.append((h, t))

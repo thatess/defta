@@ -41,3 +41,7 @@ class File:
 
     def close(self):
         self._f.close()
+
+
+def exists(path):
+    return os.path.exists(translatePath(path))

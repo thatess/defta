@@ -54,6 +54,13 @@ class Media:
     def series_key(self) -> str:
         return slug(self.title) or slug(self.release)
 
+    def auto_skip(self) -> str:
+        """Otomatik altyazı aranmayacaksa sebebi: canlı yayın (PVR, TV kanalı) ya da tanınmayan video."""
+        if self.extra.get("live"):
+            return "canlı yayın"
+        if not (self.imdb or self.is_episode or self.year) or not self.title:
+            return "video tanınmadı"
+        return ""
     def next_episode(self, next_season: bool = False) -> "Media":
         """Sıradaki bölümün bilgisi (sürüm adındaki bölüm numarası da kaydırılır, sürüm uyumu için)."""
         n = Media.from_dict(self.to_dict())
@@ -208,6 +215,13 @@ def from_player() -> Media:
             m.duration = float(p.getTotalTime() or 0)
     except Exception:  # noqa: BLE001
         pass
+    try:
+        live = m.path.lower().startswith("pvr://") or bool(il("VideoPlayer.ChannelName")) or any(
+            xbmc.getCondVisibility(c) for c in ("PVR.IsPlayingTv", "PVR.IsPlayingRadio"))
+    except Exception:  # noqa: BLE001
+        live = False
+    if live:
+        m.extra["live"] = True
     genre = il("VideoPlayer.Genre").lower()
     m.is_anime = parsed["anime"] or "anime" in genre or "animation" in genre and _has_japanese_hint(m)
     return m
