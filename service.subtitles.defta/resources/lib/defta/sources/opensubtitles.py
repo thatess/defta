@@ -135,7 +135,10 @@ def download(sub: Sub, m: Media) -> tuple[str, bytes]:
     if str(r.get("remaining")) == "0":         # bu son hakkıydı: sıfırlanana kadar listede alta iner
         from .. import store
         store.set_quota(NAME, reset_time(r), True)
-    raw = net.get_bytes(link)
+    try:
+        raw = net.get_bytes(link)
+    except net.HttpError as e:
+        raise SourceError(f"OpenSubtitles dosyası indirilemedi ({e})") from e
     name, data = pick_from_archive(raw, m.season, m.episode)
     return (r.get("file_name") or name), data
 

@@ -1597,6 +1597,45 @@ class TestBadSyncAI(TestSyncRanking):
             j["status"] = "cancelled"
             store.save_job(j)
 
+    def test_048_badsync_skips_unreachable_site(self):
+        """Ulaşılamayan sitenin diğer adayları denenmez (her deneme Kodi penceresinde ~1 dk sürebilir)."""
+        from defta import plugin, store
+        from defta.media import Media
+        from defta.sources.base import Sub, SourceError
+        import re as _re
+        e1 = Sub("opensubtitles", "41", "en", release="Dizi.S01E05.1080p-A", downloads=50)
+        c1 = Sub("subdl", "https://dl.subdl.com/subtitle/d1.zip", "en", release="Dizi.S01E05.WEB-C", downloads=45)
+        c2 = Sub("subdl", "https://dl.subdl.com/subtitle/d2.zip", "en", release="Dizi.S01E05.WEB-D", downloads=44)
+        e2 = Sub("opensubtitles", "42", "en", release="Dizi.S01E05.720p-B", downloads=40)
+        text = SAMPLE.read_text(encoding="utf-8")
+        shifted = _re.sub(r"(\d\d:\d\d:)(\d\d)", lambda mm: mm.group(1) + f"{(int(mm.group(2)) + 2) % 60:02d}", text)
+        for e, t in ((e1, text), (e2, shifted)):
+            Path(store.download_path(e, ".srt")).write_text(t, encoding="utf-8")
+        self._patch([e1, c1, c2, e2])
+        from defta.sources import subdl
+        calls = []
+
+        def boom(sub, mm):
+            calls.append(sub.sid)
+            raise SourceError("bağlantı kurulamadı")
+        orig_dl = subdl.download
+        subdl.download = boom
+        self.addCleanup(setattr, subdl, "download", orig_dl)
+        m = Media(title="Dizi", season=1, episode=5, filename="Dizi.S01E05.1080p-A.mkv")
+        store.set_loaded(m, "ai", e1)
+        xbmc.INFO.clear()
+        xbmc.INFO["Player.Filenameandpath"] = m.filename
+        xbmcplugin.ITEMS.clear()
+        sys.argv = ["plugin://x/", "1", "?" + __import__("urllib.parse").parse.urlencode(
+            {"action": "download", "kind": "badsync", "media": json.dumps(m.to_dict())})]
+        plugin.main()
+        self.assertEqual(len(calls), 1, "aynı siteden ikinci aday denenmez")
+        jobs = store.active_jobs(m)
+        self.assertEqual([j["sub"]["sid"] for j in jobs], ["42"])
+        for j in jobs:
+            j["status"] = "cancelled"
+            store.save_job(j)
+
     def test_044_bleeped_swearing_kept_for_model(self):
         from subtrans.textprep import prepare
         dec = {"sound_notes": "remove", "speaker_labels": "remove", "speaker_dashes": "keep", "lyrics": "translate",
@@ -1611,22 +1650,40 @@ class TestBadSyncAI(TestSyncRanking):
     def test_046_glossary_twins_and_nationality(self):
         from subtrans.glossary import Glossary
         g = Glossary(self.tmp / "g.json", "Test", "tr", lower_races=True)
-        txt = "Connie Springer Conny Springer Shiganshina Zhiganshina Italian Hank Frank elves"
+        ep1 = "Connie Springer Shiganshina Italian Hank Frank elves Anna Smith Daniel Hikaru Hitachiin"
         g.merge([{"source": "Connie Springer", "target": "Connie Springer", "type": "character"},
-                 {"source": "Conny Springer", "target": "Conny Springer", "type": "character"},
                  {"source": "Shiganshina", "target": "Shiganshina", "type": "place"},
-                 {"source": "Zhiganshina", "target": "Zhiganshina", "type": "place"},
-                 {"source": "Italian", "target": "İtalyan", "type": "race"},
+                 {"source": "Italian", "target": "italyan", "type": "race"},
                  {"source": "Hank", "target": "Hank", "type": "character"},
                  {"source": "Frank", "target": "Frank", "type": "character"},
-                 {"source": "elves", "target": "Elfler", "type": "race"}], txt)
+                 {"source": "Anna Smith", "target": "Anna Smith", "type": "character"},
+                 {"source": "Daniel", "target": "Daniel", "type": "character"},
+                 {"source": "Hikaru Hitachiin", "target": "Hikaru Hitachiin", "type": "character"},
+                 {"source": "elves", "target": "Elfler", "type": "race"}], ep1)
+        # Sonraki bölüm başka altyazı grubundan: aynı adlar farklı yazılmış
+        ep2 = "Conny Springer Zhiganshina Danielle Kaoru Hitachiin Anne Smith Anna Smith"
+        g.merge([{"source": "Conny Springer", "target": "Conny Springer", "type": "character"},
+                 {"source": "Zhiganshina", "target": "Zhiganshina", "type": "place"},
+                 {"source": "Danielle", "target": "Danielle", "type": "character"},
+                 {"source": "Kaoru Hitachiin", "target": "Kaoru Hitachiin", "type": "character"},
+                 {"source": "Anne Smith", "target": "Anne Smith", "type": "character"}], ep2)
         by = {t["target"]: t for t in g.terms}
         self.assertIn("Conny Springer", by["Connie Springer"]["forms"], "aynı adın başka yazımı tek terim")
         self.assertIn("Zhiganshina", by["Shiganshina"]["forms"])
-        self.assertIn("İtalyan", by, "milliyet küçültülmez")
+        for other in ("Danielle", "Kaoru Hitachiin", "Anne Smith"):
+            self.assertIn(other, by, "farklı kişi birleştirilmez")
+        self.assertNotIn("italyan", by, "milliyet sözlüğe alınmaz")
         self.assertIn("Hank", by)
         self.assertIn("Frank", by)
         self.assertIn("elfler", by, "kurgusal ırk küçük harf")
+
+    def test_048_beep_is_a_sound(self):
+        from subtrans.textprep import prepare
+        dec = {"sound_notes": "remove", "speaker_labels": "remove", "speaker_dashes": "keep", "lyrics": "translate",
+               "format_tags": "remove"}
+        self.assertEqual(prepare("Leave a message after the beep. [beep]", dec).send_text,
+                         "Leave a message after the beep.")
+        self.assertEqual(prepare("[bleeps] you!", dec).send_text, "[bleeps] you!")
 
 
 class TestReviewCache(unittest.TestCase):

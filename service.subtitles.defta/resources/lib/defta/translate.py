@@ -1,14 +1,14 @@
 """Bir altyazıyı masaüstü motoruyla (subtrans) çevirir.
 
 'Hızlı önce, kaliteli sonra' modunda iki çeviri aynı anda başlar:
-  - hızlı: yalnızca izlenen yerden itibaren birkaç dakika (ayar; dizi 2, film 5 dk), 12 satırlık küçük
-    parçalar aynı anda; bölüm analizi ve anlam kontrolü yok, mevcut seri
+  - hızlı: yalnızca izlenen yerden itibaren birkaç dakika (ayar; dizi 2, film 5 dk), ~12 satırlık küçük
+    parçalar (cümle sonlarından) aynı anda; bölüm analizi ve anlam kontrolü yok, mevcut seri
     sözlüğüyle; bitince bir kez yüklenir (geçici dosya, kalanı orijinal dilde)
   - kaliteli: bölüm analizi + seri sözlüğü güncellemesi -> çeviri -> anlam kontrolü -> kalıcı dosya, yüklenir
 Sözlük yalnızca analizden beslenir; kaydedilen tek dosya kaliteli olandır. Anlam kontrolü olmazsa
 kontrolsüz tam çeviri kaydedilip yüklenir.
-Hızlı çeviri atlanır: iş yüklenmeyecekse (sıradaki bölüm), mod başkaysa ya da bölüm analizi kayıtlıysa
-(yeniden çeviri, yarıda kalan iş): o zaman kaliteli çeviri de hızlı çeviri kadar sürer, ikisini yüklemek gereksiz.
+Hızlı çeviri yalnızca iş yüklenmeyecekse (sıradaki bölüm) ya da mod başkaysa atlanır; yeniden çeviri ve
+yarıda kalan işte de çalışır (kayıtlı hızlı parçalar önbellekten ücretsiz gelir).
 API yanıtları cache.sqlite'ta tutulur: yarıda kalan iş yeniden başlarsa biten parçalar tekrar ödenmez."""
 from __future__ import annotations
 

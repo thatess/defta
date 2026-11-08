@@ -68,6 +68,7 @@ def _note(s: Sub) -> str:
 
 MARK = "[B]•[/B]"     # etkin altyazının işareti (beyaz: seçili mavi satırda da görünsün; ▸ Kodi yazı tipinde yok)
 READY_MAX = 3
+BAD_SYNC_TRIES = 3     # "Kaymış" sıradaki adayı ararken en çok bu kadar yeni indirme
 
 
 def _synced(sub: Sub, bad: set) -> bool:
@@ -285,19 +286,27 @@ def _bad_sync(handle: int, m: Media, tgt: str) -> None:
     prints = store.fingerprints()
     bad_fps = {prints.get(u) for u in store.bad_uids(m)} - {None, ""}
     skip: set = set()
+    downloads = 0
     while True:
         kind, nxt = search.next_candidate(res, cur.uid(), loaded.get("kind", ""), skip)
-        if nxt is None:
+        if nxt is None or downloads >= BAD_SYNC_TRIES:
             store.cancel_jobs_for(m)
-            kodi.notify("Kaymış · başka altyazı yok")
+            kodi.notify("Kaymış · başka altyazı yok" if nxt is None else "Kaymış · uygun altyazı bulunamadı")
             return
-        try:
-            fetch.get(nxt, m)                                        # indirilir, parmak izi kaydedilir
-        except SourceError as e:
-            kodi.log(f"Kaymış: sıradaki indirilemedi ({nxt.source}: {e}), bir sonraki deneniyor", "warning")
+        if prints.get(nxt.uid()) in bad_fps:                         # daha önce indirilmiş kopya: ağa çıkmadan
             skip.add(nxt.uid())
             continue
-        if store.fingerprints().get(nxt.uid()) in bad_fps:
+        try:
+            fresh = not store.find_download(nxt)
+            path = fetch.get(nxt, m)                                 # indirilir, parmak izi kaydedilir
+            downloads += fresh
+        except SourceError as e:
+            # Site ulaşılamıyorsa o sitenin diğer adayları da denenmez (her deneme ~1 dk sürebilir)
+            kodi.log(f"Kaymış: sıradaki indirilemedi ({nxt.source}: {e}), başka siteden deneniyor", "warning")
+            downloads += 1
+            skip.update(s.uid() for s in res.human + res.foreign if s.source == nxt.source)
+            continue
+        if store.content_fingerprint(path) in bad_fps:
             kodi.log(f"Kaymış: {nxt.source}:{nxt.release or nxt.sid} kaymış olanın aynısı, atlandı")
             store.mark_bad(m, nxt)
             skip.add(nxt.uid())

@@ -171,9 +171,13 @@ def request(method: str, url: str, params: dict | list | None = None, headers: d
                 return r.status, r.read(), dict(r.headers)
         except urllib.error.HTTPError as e:
             try:
-                raw = e.read() if hasattr(e, "read") else b""
-            finally:
+                raw = e.read()
+            except Exception:  # noqa: BLE001  (gövdesiz hata; 3.8'de KeyError da olabilir)
+                raw = b""
+            try:
                 e.close()                              # yanıtın soketi açık kalmasın
+            except Exception:  # noqa: BLE001
+                pass
             if e.code in (429, 502, 503, 504) and attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
                 last = e

@@ -266,8 +266,12 @@ def export() -> None:
     gdir = kodi.profile_dir("glossaries")
     g = 0
     for name in sorted(os.listdir(gdir)):
-        if name.endswith(".json") and kodi.vfs_copy(os.path.join(gdir, name), kodi.vfs_join(dest, "Sözlük - " + name)):
+        if not name.endswith(".json") or name.startswith("."):          # .tmp_*: yarım kalmış yazım
+            continue
+        if kodi.vfs_copy(os.path.join(gdir, name), kodi.vfs_join(dest, "Sözlük - " + name)):
             g += 1
+        else:
+            failed += 1
     kodi.log(f"Dışa aktarma: {n} çeviri, {g} sözlük -> {dest}" + (f", {failed} kopyalanamadı" if failed else ""))
     xbmcgui.Dialog().ok("Defta", f"{n} AI çevirisi ve {g} dizi sözlüğü kopyalandı.\n{dest}"
                         + (f"\n{failed} dosya kopyalanamadı." if failed else ""))
