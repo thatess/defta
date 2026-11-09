@@ -78,6 +78,8 @@ class Base(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp())
+        from defta import kodi
+        kodi._DIRS.clear()                      # önceki sınıfın geçici klasörü ezberde kalmasın
         xbmcvfs.MAP.clear()
         xbmcvfs.MAP.update({
             "special://profile/addon_data/service.subtitles.defta/": str(cls.tmp / "profile"),
@@ -300,9 +302,9 @@ class TestSecrets(Base):
     def test_scrub_old_files(self):
         from defta import kodi, store
         bad = os.path.join(kodi.profile_dir("downloads"), "subdl-_subtitle_1.zip_api_key_ABCDEFGHIJ.srt")
-        open(bad, "w").write("x")
+        Path(bad).write_text("x")
         j = os.path.join(kodi.profile_dir("jobs"), "old.json")
-        open(j, "w").write('{"sid": "/subtitle/1.zip?api_key=ABCDEFGHIJKL"}')
+        Path(j).write_text('{"sid": "/subtitle/1.zip?api_key=ABCDEFGHIJKL"}')
         self.assertGreaterEqual(store.scrub_secrets(), 2)
         self.assertFalse(os.path.exists(bad))
         self.assertNotIn("ABCDEFGHIJKL", open(j).read())
@@ -1872,3 +1874,125 @@ class TestRepeatConsistency(unittest.TestCase):
         self.assertEqual(job.results[7], "Tanrılar hepimizin.", "aynı sahnenin tekrarı ilk çeviriyle")
         self.assertEqual(job.results[10], "Sıradan tanrılar.", "komşuları farklıysa dokunulmaz")
         self.assertEqual(job.results[6], job.results[1], "iki sözcüklü satırlar da eşitlenir")
+
+
+class TestVerblessLines(unittest.TestCase):
+    def test_052_fragment_marking(self):
+        from subtrans.textprep import is_verbless_line
+        for t in ("Common gods.", "Same blood.", "Old friends.", "Not this song."):
+            self.assertTrue(is_verbless_line(t), t)
+        for t in ("What does it mean?", "The war is over.", "Mr. Frodo.", "She's married.", "a fleet...",
+                  "Thank you.", "Yes, sir.", "We were waiting for you all night."):
+            self.assertFalse(is_verbless_line(t), t)
+        from subtrans import prompts
+        from subtrans.provider import RESPONSE_SCHEMA
+        self.assertIn('"means"', prompts.SYSTEM_TEMPLATE)
+        kinds = RESPONSE_SCHEMA["properties"]["translations"]["items"]["anyOf"]
+        self.assertEqual([k["required"] for k in kinds], [["id", "text"], ["id", "means", "text"]])
+
+
+class TestFragmentPass(unittest.TestCase):
+    def test_054_fragment_pass_on_job_copy(self):
+        """Arka plandaki kısa replik kontrolü gerçek FileJob kopyasında (sözlük, adlar) çalışır, asıl işe dokunmaz."""
+        import asyncio
+        import copy
+        from pathlib import Path
+        from subtrans.engine import Engine, FileJob
+        from subtrans.provider import Usage
+        from subtrans.textprep import prepare
+        dec = {"sound_notes": "remove", "speaker_labels": "remove", "speaker_dashes": "keep", "lyrics": "translate",
+               "format_tags": "remove"}
+        lines = ["A gift.", "For Athena.", "Common gods.", "Respect their offering."]
+
+        class Fake:
+            async def complete_json(self, system, user, max_out, schema=None, schema_name=""):
+                u = json.loads(user)
+                return {"items": [{"id": it["id"], "means": "x", "verdict": "fix" if it["id"] == 3 else "ok",
+                                   "text": "Tanrılarımız ortak." if it["id"] == 3 else it["draft"]}
+                                  for it in u["items"]]}, Usage(requests=1)
+
+        class Lim:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def on_success(self): pass
+            async def on_rate_limit(self): pass
+
+        eng = Engine.__new__(Engine)
+        eng.fragment_provider, eng.limiter, eng.backoff_scale = Fake(), Lim(), 0
+        eng.s = {"language": {"target": "tr"}}
+        job = FileJob(srt=None, rel=Path("x.srt"), out_path=Path("x.tr.srt"), src_lang="en",
+                      prepared=[prepare(t, dec) for t in lines], translate_pos=list(range(4)),
+                      results={0: "Bir hediye.", 1: "Athena'ya.", 2: "Sıradan tanrılar.", 3: "Saygı gösterin."})
+        view = copy.copy(job)
+        view.results = dict(job.results)
+        asyncio.new_event_loop().run_until_complete(eng._fragment_pass(view))
+        self.assertEqual(view.results[2], "Tanrılarımız ortak.")
+        self.assertEqual(job.results[2], "Sıradan tanrılar.", "asıl iş değişmez; düzeltme sonra işlenir")
+
+    def test_055_apply_fragments_keeps_review_fixes(self):
+        """Kısa replik düzeltmesi tekrar eden kopyaya geçer; anlam kontrolünün düzelttiği kopya geri alınmaz."""
+        import asyncio
+        from types import SimpleNamespace as NS
+        from unittest import mock
+        from defta.translate import Translator
+        src = ["Common gods.", "Other.", "Common gods.", "Common gods."]
+        prepared = [NS(send_text=t) for t in src]
+        snap = {0: "Sıradan tanrılar.", 1: "Başka.", 2: "Sıradan tanrılar.", 3: "Sıradan tanrılar."}
+        fj = NS(results=dict(snap), prepared=prepared, srt=NS(blocks=[], doc=None), out_blocks=[], dropped=set())
+        fj.results[3] = "Ortak tanrılarımız."              # anlam kontrolü düzeltti
+        view = NS(results=dict(snap))
+        view.results[0] = "Tanrılarımız ortak."            # kısa replik kontrolü düzeltti
+        eng = NS(_assemble=lambda j: None, final_blocks=lambda j: [])
+
+        async def go():
+            async def done():
+                return None
+            task = asyncio.ensure_future(done())
+            t = Translator.__new__(Translator)
+            t.should_stop = lambda: False
+            with mock.patch("subtrans.subformats.write_atomic", lambda *a, **k: None):
+                return await t._apply_fragments(eng, fj, task, snap, view, "x.srt")
+        self.assertTrue(asyncio.new_event_loop().run_until_complete(go()))
+        self.assertEqual(fj.results[0], "Tanrılarımız ortak.")
+        self.assertEqual(fj.results[2], "Tanrılarımız ortak.", "kopya düzeltmeyi izler")
+        self.assertEqual(fj.results[3], "Ortak tanrılarımız.", "anlam kontrolünün düzeltmesi kalır")
+        self.assertEqual(fj.results[1], "Başka.")
+
+    def test_053_fragment_pass_fixes_meaning(self):
+        import asyncio
+        from types import SimpleNamespace as NS
+        from subtrans.engine import Engine
+        from subtrans.provider import Usage
+        from subtrans.textprep import prepare
+        dec = {"sound_notes": "remove", "speaker_labels": "remove", "speaker_dashes": "keep", "lyrics": "translate",
+               "format_tags": "remove"}
+        lines = ["A gift.", "For Athena.", "Common gods.", "Respect their offering.", "The war is over."]
+        seen = {}
+
+        class Fake:
+            async def complete_json(self, system, user, max_out, schema=None, schema_name=""):
+                u = json.loads(user)
+                seen["ids"] = [it["id"] for it in u["items"]]
+                seen["ctx"] = u["items"][0]["before"]
+                return {"items": [{"id": it["id"], "means": "x", "verdict": "fix" if it["id"] == 3 else "ok",
+                                   "text": "Tanrılarımız ortak." if it["id"] == 3 else it["draft"]}
+                                  for it in u["items"]]}, Usage(requests=1)
+
+        class Lim:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+            async def on_success(self): pass
+            async def on_rate_limit(self): pass
+
+        eng = Engine.__new__(Engine)
+        eng.fragment_provider, eng.limiter, eng.backoff_scale = Fake(), Lim(), 0
+        eng.s = {"language": {"target": "tr"}}
+        eng._names = lambda job: set()
+        job = NS(src_lang="en", prepared=[prepare(t, dec) for t in lines], translate_pos=list(range(5)),
+                 results={0: "Bir hediye.", 1: "Athena'ya.", 2: "Sıradan tanrılar.", 3: "Adaklarına saygı göster.",
+                          4: "Savaş bitti."}, analysis=None, rel="x", usage=Usage())
+        asyncio.new_event_loop().run_until_complete(eng._fragment_pass(job))
+        self.assertEqual(job.results[2], "Tanrılarımız ortak.")
+        self.assertIn(3, seen["ids"])
+        self.assertNotIn(5, seen["ids"], "fiilli satır gönderilmez")
+        self.assertEqual(job.results[0], "Bir hediye.")

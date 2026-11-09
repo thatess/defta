@@ -18,11 +18,14 @@ import sys
 import os
 import time
 from pathlib import Path
+import copy
 
 from . import kodi, langs, net
 
 FAST_FIRST, QUALITY_ONLY, FAST_ONLY = 0, 1, 2
 REVIEW_EFFORT = ""         # anlam kontrolünün ayrı düşünme düzeyi ("" = çeviriyle aynı sağlayıcı, düşünmeden)
+FRAGMENT_EFFORT = "medium" # kısa fiilsiz replik kontrolünün düşünme düzeyi ("" = kontrol yok)
+FRAGMENT_TIMEOUT = 180     # sn; kontrol bundan uzun sürerse kaliteli çeviri olduğu gibi kalır
 TRANSLATE_EFFORT = ""      # kaliteli çevirinin düşünme düzeyi ("" = düşünmeden; "medium" daha isabetli ama 2-3 kat yavaş)
 FAST_WINDOWS = (0, 60, 120, 180, 300)   # ayar: Otomatik (dizi 2 dk, film 5 dk) / 1 / 2 / 3 / 5 dk
 FAST_CHUNK = 12                          # hızlı çeviride parça başına satır (küçük parça = hızlı yanıt)
@@ -200,6 +203,15 @@ class Translator:
                 engine.review_price = price
             except ProviderError as e:
                 kodi.log(f"anlam kontrolü sağlayıcısı kurulamadı, çeviri modeliyle yapılacak: {e}", "warning")
+        if FRAGMENT_EFFORT:
+            # "Common gods." gibi kısa, fiilsiz replikler ayrıca ve kısa düşünerek kontrol edilir (yalnızca onlar)
+            try:
+                finner = make_provider(dict(settings["provider"], reasoning_effort=FRAGMENT_EFFORT))
+                engine.fragment_provider = CachedProvider(finner, store, f"{model}|frag-{FRAGMENT_EFFORT}",
+                                                          fresh=bool(job.get("fresh")))
+                engine.fragment_inline = False   # aşağıda anlam kontrolüyle aynı anda, kaliteli çeviriyi bekletmeden
+            except ProviderError as e:
+                kodi.log(f"kısa replik kontrolü kurulamadı, atlanacak: {e}", "warning")
         rel = f"{m.label()} [{sub.uid()}]{src_path.suffix}"
 
         # Hızlı çeviri: izlenen video için her zaman (yeniden çeviri, "Baştan çevir", yarıda kalmış iş dahil).
@@ -208,6 +220,8 @@ class Translator:
         # Shield gibi yavaş cihazda ~1-2 sn kazanç).
         use_fast = mode == FAST_FIRST and engine.review_on and bool(job.get("load"))
         fast_engine = fast_job = fast_task = None
+        frag_task = frag_snap = frag_view = None
+        loaded_early = patched = False
         start_ms = int(float(job.get("start_at") or 0) * 1000)
         t0 = time.monotonic()
         state = {"final": False}
@@ -242,6 +256,7 @@ class Translator:
                 fast_engine.estimate = False
                 fast_engine.store = store
                 fast_engine.main_price = price
+                fast_engine.fragments = False      # hızlı çeviri: kısa replik "means" alanı yok (hız)
                 fast_engine.conlang_both = False   # sözlüğü yalnızca kaliteli iş yazar (iki iş birbirini ezmesin)
                 fast_inner = make_provider(dict(settings["provider"], reasoning_effort="none"))   # hızlı: düşünmeden
                 fast_engine.provider = CachedProvider(fast_inner, store, model, fresh=bool(job.get("fresh")))
@@ -261,6 +276,13 @@ class Translator:
             await engine.translate_phase(fj)
             if fj.status != "çevrildi":
                 raise RuntimeError("; ".join(fj.errors) or "çeviri başarısız")
+            if engine.fragment_provider is not None:
+                # Kısa replik kontrolü (düşünerek, yavaş) taslağın kopyası üzerinde ayrıca çalışır; kaliteli çeviri
+                # onu beklemeden yüklenir, düzeltmeler gelince altyazı sessizce güncellenir
+                frag_snap = dict(fj.results)
+                frag_view = copy.copy(fj)          # aynı iş bilgisi (sözlük, analiz...), ayrı sonuç sözlüğü
+                frag_view.results = dict(frag_snap)
+                frag_task = asyncio.ensure_future(engine._fragment_pass(frag_view))
             try:
                 await engine.finish_phase(fj)
             except asyncio.CancelledError:
@@ -283,6 +305,11 @@ class Translator:
             state["final"] = True
             blocks = engine.final_blocks(fj)
             write_atomic(out_path, blocks, "srt", fj.srt.doc)
+            if frag_task is not None:
+                self.on_update(str(out_path), "unchecked" if self.unchecked else "final", 100)
+                loaded_early = True
+                kodi.log(f"Kaliteli çeviri yüklendi: {time.monotonic() - t0:.0f} sn (kısa replik kontrolü sürüyor)")
+                patched = await self._apply_fragments(engine, fj, frag_task, frag_snap, frag_view, out_path)
         except Exception as e:
             dead = getattr(inner, "dead", None)
             if dead is not None and dead.credit:
@@ -292,6 +319,8 @@ class Translator:
             raise
         finally:
             state["final"] = True
+            if frag_task is not None and not frag_task.done():
+                frag_task.cancel()
             if fast_task is not None and not fast_task.done():
                 fast_task.cancel()
             if fast_task is not None:
@@ -320,5 +349,48 @@ class Translator:
                  + (" (hızlı çeviri dahil)" if fast_job is not None else "")
                  + f", {time.monotonic() - t0:.0f} sn, anlam kontrolü {fj.review_fixes} düzeltme")
         dstore.tr_record(m, sub, str(out_path), "unchecked" if self.unchecked else "final", self.cost)
-        self.on_update(str(out_path), "unchecked" if self.unchecked else "final", 100)
+        if not loaded_early or patched:
+            self.on_update(str(out_path), "unchecked" if self.unchecked else "final", 100)
         return str(out_path)
+
+    async def _apply_fragments(self, engine, fj, task, snap: dict, view, out_path) -> bool:
+        """Kısa replik kontrolünün düzeltmelerini kaliteli çeviriye işler (anlam kontrolünün değiştirdiği satırlara
+        dokunmadan). Değişiklik olduysa dosya yeniden yazılır; dönüş: yazıldı mı."""
+        from subtrans.srt_io import verify_structure
+        from subtrans.subformats import write_atomic
+        # Yeni bir iş gelirse (son seçilen kazanır) beklemeyi bırakır; kaliteli çeviri zaten yüklü
+        deadline = time.monotonic() + FRAGMENT_TIMEOUT
+        while not task.done() and time.monotonic() < deadline and not self.should_stop():
+            await asyncio.wait({task}, timeout=1)
+        if not task.done():
+            task.cancel()
+            kodi.log("kısa replik kontrolü bırakıldı (yeni iş ya da süre aşımı)", "debug")
+            return False
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            return False
+        except Exception as e:  # noqa: BLE001  (kontrol olmazsa kaliteli çeviri olduğu gibi kalır)
+            kodi.log(f"kısa replik kontrolü tamamlanamadı: {type(e).__name__}: {e}", "warning")
+            return False
+        changed = [p for p, v in view.results.items() if v != snap.get(p) and fj.results.get(p) == snap.get(p)]
+        if not changed or self.should_stop():
+            return False
+        old = {p: fj.results[p] for p in changed}
+        for p in changed:
+            fj.results[p] = view.results[p]
+        # Aynı kaynak satırın kopyaları (tekrar eden sahne) düzeltmeyi izler; anlam kontrolünün ayrıca düzelttiği
+        # kopyalar olduğu gibi kalır (tutarlılık yeniden çalışırsa onları geri alırdı)
+        for q, v in list(fj.results.items()):
+            if q in old:
+                continue
+            for p in changed:
+                if v == old[p] and fj.prepared[q].send_text == fj.prepared[p].send_text:
+                    fj.results[q] = fj.results[p]
+                    break
+        engine._assemble(fj)
+        if verify_structure(fj.srt.blocks, fj.out_blocks, allow_empty=fj.dropped):
+            return False
+        write_atomic(out_path, engine.final_blocks(fj), "srt", fj.srt.doc)
+        kodi.log(f"Kısa replik düzeltmeleri işlendi: {len(changed)} satır")
+        return True
