@@ -1856,3 +1856,19 @@ class TestRealForeignLanguage(unittest.TestCase):
         sp = prompts.SYSTEM_TEMPLATE
         self.assertIn("REAL foreign languages", sp)
         self.assertIn("{tgt}", sp.split("REAL foreign languages")[1].split("\n")[0])
+
+
+class TestRepeatConsistency(unittest.TestCase):
+    def test_051_repeated_scene_same_translation(self):
+        from types import SimpleNamespace as NS
+        from subtrans.engine import Engine
+        lines = ["A gift.", "For Athena.", "Common gods.", "Respect it.", "Other.", "A gift.", "For Athena.",
+                 "Common gods.", "Respect it.", "Yes.", "Common gods.", "No."]
+        prep = [NS(send_text=t, passthrough=False, romanize=False, romanize_both=False) for t in lines]
+        res = {i: f"t{i}" for i in range(len(lines))}
+        res[2], res[7], res[10] = "Tanrılar hepimizin.", "Sıradan tanrılar.", "Sıradan tanrılar."
+        job = NS(prepared=prep, translate_pos=list(range(len(lines))), results=res, rel="x")
+        Engine._repeat_consistency(None, job)
+        self.assertEqual(job.results[7], "Tanrılar hepimizin.", "aynı sahnenin tekrarı ilk çeviriyle")
+        self.assertEqual(job.results[10], "Sıradan tanrılar.", "komşuları farklıysa dokunulmaz")
+        self.assertEqual(job.results[6], job.results[1], "iki sözcüklü satırlar da eşitlenir")

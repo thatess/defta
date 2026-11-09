@@ -22,6 +22,8 @@ from pathlib import Path
 from . import kodi, langs, net
 
 FAST_FIRST, QUALITY_ONLY, FAST_ONLY = 0, 1, 2
+REVIEW_EFFORT = ""         # anlam kontrolünün ayrı düşünme düzeyi ("" = çeviriyle aynı sağlayıcı, düşünmeden)
+TRANSLATE_EFFORT = ""      # kaliteli çevirinin düşünme düzeyi ("" = düşünmeden; "medium" daha isabetli ama 2-3 kat yavaş)
 FAST_WINDOWS = (0, 60, 120, 180, 300)   # ayar: Otomatik (dizi 2 dk, film 5 dk) / 1 / 2 / 3 / 5 dk
 FAST_CHUNK = 12                          # hızlı çeviride parça başına satır (küçük parça = hızlı yanıt)
 
@@ -179,7 +181,7 @@ class Translator:
         model = settings["provider"]["model"]
         price = settings.price(model)
         try:
-            inner = make_provider(settings["provider"])
+            inner = make_provider(dict(settings["provider"], reasoning_effort=TRANSLATE_EFFORT or "none"))
         except ProviderError as e:
             store.close()
             raise RuntimeError(str(e)) from e
@@ -187,7 +189,17 @@ class Translator:
         engine.estimate = False                  # maliyet tahmini yalnızca masaüstünün onay ekranı için
         engine.store = store
         engine.main_price = price
-        engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
+        engine.provider = CachedProvider(inner, store, f"{model}|r-{TRANSLATE_EFFORT}" if TRANSLATE_EFFORT else model,
+                                         fresh=bool(job.get("fresh")))
+        if engine.review_on and REVIEW_EFFORT:
+            # İstenirse anlam kontrolü ayrı bir düşünme düzeyiyle yapılır (denendi: "low" yanlış düzeltmeler de üretti)
+            try:
+                rinner = make_provider(dict(settings["provider"], reasoning_effort=REVIEW_EFFORT))
+                engine.review_provider = CachedProvider(rinner, store, f"{model}|review-{REVIEW_EFFORT}",
+                                                        fresh=bool(job.get("fresh")))
+                engine.review_price = price
+            except ProviderError as e:
+                kodi.log(f"anlam kontrolü sağlayıcısı kurulamadı, çeviri modeliyle yapılacak: {e}", "warning")
         rel = f"{m.label()} [{sub.uid()}]{src_path.suffix}"
 
         # Hızlı çeviri: izlenen video için her zaman (yeniden çeviri, "Baştan çevir", yarıda kalmış iş dahil).
@@ -231,7 +243,8 @@ class Translator:
                 fast_engine.store = store
                 fast_engine.main_price = price
                 fast_engine.conlang_both = False   # sözlüğü yalnızca kaliteli iş yazar (iki iş birbirini ezmesin)
-                fast_engine.provider = CachedProvider(inner, store, model, fresh=bool(job.get("fresh")))
+                fast_inner = make_provider(dict(settings["provider"], reasoning_effort="none"))   # hızlı: düşünmeden
+                fast_engine.provider = CachedProvider(fast_inner, store, model, fresh=bool(job.get("fresh")))
                 fast_job = make_job(fast_engine, "fast-" + rel, None)
                 # Yalnızca izlenen yerden itibaren birkaç dakika (ayar), küçük parçalarla
                 fast_job.chunks = window_chunks(fast_job, start_ms, fast_window(m.is_episode))

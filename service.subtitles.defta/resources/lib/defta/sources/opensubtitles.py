@@ -114,10 +114,27 @@ def search(m: Media, wanted: list[str] | None) -> list[Sub]:
     return out
 
 
+def _forget_token() -> None:
+    try:
+        os.remove(_token_file())
+    except OSError:
+        pass
+
+
 def download(sub: Sub, m: Media) -> tuple[str, bytes]:
     token, api = _login()
     try:
-        r = net.post_json(api + "/download", {"file_id": int(sub.sid)}, _headers(token))
+        try:
+            r = net.post_json(api + "/download", {"file_id": int(sub.sid)}, _headers(token))
+        except net.HttpError as e:
+            if e.status != 401 or not token:
+                raise
+            # Kayıtlı oturum sunucuda geçersiz olmuş (süresi dolmuş ya da başka cihazda yeniden giriş yapılmış):
+            # bir kez yeniden giriş yapılıp denenir
+            kodi.log(f"OpenSubtitles oturumu geçersiz ({e}); yeniden giriş yapılıyor", "warning")
+            _forget_token()
+            token, api = _login()
+            r = net.post_json(api + "/download", {"file_id": int(sub.sid)}, _headers(token))
     except net.HttpError as e:
         p = e.payload if isinstance(e.payload, dict) else {}
         if e.status == 406 or (e.status == 429 and ("remaining" in p or "reset_time_utc" in p)):
@@ -125,7 +142,9 @@ def download(sub: Sub, m: Media) -> tuple[str, bytes]:
         if busy_error(e, "OpenSubtitles"):
             raise busy_error(e, "OpenSubtitles") from e
         if e.status == 401:
-            raise SourceError("OpenSubtitles indirmeye izin vermedi: anonim indirme kapalı olabilir; "
+            kodi.log(f"OpenSubtitles indirme 401: {e}", "warning")
+            raise SourceError("OpenSubtitles indirmeye izin vermedi: giriş bilgilerini kontrol edin"
+                              if token else "OpenSubtitles indirmeye izin vermedi: anonim indirme kapalı olabilir; "
                               "ayarlara kullanıcı adı/şifre girin") from e
         raise SourceError(f"OpenSubtitles indirme başarısız ({e})") from e
     link = (r or {}).get("link")
