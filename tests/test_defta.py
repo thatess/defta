@@ -1847,3 +1847,12 @@ class TestSubdlV2(unittest.TestCase):
         self.assertEqual(bare_title("Kitchen Nightmares US"), "Kitchen Nightmares")
         self.assertEqual(bare_title("The Office (UK)"), "The Office")
         self.assertEqual(bare_title("Lupus"), "")
+
+
+class TestRealForeignLanguage(unittest.TestCase):
+    def test_050_real_languages_are_translated(self):
+        from subtrans import prompts
+        self.assertIn("Na zdorovje", prompts.EXTRACT_SYSTEM, "gerçek diller uydurma dil listesine alınmaz")
+        sp = prompts.SYSTEM_TEMPLATE
+        self.assertIn("REAL foreign languages", sp)
+        self.assertIn("{tgt}", sp.split("REAL foreign languages")[1].split("\n")[0])
