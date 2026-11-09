@@ -5,7 +5,7 @@ import re
 import threading
 from dataclasses import dataclass, field
 
-from . import kodi, store
+from . import kodi, net, store
 from .media import Media
 from .sources import ALL, LABEL
 from .sources.base import SourceError, Sub
@@ -80,9 +80,8 @@ def _run_sources(m: Media, wanted: list[str] | None, names: list[str], errors: l
         try:
             res = mod.search(m, wanted)
         except SourceError as e:
-            msg = str(e)
-            if "bağlantı kurulamadı" in msg:
-                msg = "siteye ulaşılamıyor (internet sağlayıcısı engelliyor olabilir)"
+            kodi.log(f"{LABEL[name]} araması başarısız: {e}", "warning")      # asıl sebep (anahtar gizli)
+            msg = net.explain(str(e)) or str(e)
             with lock:
                 errors.append(f"{LABEL[name]}: {msg}")
             return

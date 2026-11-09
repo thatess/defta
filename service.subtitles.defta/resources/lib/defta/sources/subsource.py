@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 
 from .. import kodi, langs, net
-from ..media import Media
+from ..media import Media, bare_title
 from .base import SourceError, Sub, busy_error, pick_from_archive
 
 API = "https://api.subsource.net/api/v1"
@@ -33,6 +33,9 @@ def _find_title(m: Media) -> str:
     if m.imdb:
         tries.append({"searchType": "imdb", "imdb": m.imdb})
     tries.append({"searchType": "text", "q": m.title.lower()})
+    bare = bare_title(m.title)
+    if bare:                                       # "Kitchen Nightmares US": sitede ülke ekisiz kayıtlı
+        tries.append({"searchType": "text", "q": bare.lower()})
     for p in tries:
         if m.is_episode:
             p["season"] = m.season

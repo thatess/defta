@@ -208,6 +208,24 @@ def request(method: str, url: str, params: dict | list | None = None, headers: d
                        + (f" → {_resolved(host)}" if host else "") + ")")
 
 
+def explain(message: str) -> str:
+    """Bağlantı hatasının kullanıcıya gösterilecek kısa sebebi (asıl ayrıntı kayda yazılır)."""
+    m = message.lower()
+    if "bağlantı kurulamadı" not in m:
+        hm = re.search(r"http (5\d\d)", m)
+        return f"site geçici olarak hata veriyor (HTTP {hm.group(1)})" if hm else ""
+    if any(x in m for x in ("getaddrinfo", "name or service", "nodename", "no address", "11001", "11004",
+                            "name resolution")):
+        return "site adı bulunamadı (internet sağlayıcısı engelliyor, güvenli DNS de yanıt vermedi)"
+    if "timed out" in m or "timeout" in m or "zaman aşımı" in m:
+        return "site zamanında yanıt vermedi (zaman aşımı)"
+    if any(x in m for x in ("refused", "reset", "10054", "10061", "aborted", "10053", "eof occurred")):
+        return "bağlantı reddedildi ya da kesildi (internet sağlayıcısı engelliyor olabilir)"
+    if "certificate" in m or "ssl" in m:
+        return "güvenli bağlantı kurulamadı (sertifika hatası)"
+    return "siteye ulaşılamıyor"
+
+
 def _checked(method: str, url: str, params, headers, body, timeout: float) -> bytes:
     status, raw, rh = request(method, url, params, headers, body=body, timeout=timeout)
     if status not in (200, 201):

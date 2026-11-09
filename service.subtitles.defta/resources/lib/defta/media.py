@@ -107,6 +107,16 @@ def slug(text: str) -> str:
 
 # ------------------------------------------------------------------ dosya adı çözümleme
 
+_COUNTRY_RE = re.compile(r"[\s._-]*[\[(]?\b(?:US|UK|AU|NZ|CA|IE)\b[\])]?\s*$")
+
+
+def bare_title(title: str) -> str:
+    """Ülke eki atılmış ad: "Kitchen Nightmares US" / "The Office (UK)" -> "Kitchen Nightmares" / "The Office".
+    Siteler diziyi çoğunlukla eksiz adla kaydeder; ek yoksa boş döner (ikinci arama gerekmez)."""
+    bare = _COUNTRY_RE.sub("", title or "").strip()
+    return bare if bare and bare != (title or "").strip() else ""
+
+
 _SE_RES = [
     re.compile(r"[sS](\d{1,2})[ ._-]?[eE](\d{1,4})"),
     re.compile(r"\b(\d{1,2})x(\d{2,3})\b"),

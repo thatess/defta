@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1772,3 +1773,77 @@ class TestReviewCache(unittest.TestCase):
         self.assertEqual(f1.reviews, 2)
         _, f2 = run()
         self.assertEqual(f2.reviews, 0, "ikinci çalışmada kontrol önbellekten")
+
+
+class TestSubdlV2(unittest.TestCase):
+    def setUp(self):
+        from defta import net
+        self.net = net
+        self.calls = []
+        self._orig = (net.get_json, net.get_bytes)
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        self.net.get_json, self.net.get_bytes = self._orig
+
+    def test_049_search_chain_header_and_download(self):
+        from defta.media import Media
+        from defta.sources import subdl
+        replies = {"/subtitles/search": [{}, {"status": True, "subtitles": [
+            {"subtitlePage": "/s/info/abc123", "url": "/subtitle/1-2.zip?api_key=SECRET",
+             "release_name": "Kitchen.Nightmares.S01E01.HDTV", "language": "EN", "lang": "english", "season": 1,
+             "episode": 1, "author": "x", "hi": True},
+            {"n_id": "zzz", "release_name": "Kitchen.Nightmares.S01E02", "language": "EN", "season": 1, "episode": 2},
+            {"release_name": "no-id"}]}], "/files/search": [{"status": True, "subtitles": []}]}
+
+        def fake_json(url, params=None, headers=None, timeout=15.0):
+            path = url.split("/api/v2")[1]
+            self.calls.append((path, dict(params or {}), dict(headers or {})))
+            return replies[path].pop(0)
+
+        def fake_bytes(url, params=None, headers=None, timeout=30.0):
+            self.calls.append((url, dict(params or {}), dict(headers or {})))
+            return SAMPLE.read_bytes()
+        self.net.get_json, self.net.get_bytes = fake_json, fake_bytes
+        m = Media(title="Kitchen Nightmares US", season=1, episode=1,
+                  filename="Kitchen.Nightmares.US.S01E01.720p.HDTV.x264.mkv")
+        subs = subdl.search(m, ["en"])
+        self.assertEqual([s.sid for s in subs], ["abc123"], "başka bölüm ve kimliksiz kayıt atlanır")
+        self.assertTrue(subs[0].hi, "SDH bilgisi gelir")
+        self.assertEqual(subs[0].lang, "en")
+        self.assertEqual([c[0] for c in self.calls], ["/files/search", "/subtitles/search", "/subtitles/search"])
+        self.assertEqual(self.calls[2][1]["film_name"], "Kitchen Nightmares", "ülke ekisiz ikinci ad araması")
+        self.assertEqual(self.calls[1][1]["season"], 1)
+        for _, params, headers in self.calls:
+            self.assertNotIn("api_key", params, "anahtar adrese yazılmaz")
+            self.assertTrue(headers["Authorization"].startswith("Bearer "))
+        name, data = subdl.download(subs[0], m)
+        self.assertTrue(self.calls[-1][0].endswith("/api/v2/subtitles/abc123/download"))
+        self.assertTrue(data)
+
+    def test_049_quota_and_errors(self):
+        from defta.media import Media
+        from defta.sources import subdl
+        from defta.sources.base import QuotaError, SourceError
+        net = self.net
+
+        def quota(url, params=None, headers=None, timeout=30.0):
+            raise net.HttpError(429, "x", {"error": {"code": "quota_exceeded", "message": "Daily"}},
+                                {"X-RateLimit-Reset": str(int(time.time()) + 3600)})
+        net.get_bytes = quota
+        from defta.sources.base import Sub
+        with self.assertRaises(QuotaError) as cm:
+            subdl.download(Sub("subdl", "abc", "en"), Media(title="X"))
+        self.assertAlmostEqual(cm.exception.until, time.time() + 3600, delta=5)
+        with self.assertRaises(SourceError):
+            subdl.download(Sub("subdl", "/subtitle/1-2.zip", "en"), Media(title="X"))
+        self.assertIn("zaman aşımı", net.explain("SubDL araması başarısız (HTTP 0: bağlantı kurulamadı: timed out)"))
+        self.assertIn("adı bulunamadı", net.explain("HTTP 0: bağlantı kurulamadı: [Errno 11001] getaddrinfo failed"))
+        self.assertIn("HTTP 503", net.explain("SubDL araması başarısız (HTTP 503: x)"))
+        self.assertEqual(net.explain("SubDL API anahtarı kabul edilmedi"), "")
+
+    def test_049_bare_title(self):
+        from defta.media import bare_title
+        self.assertEqual(bare_title("Kitchen Nightmares US"), "Kitchen Nightmares")
+        self.assertEqual(bare_title("The Office (UK)"), "The Office")
+        self.assertEqual(bare_title("Lupus"), "")
