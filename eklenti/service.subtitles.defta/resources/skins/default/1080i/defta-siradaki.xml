@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sıradaki bölüm sorusu: ekranın sağ üstünde, süreli küçük kart. Yazılar koddan gelir (d2/kutu.py).
+     Renkler temanın kendi renk adlarından alınır (Estuary ve ondan türeyen FENtastic: dialog_tint, button_focus):
+     kart temanın rengine ve kullanıcının seçtiği vurgu rengine uyar. Bu adları bilmeyen temada üstteki katman
+     saydam kalır, alttaki sabit renkler görünür.
+     Düzen (430 x 216): üstte eklentinin logosu, küçük başlık ve kalan saniye; altında bölüm, çevrilecek altyazı,
+     iki düğme; en altta süreyle birlikte kısalan çizgi (genişliğini kod ayarlar: id 20 ve 21, tam genişlik 386). -->
+<window type="dialog">
+    <zorder>5</zorder>
+    <defaultcontrol always="true">10</defaultcontrol>
+    <coordinates>
+        <left>1450</left>
+        <top>40</top>
+    </coordinates>
+    <animation type="WindowOpen">
+        <effect type="fade" start="0" end="100" time="220" />
+        <effect type="slide" start="40,0" end="0,0" time="220" tween="cubic" easing="out" />
+    </animation>
+    <animation type="WindowClose">
+        <effect type="fade" start="100" end="0" time="160" />
+        <effect type="slide" start="0,0" end="40,0" time="160" tween="cubic" easing="in" />
+    </animation>
+    <controls>
+        <!-- Kart: yuvarlak köşeli zemin -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>430</width>
+            <height>216</height>
+            <texture border="20" colordiffuse="F21A2123">defta-yuvarlak.png</texture>
+        </control>
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>430</width>
+            <height>216</height>
+            <texture border="20" colordiffuse="dialog_tint">defta-yuvarlak.png</texture>
+        </control>
+        <!-- Logo, küçük başlık (vurgu renginde) ve kalan süre -->
+        <control type="image">
+            <left>22</left>
+            <top>16</top>
+            <width>30</width>
+            <height>30</height>
+            <texture>special://home/addons/service.subtitles.defta/icon.png</texture>
+            <aspectratio>keep</aspectratio>
+        </control>
+        <control type="label" id="1">
+            <left>62</left>
+            <top>16</top>
+            <width>240</width>
+            <height>30</height>
+            <font>font10</font>
+            <textcolor>FF12B2E7</textcolor>
+            <aligny>center</aligny>
+        </control>
+        <control type="label" id="5">
+            <left>62</left>
+            <top>16</top>
+            <width>240</width>
+            <height>30</height>
+            <font>font10</font>
+            <textcolor>button_focus</textcolor>
+            <aligny>center</aligny>
+        </control>
+        <control type="label" id="4">
+            <left>308</left>
+            <top>16</top>
+            <width>100</width>
+            <height>30</height>
+            <font>font10</font>
+            <textcolor>FF8D949E</textcolor>
+            <aligny>center</aligny>
+            <align>right</align>
+        </control>
+        <!-- Bölüm -->
+        <control type="label" id="2">
+            <left>22</left>
+            <top>52</top>
+            <width>386</width>
+            <height>36</height>
+            <font>font12</font>
+            <textcolor>FFFFFFFF</textcolor>
+            <aligny>center</aligny>
+            <shadowcolor>66000000</shadowcolor>
+            <scroll>true</scroll>
+        </control>
+        <!-- Çevrilecek altyazı -->
+        <control type="label" id="3">
+            <left>22</left>
+            <top>90</top>
+            <width>386</width>
+            <height>30</height>
+            <font>font10</font>
+            <textcolor>FFB4BAC2</textcolor>
+            <aligny>center</aligny>
+            <scroll>true</scroll>
+        </control>
+        <!-- Düğmeler: yuvarlak köşeli; odaktaki düğme vurgu renginde -->
+        <control type="image">
+            <left>22</left>
+            <top>130</top>
+            <width>186</width>
+            <height>46</height>
+            <texture border="20" colordiffuse="22FFFFFF">defta-yuvarlak.png</texture>
+        </control>
+        <control type="image">
+            <left>222</left>
+            <top>130</top>
+            <width>186</width>
+            <height>46</height>
+            <texture border="20" colordiffuse="22FFFFFF">defta-yuvarlak.png</texture>
+        </control>
+        <control type="image">
+            <left>22</left>
+            <top>130</top>
+            <width>186</width>
+            <height>46</height>
+            <texture border="20" colordiffuse="FF12B2E7">defta-yuvarlak.png</texture>
+            <visible>Control.HasFocus(10)</visible>
+        </control>
+        <control type="image">
+            <left>222</left>
+            <top>130</top>
+            <width>186</width>
+            <height>46</height>
+            <texture border="20" colordiffuse="FF12B2E7">defta-yuvarlak.png</texture>
+            <visible>Control.HasFocus(11)</visible>
+        </control>
+        <control type="button" id="10">
+            <left>22</left>
+            <top>130</top>
+            <width>186</width>
+            <height>46</height>
+            <font>font12</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <textoffsetx>0</textoffsetx>
+            <textcolor>FFD6DAE0</textcolor>
+            <focusedcolor>FFFFFFFF</focusedcolor>
+            <texturefocus border="20" colordiffuse="button_focus">defta-yuvarlak.png</texturefocus>
+            <texturenofocus />
+            <onleft>11</onleft>
+            <onright>11</onright>
+        </control>
+        <control type="button" id="11">
+            <left>222</left>
+            <top>130</top>
+            <width>186</width>
+            <height>46</height>
+            <font>font12</font>
+            <align>center</align>
+            <aligny>center</aligny>
+            <textoffsetx>0</textoffsetx>
+            <textcolor>FFD6DAE0</textcolor>
+            <focusedcolor>FFFFFFFF</focusedcolor>
+            <texturefocus border="20" colordiffuse="button_focus">defta-yuvarlak.png</texturefocus>
+            <texturenofocus />
+            <onleft>10</onleft>
+            <onright>10</onright>
+        </control>
+        <!-- Süre çizgisi: soluk ray, üstünde süreyle kısalan vurgu renkli çizgi -->
+        <control type="image">
+            <left>22</left>
+            <top>194</top>
+            <width>386</width>
+            <height>4</height>
+            <texture colordiffuse="26FFFFFF">defta-beyaz.png</texture>
+        </control>
+        <control type="image" id="20">
+            <left>22</left>
+            <top>194</top>
+            <width>386</width>
+            <height>4</height>
+            <texture colordiffuse="FF12B2E7">defta-beyaz.png</texture>
+        </control>
+        <control type="image" id="21">
+            <left>22</left>
+            <top>194</top>
+            <width>386</width>
+            <height>4</height>
+            <texture colordiffuse="button_focus">defta-beyaz.png</texture>
+        </control>
+    </controls>
+</window>

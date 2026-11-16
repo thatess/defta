@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings>
+  <category label="Genel">
+    <setting type="lsep" label="Dil"/>
+    <setting id="target_lang" type="enum" label="Çeviri dili (altyazının çevrileceği dil)" values="Türkçe|İngilizce|Japonca|Almanca|Fransızca|İspanyolca|İtalyanca|Portekizce|Rusça|Arapça|Korece|Çince|Felemenkçe|Lehçe|İsveççe|Yunanca|Farsça|Hintçe|Endonezce" default="0"/>
+    <setting id="src_lang" type="enum" label="Varsayılan kaynak dili (bundan çevrilir)" values="Türkçe|İngilizce|Japonca|Almanca|Fransızca|İspanyolca|İtalyanca|Portekizce|Rusça|Arapça|Korece|Çince|Felemenkçe|Lehçe|İsveççe|Yunanca|Farsça|Hintçe|Endonezce" default="1"/>
+    <setting id="extra_src_langs" type="text" label="Ek kaynak dilleri (virgülle, örn. ja,fr,ko)" default=""/>
+    <setting id="anime_japanese" type="bool" label="Animede Japonca altyazıyı öne al" default="false"/>
+    <setting type="lsep" label="Çeviri"/>
+    <setting id="openai_key" type="text" option="hidden" label="OpenAI API anahtarı" default=""/>
+    <setting id="model" type="text" label="Model" default="gpt-6-luna"/>
+    <setting id="mode" type="enum" label="Çeviri modu" values="Hızlı önce, kaliteli sonra|Yalnızca kaliteli (bitince yükle)|Yalnızca hızlı (anlam kontrolü yok)" default="0"/>
+    <setting id="fast_window" type="enum" label="Hızlı çevirinin kapsadığı süre (izlenen yerden itibaren)" values="Otomatik (dizi 2 dk, film 5 dk)|1 dk|2 dk|3 dk|5 dk" default="0" enable="eq(-1,0)"/>
+    <setting id="credit" type="text" label="Künye adı (Altyazı çevirisi: ...)" default="Thates"/>
+    <setting type="lsep" label="Anahtarlar bir dosyada mı? (.env / .txt: USB, Shield'ın kendi belleği ya da ağ klasörü)"/>
+    <setting type="action" option="close" label="Anahtarları dosyadan içe aktar" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,importkeys)"/>
+    <setting id="key_file" type="text" label="Anahtar dosyası yolu (eski)" default="" visible="false"/>
+  </category>
+  <category label="Kaynaklar">
+    <setting type="lsep" label="OpenSubtitles"/>
+    <setting id="os_enabled" type="bool" label="OpenSubtitles açık" default="true"/>
+    <setting id="os_key" type="text" option="hidden" label="OpenSubtitles API anahtarı" default="" enable="eq(-1,true)"/>
+    <setting id="os_user" type="text" label="Kullanıcı adı (isteğe bağlı)" default="" enable="eq(-2,true)"/>
+    <setting id="os_pass" type="text" option="hidden" label="Şifre (isteğe bağlı)" default="" enable="eq(-3,true)"/>
+    <setting type="lsep" label="SubDL"/>
+    <setting id="subdl_enabled" type="bool" label="SubDL açık" default="true"/>
+    <setting id="subdl_key" type="text" option="hidden" label="SubDL API anahtarı" default="" enable="eq(-1,true)"/>
+    <setting type="lsep" label="SubSource"/>
+    <setting id="subsource_enabled" type="bool" label="SubSource açık" default="true"/>
+    <setting id="subsource_key" type="text" option="hidden" label="SubSource API anahtarı" default="" enable="eq(-1,true)"/>
+    <setting type="lsep" label="Jimaku (anime, Japonca)"/>
+    <setting id="jimaku_enabled" type="bool" label="Jimaku açık" default="false"/>
+    <setting id="jimaku_key" type="text" option="hidden" label="Jimaku API anahtarı" default="" enable="eq(-1,true)"/>
+    <setting type="lsep" label="Liste"/>
+    <setting id="per_source" type="enum" label="Çevrilecek altyazı sayısı (her kaynaktan)" values="3|5|10|Tümü" default="1"/>
+    <setting id="demote_sdh" type="bool" label="İşitme engelli (SDH) altyazıları alta indir" default="true"/>
+  </category>
+  <category label="Otomatik">
+    <setting id="auto_human" type="bool" label="Hedef dilde insan çevirisi varsa kendiliğinden yükle" default="false"/>
+    <setting id="auto_ai" type="bool" label="Hazır AI çevirisi varsa kendiliğinden yükle" default="false"/>
+    <setting id="auto_translate" type="bool" label="Hedef dilde altyazı yoksa AI çevirisini kendiliğinden başlat" default="false"/>
+    <setting type="lsep" label="Dizide sıradaki bölüm"/>
+    <setting id="prefetch_next" type="enum" label="Sıradaki bölümü önceden çevir" values="Kapalı|Sor (15 sn)|Otomatik" default="0"/>
+    <setting id="prefetch_at" type="enum" label="Bölümün yüzde kaçı izlenince (Red Light gibi eklentilerden önce olmalı)" values="%80|%85|%90|%95" default="2" enable="!eq(-1,0)"/>
+  </category>
+  <category label="Altyazı">
+    <setting id="sound_notes" type="enum" label="Ses notları  [kapı çarpar]" values="Kaldır|Koru|Çevir" default="0"/>
+    <setting id="speaker_labels" type="enum" label="Konuşan etiketleri  JOHN:" values="Kaldır|Koru|Çevir" default="0"/>
+    <setting id="speaker_dashes" type="enum" label="Konuşma tireleri  - Geldin mi?" values="Kaldır|Koru" default="0"/>
+    <setting id="lyrics" type="enum" label="Şarkı sözleri  ♪" values="Çevir|Orijinal bırak (Latin harfleriyle)|Otomatik (yalnızca Japonca vb. ise çevir)|İkisi birden (orijinal, altında anlamı)" default="0"/>
+    <setting id="format_tags" type="enum" label="İtalik ve biçim etiketleri  &lt;i&gt;" values="Kaldır|Koru" default="0"/>
+  </category>
+  <category label="Temizlik">
+    <setting type="lsep" label="Her silme önce onay ister. API anahtarları ve ayarlar silinmez."/>
+    <setting type="action" option="close" label="AI çevirilerini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,ai)"/>
+    <setting type="action" option="close" label="Arama sonuçlarını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,search)"/>
+    <setting type="action" option="close" label="İndirilen yabancı altyazıları sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,downloads)"/>
+    <setting type="action" option="close" label="Seri sözlüğü sil (seri seçerek)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,glossary)"/>
+    <setting type="action" option="close" label="Çeviri hafızasını sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,memory)"/>
+    <setting type="action" option="close" label="Yarım kalan işleri sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,jobs)"/>
+    <setting type="action" option="close" label="API yanıt önbelleğini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,apicache)"/>
+    <setting type="action" option="close" label="Senkron işaretlerini ve dizi tercihlerini sil" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,syncmarks)"/>
+    <setting type="lsep" label=" "/>
+    <setting type="action" option="close" label="[B]Tümünü sil[/B]" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,clean,all)"/>
+  </category>
+  <category label="Yardım">
+    <setting type="action" option="close" label="Bağlantıları ve anahtarları test et" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,test)"/>
+    <setting type="action" option="close" label="Kurulum rehberi" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,guide)"/>
+    <setting type="action" option="close" label="Sıradaki bölüm kutusunu dene (sağ üst)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,nextdemo)"/>
+    <setting type="action" option="close" label="Kodi kayıtlarını kayıt klasörüne kopyala" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,logs)"/>
+    <setting type="action" option="close" label="AI çevirilerini ve sözlükleri dışa aktar (klasöre kopyala)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,export)"/>
+    <setting id="debug" type="bool" label="Ayrıntılı kayıt (hata ayıklama)" default="false"/>
+    <setting id="debug_dir" type="text" label="Kayıtların kopyası bu klasöre de yazılsın (ağ klasörü olabilir: smb://...)" default=""/>
+    <setting type="action" option="close" label="Kayıt klasörünü seç (ağ klasörü: Gözat > Ağ konumu ekle)" action="RunScript(special://home/addons/service.subtitles.defta/tools.py,pickdebugdir)"/>
+  </category>
+</settings>

@@ -1,0 +1,17 @@
+{
+ "gpt-6-luna": {
+  "input": 0.1,
+  "cached_input": 0.01,
+  "output": 0.5
+ },
+ "gpt-6.1-sol": {
+  "input": 2.0,
+  "cached_input": 0.1,
+  "output": 10.0
+ },
+ "gpt-4o-mini": {
+  "input": 0.15,
+  "cached_input": 0.075,
+  "output": 0.6
+ }
+}

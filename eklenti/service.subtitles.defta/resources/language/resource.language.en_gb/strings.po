@@ -1,0 +1,905 @@
+# Defta — arayüz yazıları (resources/lib/d2/metin.py dosyasından üretildi; burada düzenlemeyin)
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: en_GB\n"
+
+msgctxt "#30000"
+msgid "Diller"
+msgstr ""
+
+msgctxt "#30001"
+msgid "Siteler ve anahtarlar"
+msgstr ""
+
+msgctxt "#30002"
+msgid "Otomatik"
+msgstr ""
+
+msgctxt "#30003"
+msgid "Çeviri"
+msgstr ""
+
+msgctxt "#30005"
+msgid "Bakım"
+msgstr ""
+
+msgctxt "#30006"
+msgid "Altyazı listesi"
+msgstr ""
+
+msgctxt "#30010"
+msgid "İzleme dili"
+msgstr ""
+
+msgctxt "#30011"
+msgid "OpenAI (çeviri için)"
+msgstr ""
+
+msgctxt "#30012"
+msgid "OpenSubtitles"
+msgstr ""
+
+msgctxt "#30013"
+msgid "SubDL"
+msgstr ""
+
+msgctxt "#30014"
+msgid "SubSource"
+msgstr ""
+
+msgctxt "#30015"
+msgid "Jimaku"
+msgstr ""
+
+msgctxt "#30016"
+msgid "Anahtar işlemleri"
+msgstr ""
+
+msgctxt "#30017"
+msgid "Sıralama"
+msgstr ""
+
+msgctxt "#30018"
+msgid "Sıradaki bölüm"
+msgstr ""
+
+msgctxt "#30019"
+msgid "Tek tek sil"
+msgstr ""
+
+msgctxt "#30020"
+msgid "Klasöre kopyala"
+msgstr ""
+
+msgctxt "#30021"
+msgid "Anime bölüm eşlemesi"
+msgstr ""
+
+msgctxt "#30022"
+msgid "Sıfırlama"
+msgstr ""
+
+msgctxt "#30023"
+msgid "Video açılınca"
+msgstr ""
+
+msgctxt "#30024"
+msgid "Hızlı çeviri"
+msgstr ""
+
+msgctxt "#30025"
+msgid "Çeviri tercihleri"
+msgstr ""
+
+msgctxt "#30026"
+msgid "O dilde altyazı yoksa şu dillerden çevir"
+msgstr ""
+
+msgctxt "#30027"
+msgid "Her siteden en çok kaç sonuç"
+msgstr ""
+
+msgctxt "#30028"
+msgid "Notlar ve etiketler"
+msgstr ""
+
+msgctxt "#30029"
+msgid "Biçim"
+msgstr ""
+
+msgctxt "#30030"
+msgid "Hepsini temizle"
+msgstr ""
+
+msgctxt "#30100"
+msgid "Altyazı dili"
+msgstr ""
+
+msgctxt "#30101"
+msgid "1. tercih"
+msgstr ""
+
+msgctxt "#30102"
+msgid "2. tercih"
+msgstr ""
+
+msgctxt "#30103"
+msgid "3. tercih"
+msgstr ""
+
+msgctxt "#30104"
+msgid "Animede Jimaku üstte"
+msgstr ""
+
+msgctxt "#30110"
+msgid "API anahtarı"
+msgstr ""
+
+msgctxt "#30111"
+msgid "Bu sitede ara"
+msgstr ""
+
+msgctxt "#30112"
+msgid "API anahtarı"
+msgstr ""
+
+msgctxt "#30113"
+msgid "Kullanıcı adı"
+msgstr ""
+
+msgctxt "#30114"
+msgid "Parola"
+msgstr ""
+
+msgctxt "#30120"
+msgid "Anahtarları dosyadan yükle (.env, .txt)"
+msgstr ""
+
+msgctxt "#30121"
+msgid "Anahtarları test et"
+msgstr ""
+
+msgctxt "#30122"
+msgid "Altyazı dilinde"
+msgstr ""
+
+msgctxt "#30123"
+msgid "Çevrilecek dillerde"
+msgstr ""
+
+msgctxt "#30124"
+msgid "İşitme engelliler için olanlar (SDH) altta"
+msgstr ""
+
+msgctxt "#30130"
+msgid "Altyazıyı kendiliğinden indir"
+msgstr ""
+
+msgctxt "#30131"
+msgid "AI çevirisi"
+msgstr ""
+
+msgctxt "#30132"
+msgid "Önceden çevir"
+msgstr ""
+
+msgctxt "#30133"
+msgid "Bölümün neresinde"
+msgstr ""
+
+msgctxt "#30134"
+msgid "Sorunun ekranda kalma süresi"
+msgstr ""
+
+msgctxt "#30140"
+msgid "Önce çevrilecek süre"
+msgstr ""
+
+msgctxt "#30141"
+msgid "Şarkı sözleri"
+msgstr ""
+
+msgctxt "#30142"
+msgid "Konuşma çizgisi (-)"
+msgstr ""
+
+msgctxt "#30143"
+msgid "İtalik yazı"
+msgstr ""
+
+msgctxt "#30144"
+msgid "Ses notları ([kapı çalar])"
+msgstr ""
+
+msgctxt "#30145"
+msgid "Konuşanın adı (ALİ: ...)"
+msgstr ""
+
+msgctxt "#30146"
+msgid "Ekrandaki yazılar (tabela, mektup)"
+msgstr ""
+
+msgctxt "#30147"
+msgid "Uydurma diller (Elfçe gibi)"
+msgstr ""
+
+msgctxt "#30148"
+msgid "Japonca hitap ekleri (-san, -kun)"
+msgstr ""
+
+msgctxt "#30149"
+msgid "Sen/siz tutarlı olsun"
+msgstr ""
+
+msgctxt "#30150"
+msgid "Ses sözcükleri (miyav, hav)"
+msgstr ""
+
+msgctxt "#30151"
+msgid "Ekranın üstünde gösterme"
+msgstr ""
+
+msgctxt "#30152"
+msgid "Reklam satırları"
+msgstr ""
+
+msgctxt "#30160"
+msgid "Tüm önbelleği temizle"
+msgstr ""
+
+msgctxt "#30161"
+msgid "Çevirileri sil"
+msgstr ""
+
+msgctxt "#30162"
+msgid "Sözlükleri sil"
+msgstr ""
+
+msgctxt "#30163"
+msgid "Yarıda kalan çevirileri sil"
+msgstr ""
+
+msgctxt "#30164"
+msgid "İndirilen altyazıları sil"
+msgstr ""
+
+msgctxt "#30165"
+msgid "Çeviri kayıtlarını sil"
+msgstr ""
+
+msgctxt "#30166"
+msgid "Geçici dosyaları sil"
+msgstr ""
+
+msgctxt "#30167"
+msgid "Seçimleri ve kaymış işaretlerini sil"
+msgstr ""
+
+msgctxt "#30168"
+msgid "Anime eşlemesini sil"
+msgstr ""
+
+msgctxt "#30171"
+msgid "Çevirileri kopyala"
+msgstr ""
+
+msgctxt "#30172"
+msgid "Kayıtları ve sözlükleri kopyala (hata bildirimi için)"
+msgstr ""
+
+msgctxt "#30175"
+msgid "Güncelleme sıklığı"
+msgstr ""
+
+msgctxt "#30176"
+msgid "Şimdi güncelle"
+msgstr ""
+
+msgctxt "#30180"
+msgid "Fabrika ayarlarına dön"
+msgstr ""
+
+msgctxt "#30200"
+msgid "Türkçe"
+msgstr ""
+
+msgctxt "#30201"
+msgid "İngilizce"
+msgstr ""
+
+msgctxt "#30202"
+msgid "Japonca"
+msgstr ""
+
+msgctxt "#30203"
+msgid "Almanca"
+msgstr ""
+
+msgctxt "#30204"
+msgid "Fransızca"
+msgstr ""
+
+msgctxt "#30205"
+msgid "İspanyolca"
+msgstr ""
+
+msgctxt "#30206"
+msgid "İtalyanca"
+msgstr ""
+
+msgctxt "#30207"
+msgid "Portekizce"
+msgstr ""
+
+msgctxt "#30208"
+msgid "Portekizce (Brezilya)"
+msgstr ""
+
+msgctxt "#30209"
+msgid "Rusça"
+msgstr ""
+
+msgctxt "#30210"
+msgid "Arapça"
+msgstr ""
+
+msgctxt "#30211"
+msgid "Korece"
+msgstr ""
+
+msgctxt "#30212"
+msgid "Çince"
+msgstr ""
+
+msgctxt "#30213"
+msgid "Felemenkçe"
+msgstr ""
+
+msgctxt "#30214"
+msgid "Lehçe"
+msgstr ""
+
+msgctxt "#30215"
+msgid "Yunanca"
+msgstr ""
+
+msgctxt "#30216"
+msgid "Farsça"
+msgstr ""
+
+msgctxt "#30217"
+msgid "Azerbaycan Türkçesi"
+msgstr ""
+
+msgctxt "#30218"
+msgid "Ukraynaca"
+msgstr ""
+
+msgctxt "#30219"
+msgid "İsveççe"
+msgstr ""
+
+msgctxt "#30230"
+msgid "Yok"
+msgstr ""
+
+msgctxt "#30231"
+msgid "Kapalı"
+msgstr ""
+
+msgctxt "#30233"
+msgid "Varsa yükle"
+msgstr ""
+
+msgctxt "#30234"
+msgid "Yoksa çevir"
+msgstr ""
+
+msgctxt "#30235"
+msgid "Sor"
+msgstr ""
+
+msgctxt "#30236"
+msgid "Sormadan çevir"
+msgstr ""
+
+msgctxt "#30237"
+msgid "Çevrilmesin"
+msgstr ""
+
+msgctxt "#30238"
+msgid "Aslı + çevirisi"
+msgstr ""
+
+msgctxt "#30239"
+msgid "Çevrilsin"
+msgstr ""
+
+msgctxt "#30240"
+msgid "Kalsın"
+msgstr ""
+
+msgctxt "#30241"
+msgid "Silinsin"
+msgstr ""
+
+msgctxt "#30242"
+msgid "Çevrilsin"
+msgstr ""
+
+msgctxt "#30243"
+msgid "Kalsın"
+msgstr ""
+
+msgctxt "#30244"
+msgid "Çevrilmesin"
+msgstr ""
+
+msgctxt "#30245"
+msgid "Günlük"
+msgstr ""
+
+msgctxt "#30246"
+msgid "Haftalık"
+msgstr ""
+
+msgctxt "#30247"
+msgid "Aylık"
+msgstr ""
+
+msgctxt "#30250"
+msgid "1"
+msgstr ""
+
+msgctxt "#30252"
+msgid "3"
+msgstr ""
+
+msgctxt "#30253"
+msgid "5"
+msgstr ""
+
+msgctxt "#30254"
+msgid "10"
+msgstr ""
+
+msgctxt "#30255"
+msgid "1 dk"
+msgstr ""
+
+msgctxt "#30256"
+msgid "2 dk"
+msgstr ""
+
+msgctxt "#30257"
+msgid "3 dk"
+msgstr ""
+
+msgctxt "#30258"
+msgid "5 dk"
+msgstr ""
+
+msgctxt "#30259"
+msgid "10 dk"
+msgstr ""
+
+msgctxt "#30260"
+msgid "%80"
+msgstr ""
+
+msgctxt "#30261"
+msgid "%85"
+msgstr ""
+
+msgctxt "#30262"
+msgid "%90"
+msgstr ""
+
+msgctxt "#30263"
+msgid "%95"
+msgstr ""
+
+msgctxt "#30264"
+msgid "10 sn"
+msgstr ""
+
+msgctxt "#30265"
+msgid "15 sn"
+msgstr ""
+
+msgctxt "#30266"
+msgid "20 sn"
+msgstr ""
+
+msgctxt "#30267"
+msgid "30 sn"
+msgstr ""
+
+msgctxt "#30400"
+msgid "Senkron kaymış · sıradakini dene"
+msgstr ""
+
+msgctxt "#30401"
+msgid "Yeniden çevir"
+msgstr ""
+
+msgctxt "#30402"
+msgid "{dil} altyazı yok · çevirmek için aşağıdan seçin"
+msgstr ""
+
+msgctxt "#30403"
+msgid "çevriliyor %{yuzde}"
+msgstr ""
+
+msgctxt "#30404"
+msgid "Çevir"
+msgstr ""
+
+msgctxt "#30405"
+msgid "AI"
+msgstr ""
+
+msgctxt "#30407"
+msgid "Sezon paketi"
+msgstr ""
+
+msgctxt "#30408"
+msgid "makine yapımı"
+msgstr ""
+
+msgctxt "#30500"
+msgid "Hızlı çeviri yüklendi"
+msgstr ""
+
+msgctxt "#30501"
+msgid "{dakika} dk {dil} · kalanı çevriliyor"
+msgstr ""
+
+msgctxt "#30502"
+msgid "Çeviri tamamlandı"
+msgstr ""
+
+msgctxt "#30503"
+msgid "{sure} · {maliyet} $"
+msgstr ""
+
+msgctxt "#30504"
+msgid "Altyazı yüklendi"
+msgstr ""
+
+msgctxt "#30505"
+msgid "{site} · otomatik"
+msgstr ""
+
+msgctxt "#30506"
+msgid "{site} indirme hakkı doldu"
+msgstr ""
+
+msgctxt "#30507"
+msgid "Yenilenme saati: {saat}"
+msgstr ""
+
+msgctxt "#30508"
+msgid "OpenAI bakiyesi bitti"
+msgstr ""
+
+msgctxt "#30509"
+msgid "Çeviri durdu · bakiye yüklenince kaldığı yerden sürer"
+msgstr ""
+
+msgctxt "#30510"
+msgid "Çeviri durdu"
+msgstr ""
+
+msgctxt "#30511"
+msgid "Yeniden seçince kaldığı yerden sürer"
+msgstr ""
+
+msgctxt "#30512"
+msgid "Çeviri kaldığı yerden sürüyor"
+msgstr ""
+
+msgctxt "#30513"
+msgid "Hata"
+msgstr ""
+
+msgctxt "#30514"
+msgid "Video tanınamadı"
+msgstr ""
+
+msgctxt "#30515"
+msgid "Denenecek başka altyazı yok"
+msgstr ""
+
+msgctxt "#30516"
+msgid "{site} anahtarı eksik"
+msgstr ""
+
+msgctxt "#30517"
+msgid "Altyazı indirilemedi"
+msgstr ""
+
+msgctxt "#30518"
+msgid "Çeviri yapılamadı"
+msgstr ""
+
+msgctxt "#30519"
+msgid "Önbellek temizlendi"
+msgstr ""
+
+msgctxt "#30520"
+msgid "Sıradaki bölüm"
+msgstr ""
+
+msgctxt "#30521"
+msgid "{dil} altyazı var · çeviri gerekmiyor"
+msgstr ""
+
+msgctxt "#30523"
+msgid "Çevrilecek altyazı bulunamadı"
+msgstr ""
+
+msgctxt "#30524"
+msgid "Arka planda çevriliyor"
+msgstr ""
+
+msgctxt "#30525"
+msgid "Silindi"
+msgstr ""
+
+msgctxt "#30526"
+msgid "Anime eşlemesi güncellendi"
+msgstr ""
+
+msgctxt "#30527"
+msgid "{tarih} · {sayi} kayıt"
+msgstr ""
+
+msgctxt "#30528"
+msgid "Klasöre kopyalandı"
+msgstr ""
+
+msgctxt "#30529"
+msgid "{sayi} dosya"
+msgstr ""
+
+msgctxt "#30530"
+msgid "Anahtarlar"
+msgstr ""
+
+msgctxt "#30531"
+msgid "{bulunan} bulundu, {eksik} eksik"
+msgstr ""
+
+msgctxt "#30540"
+msgid "Anahtar eksik: bu siteler aranmadı"
+msgstr ""
+
+msgctxt "#30541"
+msgid "Anahtar geçersiz"
+msgstr ""
+
+msgctxt "#30542"
+msgid "{siteler} · Ayarlardan anahtarını girin"
+msgstr ""
+
+msgctxt "#30544"
+msgid "Eklentinin servisi yanıt vermedi; Kodi'yi yeniden başlatın"
+msgstr ""
+
+msgctxt "#30545"
+msgid "Çeviri kaydı bulunamadı; altyazıyı listeden yeniden seçin"
+msgstr ""
+
+msgctxt "#30546"
+msgid "Önceki çeviri henüz durmadı; biraz sonra yeniden deneyin"
+msgstr ""
+
+msgctxt "#30547"
+msgid "Çalışıyor…"
+msgstr ""
+
+msgctxt "#30600"
+msgid "Anahtarlar nereden okunsun?"
+msgstr ""
+
+msgctxt "#30601"
+msgid "Dosya seçin (.env, .txt)"
+msgstr ""
+
+msgctxt "#30602"
+msgid "Klasör seçin (içindeki .env ya da .txt)"
+msgstr ""
+
+msgctxt "#30603"
+msgid "Klasörde .env ya da .txt dosyası yok"
+msgstr ""
+
+msgctxt "#30604"
+msgid "{site}: aynı (…{son4})"
+msgstr ""
+
+msgctxt "#30605"
+msgid "{site}: değişti (…{eski} → …{yeni})"
+msgstr ""
+
+msgctxt "#30606"
+msgid "{site}: eklendi (…{son4})"
+msgstr ""
+
+msgctxt "#30607"
+msgid "{site}: dosyada yok (eskisi kalır)"
+msgstr ""
+
+msgctxt "#30608"
+msgid "{site}: yok"
+msgstr ""
+
+msgctxt "#30609"
+msgid "Uygula"
+msgstr ""
+
+msgctxt "#30610"
+msgid "Vazgeç"
+msgstr ""
+
+msgctxt "#30611"
+msgid "Anahtar testi"
+msgstr ""
+
+msgctxt "#30612"
+msgid "çalışıyor"
+msgstr ""
+
+msgctxt "#30613"
+msgid "çalışmıyor: {neden}"
+msgstr ""
+
+msgctxt "#30614"
+msgid "kalan indirme hakkı {kalan}"
+msgstr ""
+
+msgctxt "#30615"
+msgid "son değişiklik {tarih} (eskisi …{son4})"
+msgstr ""
+
+msgctxt "#30616"
+msgid "anahtar yok"
+msgstr ""
+
+msgctxt "#30617"
+msgid "{ne} silinsin mi?"
+msgstr ""
+
+msgctxt "#30618"
+msgid "Çeviriler, sözlükler, yarım çeviriler, indirilen altyazılar, kayıtlar, geçici dosyalar, işaretler ve eşleme listesi silinsin mi? Ayarlar ve anahtarlar kalır."
+msgstr ""
+
+msgctxt "#30619"
+msgid "Ayarlar ve anahtarlar dahil her şey silinsin mi? Eklenti ilk kurulmuş gibi olur."
+msgstr ""
+
+msgctxt "#30620"
+msgid "Yeniden çevrilsin mi?"
+msgstr ""
+
+msgctxt "#30621"
+msgid "Yalnız çeviriyi yenile"
+msgstr ""
+
+msgctxt "#30622"
+msgid "Sözlükle birlikte yenile"
+msgstr ""
+
+msgctxt "#30623"
+msgid "Sıradaki bölüm çevrilsin mi?"
+msgstr ""
+
+msgctxt "#30624"
+msgid "Kodi'nin \"İlk altyazıyı otomatik indir\" ayarı açık. Otomatik altyazıyı Defta yönetsin, Kodi'ninki kapatılsın mı?"
+msgstr ""
+
+msgctxt "#30625"
+msgid "Evet"
+msgstr ""
+
+msgctxt "#30626"
+msgid "Hayır"
+msgstr ""
+
+msgctxt "#30627"
+msgid "Dosyalar hangi klasöre yazılsın?"
+msgstr ""
+
+msgctxt "#30640"
+msgid "Son klasör: {klasor}"
+msgstr ""
+
+msgctxt "#30641"
+msgid "Başka klasör seç…"
+msgstr ""
+
+msgctxt "#30628"
+msgid "Dosyada tanınan anahtar yok"
+msgstr ""
+
+msgctxt "#30629"
+msgid "İptal"
+msgstr ""
+
+msgctxt "#30630"
+msgid "eklendi {tarih}"
+msgstr ""
+
+msgctxt "#30631"
+msgid "Anahtar testi"
+msgstr ""
+
+msgctxt "#30632"
+msgid "Dosyada bulunanlar"
+msgstr ""
+
+msgctxt "#30633"
+msgid "Değişecek anahtarlar"
+msgstr ""
+
+msgctxt "#30634"
+msgid "Adres yazın (smb://sunucu/paylaşım)"
+msgstr ""
+
+msgctxt "#30635"
+msgid "Ağ adresi (klasör ya da dosya)"
+msgstr ""
+
+msgctxt "#30636"
+msgid "Kullanıcı adı (yoksa boş bırakın)"
+msgstr ""
+
+msgctxt "#30637"
+msgid "Parola"
+msgstr ""
+
+msgctxt "#30638"
+msgid "Adres açılamadı ya da içinde .env / .txt yok"
+msgstr ""
+
+msgctxt "#30700"
+msgid "Çeviriler"
+msgstr ""
+
+msgctxt "#30701"
+msgid "Sözlükler"
+msgstr ""
+
+msgctxt "#30702"
+msgid "Yarıda kalan çeviriler"
+msgstr ""
+
+msgctxt "#30703"
+msgid "İndirilen altyazılar"
+msgstr ""
+
+msgctxt "#30704"
+msgid "Çeviri kayıtları"
+msgstr ""
+
+msgctxt "#30705"
+msgid "Geçici dosyalar"
+msgstr ""
+
+msgctxt "#30706"
+msgid "Seçimler ve kaymış işaretleri"
+msgstr ""
+
+msgctxt "#30707"
+msgid "Anime eşlemesi"
+msgstr ""
+
+msgctxt "#30708"
+msgid "{cevir} çeviri, {sozluk} sözlük · {mb} MB"
+msgstr ""
+
+msgctxt "#30709"
+msgid "{sayi} dosya · {mb} MB"
+msgstr ""

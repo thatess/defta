@@ -1,0 +1,630 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!-- araclar/ayarlar_uret.py ile üretildi; burada düzenlemeyin -->
+<settings version="1">
+  <section id="service.subtitles.defta">
+    <category id="diller" label="30000" help="">
+      <group id="1" label="30010">
+        <setting id="hedef_dil" type="string" label="30100" help="">
+          <level>0</level>
+          <default>tr</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30200">tr</option>
+              <option label="30201">en</option>
+              <option label="30202">ja</option>
+              <option label="30203">de</option>
+              <option label="30204">fr</option>
+              <option label="30205">es</option>
+              <option label="30206">it</option>
+              <option label="30207">pt</option>
+              <option label="30208">pt-BR</option>
+              <option label="30209">ru</option>
+              <option label="30210">ar</option>
+              <option label="30211">ko</option>
+              <option label="30212">zh</option>
+              <option label="30213">nl</option>
+              <option label="30214">pl</option>
+              <option label="30215">el</option>
+              <option label="30216">fa</option>
+              <option label="30217">az</option>
+              <option label="30218">uk</option>
+              <option label="30219">sv</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+      </group>
+      <group id="2" label="30026">
+        <setting id="kaynak_1" type="string" label="30101" help="">
+          <level>0</level>
+          <default>en</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30200">tr</option>
+              <option label="30201">en</option>
+              <option label="30202">ja</option>
+              <option label="30203">de</option>
+              <option label="30204">fr</option>
+              <option label="30205">es</option>
+              <option label="30206">it</option>
+              <option label="30207">pt</option>
+              <option label="30208">pt-BR</option>
+              <option label="30209">ru</option>
+              <option label="30210">ar</option>
+              <option label="30211">ko</option>
+              <option label="30212">zh</option>
+              <option label="30213">nl</option>
+              <option label="30214">pl</option>
+              <option label="30215">el</option>
+              <option label="30216">fa</option>
+              <option label="30217">az</option>
+              <option label="30218">uk</option>
+              <option label="30219">sv</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="kaynak_2" type="string" label="30102" help="">
+          <level>0</level>
+          <default>ja</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30230">yok</option>
+              <option label="30200">tr</option>
+              <option label="30201">en</option>
+              <option label="30202">ja</option>
+              <option label="30203">de</option>
+              <option label="30204">fr</option>
+              <option label="30205">es</option>
+              <option label="30206">it</option>
+              <option label="30207">pt</option>
+              <option label="30208">pt-BR</option>
+              <option label="30209">ru</option>
+              <option label="30210">ar</option>
+              <option label="30211">ko</option>
+              <option label="30212">zh</option>
+              <option label="30213">nl</option>
+              <option label="30214">pl</option>
+              <option label="30215">el</option>
+              <option label="30216">fa</option>
+              <option label="30217">az</option>
+              <option label="30218">uk</option>
+              <option label="30219">sv</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="kaynak_3" type="string" label="30103" help="">
+          <level>2</level>
+          <default>yok</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30230">yok</option>
+              <option label="30200">tr</option>
+              <option label="30201">en</option>
+              <option label="30202">ja</option>
+              <option label="30203">de</option>
+              <option label="30204">fr</option>
+              <option label="30205">es</option>
+              <option label="30206">it</option>
+              <option label="30207">pt</option>
+              <option label="30208">pt-BR</option>
+              <option label="30209">ru</option>
+              <option label="30210">ar</option>
+              <option label="30211">ko</option>
+              <option label="30212">zh</option>
+              <option label="30213">nl</option>
+              <option label="30214">pl</option>
+              <option label="30215">el</option>
+              <option label="30216">fa</option>
+              <option label="30217">az</option>
+              <option label="30218">uk</option>
+              <option label="30219">sv</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+      </group>
+    </category>
+    <category id="anahtarlar" label="30001" help="">
+      <group id="1" label="30016">
+        <setting id="baglanti_testi" type="action" label="30121" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,baglanti_testi)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="anahtar_yukle" type="action" label="30120" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,anahtar_yukle)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"><close>true</close></control>
+        </setting>
+      </group>
+      <group id="2" label="30011">
+        <setting id="openai_anahtar" type="string" label="30110" help="">
+          <level>0</level>
+          <default/>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="edit" format="string">
+            <heading>30110</heading>
+            <hidden>true</hidden>
+          </control>
+        </setting>
+      </group>
+      <group id="3" label="30012">
+        <setting id="os_kullan" type="boolean" label="30111" help="">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="os_anahtar" type="string" label="30112" help="">
+          <level>0</level>
+          <default/>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="edit" format="string">
+            <heading>30112</heading>
+            <hidden>true</hidden>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="os_kullan">true</dependency>
+          </dependencies>
+        </setting>
+        <setting id="os_kullanici" type="string" label="30113" help="">
+          <level>0</level>
+          <default/>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="edit" format="string">
+            <heading>30113</heading>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="os_kullan">true</dependency>
+          </dependencies>
+        </setting>
+        <setting id="os_parola" type="string" label="30114" help="">
+          <level>0</level>
+          <default/>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="edit" format="string">
+            <heading>30114</heading>
+            <hidden>true</hidden>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="os_kullan">true</dependency>
+          </dependencies>
+        </setting>
+      </group>
+      <group id="4" label="30013">
+        <setting id="subdl_kullan" type="boolean" label="30111" help="">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="subdl_anahtar" type="string" label="30112" help="">
+          <level>0</level>
+          <default/>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="edit" format="string">
+            <heading>30112</heading>
+            <hidden>true</hidden>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="subdl_kullan">true</dependency>
+          </dependencies>
+        </setting>
+      </group>
+      <group id="5" label="30014">
+        <setting id="subsource_kullan" type="boolean" label="30111" help="">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="subsource_anahtar" type="string" label="30112" help="">
+          <level>0</level>
+          <default/>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="edit" format="string">
+            <heading>30112</heading>
+            <hidden>true</hidden>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="subsource_kullan">true</dependency>
+          </dependencies>
+        </setting>
+      </group>
+      <group id="6" label="30015">
+        <setting id="jimaku_kullan" type="boolean" label="30111" help="">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="jimaku_anahtar" type="string" label="30112" help="">
+          <level>0</level>
+          <default/>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="edit" format="string">
+            <heading>30112</heading>
+            <hidden>true</hidden>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="jimaku_kullan">true</dependency>
+          </dependencies>
+        </setting>
+      </group>
+    </category>
+    <category id="liste" label="30006" help="">
+      <group id="1" label="30027">
+        <setting id="sonuc_hedef" type="integer" label="30122" help="">
+          <level>0</level>
+          <default>3</default>
+          <constraints>
+            <options>
+              <option label="30250">1</option>
+              <option label="30252">3</option>
+              <option label="30253">5</option>
+              <option label="30254">10</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="integer"/>
+        </setting>
+        <setting id="sonuc_cevrilecek" type="integer" label="30123" help="">
+          <level>0</level>
+          <default>3</default>
+          <constraints>
+            <options>
+              <option label="30250">1</option>
+              <option label="30252">3</option>
+              <option label="30253">5</option>
+              <option label="30254">10</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="integer"/>
+        </setting>
+      </group>
+      <group id="2" label="30017">
+        <setting id="jimaku_oncelik" type="boolean" label="30104" help="">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="sdh_alta" type="boolean" label="30124" help="">
+          <level>2</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+      </group>
+      <group id="3" label="30021">
+        <setting id="esleme_siklik" type="integer" label="30175" help="">
+          <level>0</level>
+          <default>7</default>
+          <constraints>
+            <options>
+              <option label="30245">1</option>
+              <option label="30246">7</option>
+              <option label="30247">30</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="integer"/>
+        </setting>
+        <setting id="esleme_simdi" type="action" label="30176" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,esleme_simdi)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+      </group>
+      <group id="4" label="30020">
+        <setting id="disa_ceviri" type="action" label="30171" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,disa_ceviri)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="disa_hata" type="action" label="30172" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,disa_hata)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+      </group>
+    </category>
+    <category id="otomatik" label="30002" help="">
+      <group id="1" label="30023">
+        <setting id="oto_hedef" type="boolean" label="30130" help="">
+          <level>0</level>
+          <default>false</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="oto_ai" type="integer" label="30131" help="">
+          <level>0</level>
+          <default>0</default>
+          <constraints>
+            <options>
+              <option label="30231">0</option>
+              <option label="30233">1</option>
+              <option label="30234">2</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="integer"/>
+        </setting>
+      </group>
+      <group id="2" label="30018">
+        <setting id="siradaki" type="integer" label="30132" help="">
+          <level>0</level>
+          <default>1</default>
+          <constraints>
+            <options>
+              <option label="30231">0</option>
+              <option label="30235">1</option>
+              <option label="30236">2</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="integer"/>
+        </setting>
+        <setting id="siradaki_yer" type="integer" label="30133" help="">
+          <level>2</level>
+          <default>90</default>
+          <constraints>
+            <options>
+              <option label="30260">80</option>
+              <option label="30261">85</option>
+              <option label="30262">90</option>
+              <option label="30263">95</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="integer"/>
+        </setting>
+        <setting id="siradaki_sure" type="integer" label="30134" help="">
+          <level>2</level>
+          <default>15</default>
+          <constraints>
+            <options>
+              <option label="30264">10</option>
+              <option label="30265">15</option>
+              <option label="30266">20</option>
+              <option label="30267">30</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="integer"/>
+        </setting>
+      </group>
+    </category>
+    <category id="ceviri" label="30003" help="">
+      <group id="1" label="30024">
+        <setting id="hizli_sure" type="integer" label="30140" help="">
+          <level>0</level>
+          <default>2</default>
+          <constraints>
+            <options>
+              <option label="30255">1</option>
+              <option label="30256">2</option>
+              <option label="30257">3</option>
+              <option label="30258">5</option>
+              <option label="30259">10</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="integer"/>
+        </setting>
+      </group>
+      <group id="2" label="30025">
+        <setting id="b_sen_siz" type="boolean" label="30149" help="">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="b_hitap_ekleri" type="string" label="30148" help="">
+          <level>0</level>
+          <default>orijinal</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30237">orijinal</option>
+              <option label="30238">orijinal_ceviri</option>
+              <option label="30239">ceviri</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="b_kurgu" type="string" label="30147" help="">
+          <level>0</level>
+          <default>orijinal</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30237">orijinal</option>
+              <option label="30238">orijinal_ceviri</option>
+              <option label="30239">ceviri</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="b_sarki" type="string" label="30141" help="">
+          <level>0</level>
+          <default>orijinal</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30237">orijinal</option>
+              <option label="30238">orijinal_ceviri</option>
+              <option label="30239">ceviri</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="b_ses_sozcukleri" type="string" label="30150" help="">
+          <level>0</level>
+          <default>orijinal</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30237">orijinal</option>
+              <option label="30242">cevir</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="b_ekran" type="string" label="30146" help="">
+          <level>0</level>
+          <default>cevir</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30242">cevir</option>
+              <option label="30244">birak</option>
+              <option label="30241">sil</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+      </group>
+      <group id="3" label="30028">
+        <setting id="b_ses_etiketi" type="string" label="30144" help="">
+          <level>0</level>
+          <default>sil</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30241">sil</option>
+              <option label="30242">cevir</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="b_konusan" type="string" label="30145" help="">
+          <level>0</level>
+          <default>sil</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30241">sil</option>
+              <option label="30243">kalsin</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="b_reklam" type="string" label="30152" help="">
+          <level>2</level>
+          <default>sil</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30241">sil</option>
+              <option label="30243">kalsin</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+      </group>
+      <group id="4" label="30029">
+        <setting id="b_tire" type="string" label="30142" help="">
+          <level>0</level>
+          <default>korunsun</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30240">korunsun</option>
+              <option label="30241">sil</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="b_italik" type="string" label="30143" help="">
+          <level>0</level>
+          <default>korunsun</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30240">korunsun</option>
+              <option label="30241">sil</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="b_ustte" type="string" label="30151" help="">
+          <level>2</level>
+          <default>sil</default>
+          <constraints>
+            <allowempty>true</allowempty>
+            <options>
+              <option label="30241">sil</option>
+              <option label="30240">korunsun</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+      </group>
+    </category>
+    <category id="bakim" label="30005" help="">
+      <group id="1" label="30030">
+        <setting id="tumunu_temizle" type="action" label="30160" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,tumunu_temizle)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+      </group>
+      <group id="2" label="30019">
+        <setting id="sil_ceviri" type="action" label="30161" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_ceviri)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="sil_sozluk" type="action" label="30162" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_sozluk)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="sil_yarim" type="action" label="30163" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_yarim)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="sil_indirilen" type="action" label="30164" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_indirilen)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="sil_kayit" type="action" label="30165" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_kayit)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="sil_gecici" type="action" label="30166" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_gecici)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="sil_isaret" type="action" label="30167" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_isaret)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+        <setting id="sil_esleme" type="action" label="30168" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_esleme)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+      </group>
+      <group id="3" label="30022">
+        <setting id="fabrika" type="action" label="30180" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,fabrika)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"><close>true</close></control>
+        </setting>
+      </group>
+    </category>
+  </section>
+</settings>

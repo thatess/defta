@@ -1,0 +1,172 @@
+# ==================================================================================================================
+#  Defta ayarları
+#  - API anahtarı burada DEĞİL, .env dosyasında durur:  OPENAI_API_KEY=sk-...
+#  - Buradaki değerler varsayılanların kendisidir; silinen satır aynı değeri alır.
+#  - Başka bir ayar dosyasıyla çalıştırmak için:  python ceviri.py deneme.toml
+#  - Seçenekli ayarlarda geçerli değerler "/" ile ayrılmıştır; ilk yazılan önerilendir.
+# ==================================================================================================================
+
+[klasorler]
+kaynak = "kaynak"              # çevrilecek altyazılar; alt klasör varsa adı yapımın adı olur (sözlüğü ortak tutulur)
+ceviri = "ceviri"              # çeviriler aynı klasör yapısıyla buraya yazılır: bolum01.tr.srt
+sozluk = "sozluk"              # her yapımın kalıcı sözlüğü; script kurar ve yönetir, elle düzeltmek gerekmez
+logs = "logs"                  # her çalıştırma için tarihli klasör: özet, uyarılar, modele giden istekler
+uzerine_yaz = false            # true: çevirisi zaten olan dosyayı da yeniden çevirir
+
+
+[ceviri]
+hedef_dil = "tr"               # hedef dilin kodu: tr / en / de / fr / es / it / pt / ru / ja ... (çıktı adı: bolum01.tr.srt)
+cikti_alfabesi = "latin"       # latin / serbest: başka alfabede kalan her şey Latin harfleriyle yazılır / olduğu gibi kalır
+birimler = "oldugu_gibi"       # oldugu_gibi / metrik: mil mil kalır / kilometreye, kilograma çevrilir
+# Birkaç altyazıya bölünmüş cümle. dagit: modele tek cümle olarak gider, model duraklama yerlerini işaretler,
+# script süreye en uygun olanlardan keser / kapali: her altyazı kendi başına çevrilir.
+bolunmus_cumle = "dagit"       # dagit / kapali
+
+
+[model]
+api_adresi = "https://api.openai.com/v1"   # OpenAI uyumlu herhangi bir adres olabilir
+model = "gpt-6-luna"
+anahtar_degiskeni = "OPENAI_API_KEY"       # .env içindeki anahtarın adı
+dusunme_seviyesi = "low"       # çeviri istekleri için: low / none (en hızlı) / medium / high; "" = hiç gönderilmez
+sicaklik = -1                  # -1: gönderilmez. GPT-6'da yalnızca dusunme_seviyesi = "none" iken kullanılabilir
+es_zamanli_istek = 64          # aynı anda en çok kaç istek (bütün dosyalar ortak); hız sınırında kendiliğinden iner
+zaman_asimi = 180              # saniye; yanıtsız istek bu süreden sonra yeniden gönderilir
+json_modu = true               # model JSON modunu desteklemiyorsa false
+fiyat_girdi = 0.10             # 1 milyon girdi tokeninin fiyatı (USD); üçü de 0 ise maliyet hesaplanmaz
+fiyat_onbellek = 0.01          # önbellekten gelen (her istekte yinelenen kurallar) 1 milyon girdi tokeninin fiyatı
+fiyat_cikti = 0.50             # 1 milyon çıktı tokeninin fiyatı
+
+[model.ek]                     # isteğe olduğu gibi eklenecek başka parametreler (çoğunlukla boş kalır)
+
+
+[modlar]
+# Özel içerik. orijinal: çevrilmez / orijinal_ceviri: orijinal, altında parantezle çevirisi / ceviri: yalnızca çevirisi.
+kurgu_dili = "orijinal"        # orijinal / orijinal_ceviri / ceviri: uydurma dil (Elfçe, Klingonca, büyü sözleri)
+kurgu_anlami = "cevir"         # cevir / sil: kaynak uydurma sözün anlamını parantezle vermişse çevrilip altına yazılır
+anime_ekleri = "orijinal"      # orijinal / orijinal_ceviri / ceviri: Japonca hitap ekleri (-san, -kun, Sensei) ve teknik adları
+sarki = "orijinal"             # orijinal / orijinal_ceviri / ceviri: ♪ işaretli şarkı sözleri (yalnız ilk ve son dizesi ♪'li
+                               # şarkının tamamı); Latin dışı alfabedeki sözler okunuşuyla, Latin harfle yazılır
+ses_sozcukleri = "orijinal"    # orijinal / cevir: altyazının tamamı olan hayvan sesi ya da seslenme (Japonca: ボフ -> Bofu)
+ekran_yazisi = "cevir"         # cevir / birak / sil: tabela, yazı, başlık. Kesin ayrımı yalnızca ASS verir (sil, ASS dışında çevirir)
+# Notlar ve etiketler. Silinen not modele bağlam olarak yine gider, çeviriye yazılmaz.
+koseli_not = "sil"             # sil / cevir: köşeli parantezli ses notu: [müzik], [kapı çarpar]
+parantez_not = "sil"           # sil / cevir: kendi satırında duran yuvarlak parantez: (iç çeker). Animede iç ses de böyle yazılır
+isim_etiketi = "sil"           # sil / kalsin: satır başındaki konuşmacı adı (JOHN:)
+reklam = "sil"                 # sil / kalsin: site adresi, "Subtitles by ...", "Çeviri: ..." künyeleri (modele hiç gitmez)
+# Görünüm
+italik = "korunsun"            # korunsun / sil
+konusmaci_tiresi = "korunsun"  # korunsun / sil: iki kişinin konuştuğu altyazıda satır başı çizgileri
+sarki_isareti = "korunsun"     # korunsun / sil: ♪
+ustte_gosterme = "sil"         # sil / korunsun: {\an8}; birçok TV ve oynatıcı bunu ekrana yazı olarak basar
+
+
+[hitap]
+# Sen / siz. Kapalıyken tamamen modele kalır: tablo çıkarılmaz, kural yazılmaz.
+acik = true                    # ana anahtar; false iken aşağıdakilerin hiçbiri çalışmaz
+tablo = true                   # yapım başına "A -> B: samimi/resmi" tablosu çıkarılır ve isteklere konur; tabloda olmayan çift "sen"
+kanit = true                   # script kaynaktan kesin okuduklarını (unvanla seslenme, Japoncada です/ます) tabloya kendisi yazar
+oy = 3                         # tablo isteği kaç kez sorulsun (çoğunluğun dediği olur); 1: tek istek
+
+
+[unvan]
+# Adın yanındaki unvan ("Mr. Frodo", "リヴァイ隊長"): yapım başına tek karşılık. Tek başına hitap ("Yes, Captain") modele kalır.
+acik = true                    # ana anahtar; false iken unvanlar hiç yönetilmez
+tablo = true                   # karşılığı en alttaki [unvanlar.<dil>] tablosu verir
+model_karari = true            # tabloda olmayan unvana (Warden, 団長) model yapım başına bir kez karar verir
+denetim = "duzelt"             # duzelt: çeviride başka yazılmışsa script düzeltir, düzeltemezse sorar / sor: hep yeniden sorar / kapali
+
+
+[sozluk]
+# Çeviriden önce her yapımın dosyalarından sözlük çıkarılır. Kapatılan parça istenmez, istemde ve isteklerde yer almaz.
+otomatik = true                # false: sözlük adımı hiç çalışmaz
+terimler = true                # ad ve terimler: adayı script bulur, türünü model söyler, karşılığı kurala göre script belirler
+kesif = true                   # scriptin göremediği adlar (kanjiyle yazılmış kod adı, küçük harfli dünya sözcüğü) için ek istek
+anlam_notu = true              # her terime "bu yapımda neyi kastediyor" notu; istemde karşılığın yanına yazılır
+karakterler = true             # karakter adları: etiketteki yazımın (アーニャ) Latin karşılığı; Japonca ad ve ek denetimi kullanır
+sahne_ozeti = true             # sahne özetleri: kısa ve belirsiz satırları doğru okutan bilgi
+kurgu_tespiti = true           # uydurma dildeki parçaların bulunup korunması
+oy = 3                         # her sınıflandırma isteği kaç kez sorulsun; çoğunluğun dediği olur (3 ölçüldü, 1 en ucuz)
+dusunme_seviyesi = "low"       # low / medium / high: terim sınıflandırma ve keşif istekleri
+karsilik_dusunme = "medium"    # medium / low / high: terimin karşılığı ve okunuş kalan adın yazımı ayrıca sorulurken (low: "telepat" yerine "medyum")
+hitap_dusunme = "low"          # low / medium / high: karakter ve hitap isteği (3 oyla low, medium ile neredeyse aynı tabloyu 4 kat hızlı verir)
+sahne_dusunme = "low"          # low / medium / high: sahne özeti ve kurgu dili istekleri
+# İnce ayar (değiştirmek gerekmez)
+aday_esigi = 2                 # tek sözcüklük yazım en az bu kadar geçerse aday olur
+analiz_token = 60000           # karakter / hitap isteğinde parça büyüklüğü (büyük: dosya tek istekte okunur)
+sahne_token = 4500             # sahne istekleri için dosya bu büyüklükte parçalara bölünüp aynı anda okutulur
+
+
+[kontrol]
+# Çeviriden sonra script'in denetimleri: sorunlu satır yalnızca nedeniyle birlikte yeniden sorulur.
+supheli_satir_kontrolu = true  # dublaj klişesi, kaynağa göre çok kısa çeviri, soru olarak yinelenen zamir
+kayma_kontrolu = true          # çeviri komşu altyazıya kaymışsa (komşuda aynı çeviri, adın komşuya geçmesi)
+tekrar_eden_sahne = true       # geri dönüşte, alıntıda ya da yankıda yinelenen satır her geçişinde aynı çevrilir
+deneme_sayisi = 3              # bir parça en çok kaç kez sorulsun
+deneme_satir = 0               # 0: kapalı. 80: her dosyanın yalnızca ilk 80 altyazısını çevirir (deneme.tr.srt)
+
+
+[cikti]
+satir_karakter = 42            # satır başına en çok karakter (en çok iki satır)
+saniye_basina_karakter = 25    # okuma hızı sınırı: süre uzatma, kısaltma isteği ve rapor bunu ölçü alır
+sure_uzat_azami = 1.5          # okumaya yetmeyen altyazı sonraki altyazıya kadarki sessizliğe en çok bu kadar saniye uzar; 0: kapalı
+
+
+[parca]
+# Dosyanın isteklere bölünmesi. Parçalar aynı anda gider.
+altyazi_sayisi = 0             # 0: otomatik (dosya en az 16 parçaya bölünür, parça yaklaşık 35 altyazıyı geçmez); sayı: istek başına altyazı
+baglam_once = 8                # her isteğe parçadan önceki kaç altyazı bağlam olarak gider (çevrilmez)
+baglam_sonra = 4               # parçadan sonraki kaç altyazı bağlam olarak gider
+sahne_boslugu = 2.5            # saniye; bu kadar sessizlik sahne sınırı sayılır, parça orada kesilir
+
+
+[girdi]
+# srt dışındaki biçimler: ass/ssa, vtt, sub. Çıktı her zaman srt'dir.
+tekrarlari_birlestir = true    # art arda gelen, metni aynı ve zamanı bitişik altyazılar tek altyazı olur
+sub_fps = 23.976               # kare numarasıyla yazılmış .sub (MicroDVD) kare hızını kendi bildirmiyorsa
+ass_sarki_stili = true         # ASS'te stil adı (OP, ED, Song, Karaoke) ya da karaoke kodu şarkı demektir
+ass_yazi_stili = true          # ASS'te stil adı (sign, title, typeset) ekran yazısı demektir, konum kodu olmasa da
+# Çift dilli ASS (aynı replik özgün dilde ve Latin harfli çevirisiyle iki satır). referans: özgün dil çevrilir, öteki
+# satır modele yalnızca başvuru olarak gider / asil: yalnızca özgün dil / ikinci: yalnızca Latin harfli / kapali: ikisi de
+cift_dil = "referans"          # referans / asil / ikinci / kapali
+
+
+[unvanlar.tr]
+# Hedef dil Türkçeyken unvan tablosu: solda kaynaktaki sözcük, sağda çeviride yazılacak olan. Unvan adın önüne yazılır
+# ("Kaptan Levi"); adın arkasına gelsin istersen "{ad} Bey" yaz. Latin harfli olmayan sözcük tırnak içinde yazılır.
+# Başka hedef dil için [unvanlar.en] gibi yeni tablo aç; tablosu olmayan dilde kararı model verir.
+Lord = "Lord"
+Master = "Master"
+Lady = "Leydi"
+Sir = "Sör"
+Mr = "Bay"
+Mrs = "Bayan"
+Ms = "Bayan"
+Miss = "Bayan"
+King = "Kral"
+Queen = "Kraliçe"
+Prince = "Prens"
+Princess = "Prenses"
+President = "Başkan"
+Senator = "Senatör"
+Governor = "Vali"
+Judge = "Yargıç"
+Sheriff = "Şerif"
+Doctor = "Doktor"
+Dr = "Dr."
+Professor = "Profesör"
+Nurse = "Hemşire"
+Coach = "Koç"
+Farmer = "Çiftçi"
+General = "General"
+Colonel = "Albay"
+Major = "Binbaşı"
+Captain = "Kaptan"
+Lieutenant = "Teğmen"
+Sergeant = "Çavuş"
+Commander = "Komutan"
+Chief = "Şef"
+Officer = "Memur"
+Agent = "Ajan"
+Detective = "Dedektif"
+Inspector = "Müfettiş"
+"隊長" = "Kaptan"               # taichou

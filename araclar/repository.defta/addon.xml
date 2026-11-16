@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="repository.defta" name="Defta Repo" version="2.0.2" provider-name="Thates">
+  <extension point="xbmc.addon.repository" name="Defta Repo">
+    <dir>
+      <info compressed="false">https://raw.githubusercontent.com/thatess/defta/main/depo/addons.xml</info>
+      <checksum>https://raw.githubusercontent.com/thatess/defta/main/depo/addons.xml.md5</checksum>
+      <datadir zip="true">https://raw.githubusercontent.com/thatess/defta/main/depo/</datadir>
+    </dir>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="tr_TR">Defta altyazı eklentisinin deposu</summary>
+    <summary lang="en_GB">Home of the Defta subtitle add-on</summary>
+    <description lang="tr_TR">Defta'yı buradan kurarsınız: altyazı bulan, yoksa yapay zekâyla çeviren Kodi eklentisi. Yeni sürümler Kodi'nin güncellemelerinde görünür. İlk sürüm de Deftalpha adıyla burada durur.</description>
+    <description lang="en_GB">Install Defta from here: a Kodi add-on that finds subtitles and translates them with AI when none exist in your language. New versions show up in Kodi's updates. The first version is kept here as Deftalpha.</description>
+    <platform>all</platform>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+  </extension>
+</addon>
