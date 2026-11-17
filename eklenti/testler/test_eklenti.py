@@ -3094,6 +3094,17 @@ class Karar102Testleri(unittest.TestCase):
         self.assertEqual(sayi, 2)
         self.assertFalse(os.path.exists(self.durum.yol("gecici", "kodi-defta.txt")))      # geçici kopya kalmaz
 
+    def test_adi_bilinmeyen_uzun_akista_da_karma_hesaplanir(self):
+        v = video_modulu.Video()
+        v.yol, v.akis, v.canli, v.dosya_adi = "https://ornek.test/dl/5166-ee23", True, False, ""
+        with mock.patch.object(video_modulu, "karma_hesapla", lambda ac: "0123456789abcdef"):
+            v.sure = 1452.0
+            self.assertEqual(video_modulu._karma(xbmcvfs, v), "0123456789abcdef")
+            v.sure = 120.0                                               # kısa ve adsız: fragman olabilir
+            self.assertIsNone(video_modulu._karma(xbmcvfs, v))
+            v.sure, v.yol = 1452.0, "https://ornek.test/dl/liste.m3u8"   # oynatma listesi: başı ve sonu okunamaz
+            self.assertIsNone(video_modulu._karma(xbmcvfs, v))
+
     def test_hizli_ceviri_ayari_bos_ya_da_true_ise_acik(self):
         from d2 import kodi
         for deger, beklenen in (("", True), ("true", True), ("false", False)):

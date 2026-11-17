@@ -15,6 +15,7 @@ _VIDEO_UZANTI = (".mkv", ".mp4", ".avi", ".m4v", ".ts", ".m2ts", ".wmv", ".mov",
                  ".flv", ".vob")
 _YEREL_SEMA = ("", "file", "smb", "nfs", "special")
 KARMA_SURESI = 8.0                  # akışta karma en çok bu kadar beklenir
+KARMA_EN_AZ_SURE = 600           # sn: adı bilinmeyen akışta karma yalnız bu kadar uzun videoda hesaplanır
 
 
 class Video:
@@ -374,11 +375,14 @@ def _kitaplik_dizi_kimlikleri(xbmc, v):
 
 
 def _karma(xbmcvfs, v):
-    """Karma: yerel dosyada hep; http akışında sürüm adı biliniyorsa (adresten ya da oynatan eklentiden) ve adres bir
-    oynatma listesi değilse (başı ve sonu okunabiliyorsa). Parçalı akışta (m3u8, plugin) olmaz. Akışta en çok
-    KARMA_SURESI beklenir."""
+    """Karma: yerel dosyada hep; http akışında sürüm adı biliniyorsa (adresten ya da oynatan eklentiden) ya da süresi
+    belli, en az KARMA_EN_AZ_SURE uzunluğunda bir videoysa, ve adres bir oynatma listesi değilse (başı ve sonu
+    okunabiliyorsa). Parçalı akışta (m3u8, plugin) olmaz. Akışta en çok KARMA_SURESI beklenir.
+    Sürüm adı şartı kaldırıldı (1.0.4): oynatan eklenti ad vermediğinde (adres yalnız bir kimlik taşıyor) karma tek
+    senkron bilgisidir; o da hesaplanmayınca hiçbir altyazı "senkron uyumlu" işareti alamıyordu."""
     s = sema(v.yol)
-    if not v.yol or v.canli or not (s in _YEREL_SEMA or (s in ("http", "https") and v.dosya_adi)):
+    akis_uygun = s in ("http", "https") and (v.dosya_adi or (v.sure or 0) >= KARMA_EN_AZ_SURE)
+    if not v.yol or v.canli or not (s in _YEREL_SEMA or akis_uygun):
         return None
     if s in ("http", "https") and urlsplit(v.yol.split("|", 1)[0]).path.lower().endswith((".m3u8", ".m3u", ".mpd")):
         return None
