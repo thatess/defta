@@ -107,7 +107,26 @@ JP_ETIKET_BAS = re.compile(r"^（([^（）]{1,24})）\s*")
 LATIN_ETIKET_BAS = re.compile(r"^(" + temizlik.TIRE + r"\s*)?([A-ZÇĞİÖŞÜÂÎÛ][A-ZÇĞİÖŞÜÂÎÛ0-9 .'’#&-]{1,24}):\s*")
 
 
-def not_ve_konusmaci_ayir(metin, koseli_ayir=True, parantez_ayir=True, etiket_ayir=True):
+# Küçük harfli konuşmacı etiketi ("Bilbo:", "Female voice:"): tek başına bakınca sıradan sözden ayrılmaz ("Unutma:"),
+# o yüzden yalnız dosyada kendi satırında en az ETIKET_ESIGI kez geçen adlar etiket sayılır (latin_etiketleri).
+ADLI_ETIKET_SATIRI = re.compile(r"^(?:" + temizlik.TIRE + r"\s*)?([A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*(?: [\w.'’#&-]+){0,2}):$")
+ETIKET_ESIGI = 3
+
+
+def latin_etiketleri(metinler):
+    """Dosyadaki küçük harfli konuşmacı etiketleri: kendi satırında, ardından söz gelen "Ad:" satırlarından en az
+    ETIKET_ESIGI kez geçenler. Büyük harfli etiketler (GANDALF:) zaten tanınır; bu yalnız karışık yazımlılar içindir."""
+    sayim = {}
+    for metin in metinler:
+        satirlar = [temizlik.ETIKET.sub("", x).strip() for x in metin.split("\n")]
+        for sira, satir in enumerate(satirlar[:-1]):
+            m = ADLI_ETIKET_SATIRI.match(satir)
+            if m and len(satir) <= 26 and any(satirlar[sira + 1:]) and not temizlik.duyuru_etiketi(m.group(1)):
+                sayim[m.group(1)] = sayim.get(m.group(1), 0) + 1
+    return {ad for ad, n in sayim.items() if n >= ETIKET_ESIGI}
+
+
+def not_ve_konusmaci_ayir(metin, koseli_ayir=True, parantez_ayir=True, etiket_ayir=True, adli_etiketler=()):
     """Ses/ton notlarını ve konuşmacı etiketlerini metinden ayırır.
 
     (kalan metin, notlar, satır başına konuşmacılar) döndürür. Model bunları bağlam olarak görür
@@ -137,7 +156,20 @@ def not_ve_konusmaci_ayir(metin, koseli_ayir=True, parantez_ayir=True, etiket_ay
                 notlar.append(icerik)
                 continue
         konusan = ""
-        if etiket_ayir:
+        if etiket_ayir and adli_etiketler:
+            # "Bilbo:" kendi satırında ya da sözün başında ("- Gandalf: ..."): dosyanın etiket diye kullandığı ad
+            on = re.match(r"\s*(<i>)?\s*", satir)
+            m = re.match(r"(" + temizlik.TIRE + r"\s*)?([^:\n]{1,24}):\s*", satir[on.end():])
+            if m and m.group(2).strip() in adli_etiketler:
+                kalan_satir = satir[on.end() + m.end():]
+                if not temizlik.ETIKET.sub("", kalan_satir).strip():
+                    if any(temizlik.ETIKET.sub("", x).strip() for x in ham[sira + 1:]):
+                        konusanlar.append(m.group(2).strip())      # etiket satırı: ad sonraki satırındır
+                        continue
+                else:
+                    konusan = m.group(2).strip()
+                    satir = satir[:on.end()] + (m.group(1) or "") + kalan_satir
+        if etiket_ayir and not konusan:
             m = JP_ETIKET_BAS.match(satir) or None
             if m and satir[m.end():].strip():
                 konusan, satir = m.group(1), satir[m.end():]

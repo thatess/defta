@@ -1595,7 +1595,7 @@ Use Crimson Lotus Strike, Kenji-senpai.
                     veri = json.loads(kullanici)
                     self.gidenler.append(veri)
                     duzeltilmis = {2: "Bay Frodo'yu orada gördüm.", 4: "Kaptan Levi, rapor veriyorum.",
-                                   5: "Sam, Master Tolen'e söyledi.", 1: "Master Tolen, beni mi çağırdınız?",
+                                   5: "Sam, Efendi Tolen'e söyledi.", 1: "Efendi Tolen, beni mi çağırdınız?",
                                    3: "Gidin, Bay Frodo!"}
                     return json.dumps({"lines": [{"id": x["id"], "text": duzeltilmis[x["id"]] if "fix" in veri
                                                   else ilk[x["id"]]} for x in veri["lines"] if not x.get("skip")]},
@@ -1605,13 +1605,13 @@ Use Crimson Lotus Strike, Kenji-senpai.
                                "modlar": {"anime_ekleri": "ceviri"}})
         model = model_kur()
         sonuc = Cevirmen(ayar, model, "S", self.gunluk, self.sozluk.gorunum(ayar)).cevir(satirlar, "u.srt")
-        self.assertEqual(sonuc[0], "Master Tolen, beni mi çağırdınız?")     # bilinen unvan sözcüğü: script değiştirdi
+        self.assertEqual(sonuc[0], "Efendi Tolen, beni mi çağırdınız?")     # bilinen unvan sözcüğü: script değiştirdi
         self.assertEqual(sonuc[2], "Gidin, Bay Frodo!")                     # düşen unvan: script ekledi
         # belirsiz olanlar yeniden soruldu: "Frodo Bey" (sıra), "Yüzbaşı" (bilinmeyen sözcük), araya girmiş ad
         self.assertEqual(sorted(f["id"] for f in model.gidenler[1]["fix"]), [2, 4, 5])
         self.assertIn('write it as "Kaptan Levi"', " ".join(f["problem"] for f in model.gidenler[1]["fix"]))
         self.assertEqual((sonuc[1], sonuc[3], sonuc[4]),
-                         ("Bay Frodo'yu orada gördüm.", "Kaptan Levi, rapor veriyorum.", "Sam, Master Tolen'e söyledi."))
+                         ("Bay Frodo'yu orada gördüm.", "Kaptan Levi, rapor veriyorum.", "Sam, Efendi Tolen'e söyledi."))
         # duzelt kapalı: script dokunmaz, hepsi sorulur; denetle kapalı: hiçbir şey sorulmaz
         for u, beklenen in (({"denetim": "sor"}, [1, 2, 3, 4, 5]), ({"denetim": "kapali"}, None)):
             a2 = ayar_birlestir({"model": {"es_zamanli_istek": 1}, "kontrol": {"supheli_satir_kontrolu": False},
@@ -3773,6 +3773,52 @@ class Karar0134Testleri(unittest.TestCase):
             self.assertEqual(temizlik.kaynak_hazirla(kaynak)[0], beklenen)
         self.assertEqual(temizlik.son_temizlik("Tabii. >", ayar_birlestir()["modlar"]), "Tabii.")
         self.assertEqual(temizlik.kalinti_tara(temizlik.son_temizlik("< Burası mı?", ayar_birlestir()["modlar"])), "")
+
+
+class Karar102Testleri(unittest.TestCase):
+    """1.0.2: Shield kayıtlarından (17.11.2026) çıkan düzeltmeler."""
+
+    def test_kucuk_harfli_konusmaci_etiketi_dosyada_tekrarlaniyorsa_taninir(self):
+        from defta.kaynak import latin_etiketleri, not_ve_konusmaci_ayir
+        metinler = ["Mara:\nWe leave at dawn.", "Tolen:\nNo.", "Mara:\nThen I go alone.", "Mara:\nGoodbye.",
+                    "Tolen:\nWait.", "Tolen:\nTake the map.", "Remember:\nthe bridge is out.",
+                    "- Where is she?\n- Tolen: Gone north."]
+        etiketler = latin_etiketleri(metinler)
+        self.assertEqual(etiketler, {"Mara", "Tolen"})            # "Remember:" bir kez geçti: söz, etiket değil
+        self.assertEqual(not_ve_konusmaci_ayir(metinler[0], adli_etiketler=etiketler),
+                         ("We leave at dawn.", [], ["Mara"]))
+        self.assertEqual(not_ve_konusmaci_ayir(metinler[7], adli_etiketler=etiketler),
+                         ("- Where is she?\n- Gone north.", [], ["", "Tolen"]))
+        self.assertEqual(not_ve_konusmaci_ayir(metinler[6], adli_etiketler=etiketler)[0], metinler[6])
+        self.assertEqual(not_ve_konusmaci_ayir(metinler[0])[0], metinler[0])     # dosya bilgisi yoksa dokunulmaz
+
+    def test_karsilik_partileri_aileyi_bolmez(self):
+        from defta.terim import KARSILIK_PARTI, _karsilik_partileri
+        az = [{"i": n, "s": f"term{n}"} for n in range(1, 11)]
+        self.assertEqual(_karsilik_partileri(az), [az])                          # sığıyorsa istek eskisiyle aynı
+        def sozcuk(n):                                                           # her öğeye ayrı, rakamsız bir sözcük
+            return "q" + "".join(chr(97 + (n // 26 ** k) % 26) for k in range(4))
+        cok = [{"i": n, "s": sozcuk(n)} for n in range(1, 61)]
+        cok[2]["s"], cok[57]["s"] = "Silver Ring", "Ring of Silver"              # uzak ama aynı aile
+        partiler = _karsilik_partileri(cok)
+        self.assertGreater(len(partiler), 1)
+        self.assertTrue(all(len(p) <= KARSILIK_PARTI for p in partiler))
+        self.assertEqual(sorted(o["i"] for p in partiler for o in p), list(range(1, 61)))
+        ayni = [p for p in partiler if any(o["i"] == 3 for o in p)][0]
+        self.assertIn(58, [o["i"] for o in ayni])
+
+    def test_konusan_etiketi_ad_kaymasi_sayilmaz(self):
+        import re as _re
+        from defta import denetim
+        kaynak = "Tolen:\nHurry, Mara."
+        # denetimin kullandığı kural: satır başındaki "Ad:" sözün içindeki ad değildir
+        self.assertTrue(_re.search(r"(?m)^\s*(?:[-–—]\s*)?" + _re.escape("Tolen") + r"\s*:", kaynak))
+        self.assertFalse(_re.search(r"(?m)^\s*(?:[-–—]\s*)?" + _re.escape("Mara") + r"\s*:", kaynak))
+        self.assertIn("konuşanın etiketidir", open(denetim.__file__, encoding="utf-8").read())
+
+    def test_master_turkcede_efendi_yazilir(self):
+        from defta.ayar import ayar_birlestir, unvan_tablosu
+        self.assertEqual(unvan_tablosu(ayar_birlestir({}))["Master"], "Efendi {ad}")
 
 
 if __name__ == "__main__":

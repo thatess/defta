@@ -471,6 +471,46 @@ def _karsilik_sorulacak(c, yazim):
     return bool(temizlik.latin_disi(yazim)) or _cevrilir(c, yazim)
 
 
+KARSILIK_PARTI = 24
+
+
+def _karsilik_partileri(ogeler):
+    """Karşılık öğelerini en çok KARSILIK_PARTI'lik partilere böler. Birbirine dayanan öğeler (biri ötekinin yazımını
+    içeriyor ya da ortak bir sözcükleri var: "Ring" / "Ring of Power", 超能力 / 超能力者) aynı partide kalır: karşılıkları
+    aynı aileden çıksın diye birlikte sorulmaları gerekir. Sıra korunur; hepsi tek partiye sığıyorsa istek eskisiyle
+    aynıdır."""
+    if len(ogeler) <= KARSILIK_PARTI:
+        return [list(ogeler)]
+
+    def sozcukler(yazim):
+        return {x for x in re.findall(r"[^\W\d_]{4,}", yazim.lower())} if yazim.isascii() else set()
+    kok = list(range(len(ogeler)))
+
+    def bul(x):
+        while kok[x] != x:
+            kok[x] = kok[kok[x]]
+            x = kok[x]
+        return x
+    anahtar = [(o["s"], sozcukler(o["s"])) for o in ogeler]
+    for a in range(len(ogeler)):
+        for b in range(a + 1, len(ogeler)):
+            (ya, sa), (yb, sb) = anahtar[a], anahtar[b]
+            if (sa & sb) or (len(ya) >= 2 and ya in yb) or (len(yb) >= 2 and yb in ya):
+                kok[bul(b)] = bul(a)
+    aileler = {}
+    for n in range(len(ogeler)):
+        aileler.setdefault(bul(n), []).append(n)
+    partiler, simdiki = [], []
+    for aile in sorted(aileler.values(), key=lambda l: l[0]):
+        if simdiki and len(simdiki) + len(aile) > KARSILIK_PARTI:
+            partiler.append(simdiki)
+            simdiki = []
+        simdiki = simdiki + aile
+    if simdiki:
+        partiler.append(simdiki)
+    return [[ogeler[n] for n in sorted(p)] for p in partiler]
+
+
 def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bul=None, dil="", latin_zorunlu=True,
                           okunus_gecerli=False):
     """Karşılık alan kararların Türkçesi eserin adı, anlam notu ve en çok 6 satırla sorulur. Cevaplardan en az ikisi
@@ -495,9 +535,19 @@ def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bu
                "lines": (ornek_bul(a["yazim"]) if ornek_bul else []) or a["ornek"]}
               for n, (c, a) in enumerate(sorulacak, 1)]
 
-    def sorul(yuk, kez):
+    def sorul(ogeler_, kez):
+        """Öğeler KARSILIK_PARTI'lik partilere bölünür (aynı aileden olanlar aynı partide), bütün partiler ve oylar
+        aynı anda sorulur: çok adlı yapımda (141 aday) tek büyük istek yarım dakika sürüyor, çeviri onu bekliyordu.
+        Her oyun yanıtı, öğelerin bu çağrıdaki sıra numaralarıyla ("i") tek listede döner."""
+        partiler_ = _karsilik_partileri(ogeler_)
+
+        def bir(parti):
+            yanit = sor({"title_hint": baslik, "items": [dict(o, i=n) for n, o in enumerate(parti, 1)]}) or {}
+            return [dict(x, i=parti[x["i"] - 1]["i"]) for x in yanit.get("items") or []
+                    if isinstance(x, dict) and isinstance(x.get("i"), int) and 1 <= x["i"] <= len(parti)]
         with ThreadPoolExecutor(max_workers=max(1, isci)) as havuz:
-            return [g.result() or {} for g in [havuz.submit(sor, yuk) for _ in range(kez)]]
+            turlar = [[havuz.submit(bir, p) for p in partiler_] for _ in range(kez)]
+            return [{"items": [x for g in tur for x in g.result()]} for tur in turlar]
 
     def gecerli(n, yanitlar, yazim, latin, hepsi=None):
         # Latin harfli kaynakta yazımın kendisi de geçerli yanıttır ("hobbit"): çevrilmeyeceğini söyler.
@@ -509,14 +559,14 @@ def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bu
             hepsi.extend(tum)
         return [d for d in tum if latin_kaynak or okunus_gecerli or d.lower() != latin]
 
-    yanitlar = sorul({"title_hint": baslik, "items": ogeler}, max(1, oy))
+    yanitlar = sorul(ogeler, max(1, oy))
     esik = min(2, len(yanitlar))
     hepsi = [[] for _ in sorulacak]          # Latin yazımla aynı olanlar da: hepsi öyleyse terim yazımıyla kalır
     oylar = [gecerli(n, yanitlar, a["yazim"], latin, hepsi[n - 1])
              for n, ((_, a), latin) in enumerate(zip(sorulacak, latinler), 1)]
     bolunen = [k for k, o in enumerate(oylar) if _kazanan(o, esik) is None] if len(yanitlar) > 1 else []
     if bolunen:
-        ek = sorul({"title_hint": baslik, "items": [dict(ogeler[k], i=m) for m, k in enumerate(bolunen, 1)]}, EK_OY)
+        ek = sorul([dict(ogeler[k], i=m) for m, k in enumerate(bolunen, 1)], EK_OY)
         for m, k in enumerate(bolunen, 1):
             oylar[k] += gecerli(m, ek, sorulacak[k][1]["yazim"], latinler[k], hepsi[k])
     oneriler = []

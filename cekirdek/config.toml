@@ -135,7 +135,7 @@ cift_dil = "referans"          # referans / asil / ikinci / kapali
 # ("Kaptan Levi"); adın arkasına gelsin istersen "{ad} Bey" yaz. Latin harfli olmayan sözcük tırnak içinde yazılır.
 # Başka hedef dil için [unvanlar.en] gibi yeni tablo aç; tablosu olmayan dilde kararı model verir.
 Lord = "Lord"
-Master = "Master"
+Master = "Efendi"
 Lady = "Leydi"
 Sir = "Sör"
 Mr = "Bay"

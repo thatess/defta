@@ -57,6 +57,7 @@ TABLO = [
     (30133, "AYAR_SIRADAKI_YER", "Bölümün neresinde"),
     (30134, "AYAR_SIRADAKI_SURE", "Sorunun ekranda kalma süresi"),
     (30140, "AYAR_HIZLI_SURE", "Önce çevrilecek süre"),
+    (30153, "AYAR_HIZLI_CEVIR", "Önce bulunduğun yeri hızlıca çevir"),
     (30141, "AYAR_SARKI", "Şarkı sözleri"),
     (30142, "AYAR_TIRE", "Konuşma çizgisi (-)"),
     (30143, "AYAR_ITALIK", "İtalik yazı"),

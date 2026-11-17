@@ -1651,9 +1651,11 @@ class CeviriIsiTestleri(unittest.TestCase):
                 mock.patch.object(ceviri_isi, "dizi_analiz", lambda *a, **k: None):
             s._calistir(self._is(), 181, 2, True, False, False)
         self.assertEqual(hizli_gordu, [True])
-        self.assertEqual(len(yuklenen), 2)
+        # Hızlı çeviri, Kodi orijinali sonradan yükleyip üstüne yazmış olabilir diye bir kez daha yüklenebilir (1.0.2)
+        self.assertIn(len(yuklenen), (2, 3))
         self.assertTrue(yuklenen[0].startswith("hizli."))      # eklenti almadı: servis yükledi, kaliteliden önce
-        self.assertTrue(yuklenen[1].startswith("AI."))
+        self.assertTrue(yuklenen[-1].startswith("AI."))
+        self.assertEqual(len([y for y in yuklenen if y.startswith("AI.")]), 1)
         self.assertFalse(os.path.exists(self.durum.yol("isler", "is1")))       # kalıntılar yine silindi
 
     def _servis(self):
@@ -1794,12 +1796,13 @@ class CeviriIsiTestleri(unittest.TestCase):
             is_ = self._is()
             is_.hizli_basladi()
             s._hizli_akis(is_, 0, 2, False, False, True)
-            self.assertEqual(yuklenen, [(va, "hizli.tr.srt")])
+            # ikinci yükleme: seçili altyazı hâlâ hızlı çeviriyse birkaç saniye sonra yeniden (1.0.2)
+            self.assertEqual(yuklenen, [(va, "hizli.tr.srt")] * 2)
             self.assertEqual(os.path.basename(self.durum.secim(va)["yol"]), "hizli.tr.srt")
             self.durum.secim_yaz(va, {"anahtar": "os:9", "yol": "insan.srt"})
             is_.hizli_basladi()
             s._hizli_akis(is_, 0, 2, False, False, True)
-        self.assertEqual(len(yuklenen), 1)
+        self.assertEqual(len(yuklenen), 2)                  # başka altyazı seçiliyken yüklenmedi
         self.assertEqual(self.durum.secim(va)["yol"], "insan.srt")
 
     def test_ceviri_bitince_kodinin_kaydettigi_orijinal_silinir(self):
@@ -3047,6 +3050,96 @@ class AnahtarKaynagiTestleri(unittest.TestCase):
                     mock.patch.object(eylemler, "_anahtar_dosyasi_oku", lambda yol: okunan.append(yol)):
                 eylemler.anahtar_yukle()
             self.assertEqual(okunan, [])
+
+
+class Karar102Testleri(unittest.TestCase):
+    """1.0.2: Shield denemesinden (17.11.2026) çıkanlar."""
+
+    def setUp(self):
+        self.kok = tempfile.mkdtemp()
+        self.durum = kayit.Durum(self.kok)
+
+    def tearDown(self):
+        shutil.rmtree(self.kok, ignore_errors=True)
+
+    def test_kodi_kaydi_suzulur_adres_ve_baska_eklenti_satirlari_cikmaz(self):
+        from d2 import bakim
+        ornek = ("2026-11-17 03:12:01.578 T:1 info <general>: Starting Kodi (21.3)\n"
+                 "2026-11-17 03:12:02.000 T:1 info <general>: loading skin\n"
+                 "2026-11-17 03:15:19.132 T:2 info <general>: [defta] oynatma: tür=dizi\n"
+                 "2026-11-17 03:15:20.000 T:3 info <general>: ###scraper###: Playing https://ornek.test/dl/abc?token=GIZLI\n"
+                 "2026-11-17 03:15:22.929 T:2 error <general>: EXCEPTION Thrown (PythonToCppException)\n"
+                 "Traceback (most recent call last):\n"
+                 '  File "x.py", line 1, in <module>\n'
+                 '    ac("smb://kullanici:parola@sunucu/x")\n'
+                 "RuntimeError: olmadı\n"
+                 "2026-11-17 03:15:23.000 T:1 info <general>: başka satır\n")
+        cikti = bakim.kodi_kaydini_suz(ornek)
+        for yok in ("GIZLI", "parola", "loading skin", "başka satır", "scraper"):
+            self.assertNotIn(yok, cikti)
+        for var in ("Starting Kodi", "[defta] oynatma", "EXCEPTION", 'File "x.py"', "[adres]", "RuntimeError: olmadı"):
+            self.assertIn(var, cikti)
+
+    def test_hata_dosyalarina_son_arama_ve_kodi_kaydi_eklenir(self):
+        from d2 import bakim
+        kayit.yaz(self.durum.yol("gecici", "son_arama.json"), {"video": {}, "adaylar": {}})
+        hedef = os.path.join(self.kok, "disari")
+        kopyalanan = []
+
+        def kopyala(kaynak, hedef_yol):
+            kopyalanan.append(hedef_yol.replace("\\", "/").rsplit("/", 1)[-1])
+            return True
+        sayi = bakim.disa_hata(self.durum, hedef, kopyala, lambda yol: None, {"kodi-defta.txt": "[defta] satır\n"})
+        self.assertEqual(sorted(kopyalanan), ["kodi-defta.txt", "son_arama.json"])
+        self.assertEqual(sayi, 2)
+        self.assertFalse(os.path.exists(self.durum.yol("gecici", "kodi-defta.txt")))      # geçici kopya kalmaz
+
+    def test_hizli_ceviri_ayari_bos_ya_da_true_ise_acik(self):
+        from d2 import kodi
+        for deger, beklenen in (("", True), ("true", True), ("false", False)):
+            with mock.patch.object(kodi, "ayar", lambda ad, d=deger: d):
+                self.assertEqual(kodi.hizli_acik(), beklenen)
+
+    def test_opensubtitles_testi_bir_kez_yeniden_dener(self):
+        from d2.siteler import opensubtitles
+        site = opensubtitles.OpenSubtitles("a" * 32, "", "", None)
+        cevaplar = [{"calisiyor": False, "neden": "hiz"}, {"calisiyor": True, "kalan": 5}]
+        with mock.patch.object(site, "_test", lambda: cevaplar.pop(0)), mock.patch.object(opensubtitles.time, "sleep", lambda s: None):
+            self.assertEqual(site.test(), {"calisiyor": True, "kalan": 5})
+        self.assertEqual(cevaplar, [])
+
+    def test_kaymis_ai_seciliyken_siradaki_kaynagi_cevirir_insanlar_kendi_arasinda_doner(self):
+        from d2 import giris
+        v = video_modulu.Video()
+        v.tur, v.baslik, v.yil, v.imdb = "film", "Ornek", 2020, "tt0000001"
+        va = v.video_anahtari()
+        son = {"sira": [["ai", "ai:k1"], ["insan", "subdl:1"], ["insan", "subdl:2"]],
+               "cevrilecek": ["os:9", "os:10"], "adaylar": {"os:9": {}, "os:10": {}, "subdl:1": {}, "subdl:2": {}}}
+        cevrilen, yuklenen = [], []
+        with mock.patch.object(giris, "cevir", lambda d, vv, s, a: cevrilen.append(a) or "/kaynak.srt"), \
+                mock.patch.object(giris, "_insan_hazirla", lambda d, vv, s, a: None), \
+                mock.patch.object(giris, "_hazir_hazirla", lambda d, vv, a: None), \
+                mock.patch.object(giris, "_bildir", lambda *a, **k: None):
+            # AI seçili: hazır başka çeviri yok -> listedeki ilk kaynak çevrilir; insan altyazısına geçilmez
+            yol = giris.kaymis(self.durum, v, son, {"tur": "ai", "anahtar": "ai:k1", "kaynak": {"site": "os", "kimlik": "8"}})
+            self.assertEqual((yol, cevrilen), ("/kaynak.srt", ["os:9"]))
+            self.assertIn("os:8", self.durum.kaymislar(va))                      # kaymış çevirinin kaynağı da işaretli
+            # sıradaki de kaymışsa (işaretli) ondan sonraki çevrilir
+            self.durum.kaymis_isaretle(va, "os:9")
+            giris.kaymis(self.durum, v, son, {"tur": "ai", "anahtar": "ai:k2", "kaynak": {"site": "os", "kimlik": "9"}})
+            self.assertEqual(cevrilen, ["os:9", "os:10"])
+        del cevrilen[:]
+        dosya = os.path.join(self.kok, "insan2.srt")
+        with open(dosya, "w", encoding="utf-8") as f:
+            f.write("1\n00:00:01,000 --> 00:00:02,000\nMerhaba.\n")
+        with mock.patch.object(giris, "cevir", lambda d, vv, s, a: cevrilen.append(a) or "/kaynak.srt"), \
+                mock.patch.object(giris, "_insan_hazirla", lambda d, vv, s, a: {"yol": dosya, "secim": {"anahtar": a}} if a == "subdl:2" else None), \
+                mock.patch.object(giris, "_hazir_hazirla", lambda d, vv, a: yuklenen.append(a)), \
+                mock.patch.object(giris, "_uygula", lambda d, vv, h: h["yol"]), \
+                mock.patch.object(giris, "_bildir", lambda *a, **k: None):
+            # İnsan altyazısı seçili: öteki insan altyazısına geçilir; çeviri başlamaz, AI çevirisine bakılmaz
+            yol = giris.kaymis(self.durum, v, son, {"tur": "insan", "anahtar": "subdl:1"})
+            self.assertEqual((yol, cevrilen, yuklenen), (dosya, [], []))
 
 
 if __name__ == "__main__":

@@ -106,6 +106,7 @@ SEKMELER = [
     ]),
     ("ceviri", M.SEKME_CEVIRI, [
         (M.GRUP_HIZLI, [
+            anahtar("hizli_cevir", M.AYAR_HIZLI_CEVIR, True),
             secim("hizli_sure", M.AYAR_HIZLI_SURE, 2, [(1, M.DAKIKA_1), (2, M.DAKIKA_2), (3, M.DAKIKA_3),
                                                         (5, M.DAKIKA_5), (10, M.DAKIKA_10)], tur="integer"),
         ]),

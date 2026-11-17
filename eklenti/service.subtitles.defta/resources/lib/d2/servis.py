@@ -35,6 +35,9 @@ def _maliyet_yazisi(usd):
     return f"{usd:.2f}".replace(".", ",")
 
 
+HIZLI_YENIDEN = 4      # sn: hızlı çeviri yüklendikten sonra bir kez daha yüklenmeden önceki bekleme
+
+
 class Izleyici(xbmc.Monitor):
     def __init__(self, servis):
         super().__init__()
@@ -261,8 +264,14 @@ class Servis:
             if bildir:
                 kodi.bildir(metin.al(metin.B_HIZLI_HAZIR),
                             metin.al(metin.B_HIZLI_HAZIR_YAZI, dakika=sure, dil=dil_adi(b.get("hedef_dil", "tr"))))
-            if self.izleyici is not None:   # Kodi dosyayı açana kadar: biten çeviri iş klasörünü hemen silmesin
-                self.izleyici.waitForAbort(2)
+            if self.izleyici is not None:
+                # Altyazı penceresi orijinali Kodi'ye verir; Kodi onu bizim yüklediğimiz hızlı çeviriden SONRA
+                # yüklerse (büyük dosya, yavaş cihaz) hızlı çeviri görünmeden kaybolur. Birkaç saniye sonra seçili
+                # altyazı hâlâ bu hızlı çeviriyse bir kez daha yüklenir. Bekleme ayrıca Kodi dosyayı açana kadar
+                # biten çevirinin iş klasörünü silmesini önler.
+                if not self.izleyici.waitForAbort(HIZLI_YENIDEN) and (self.durum.secim(b["video_anahtari"]) or {}).get("yol") == yol:
+                    self._yukle(b["video_anahtari"], yol)
+                    self.izleyici.waitForAbort(2)
         except ceviri_isi.Iptal:
             pass
         except Exception as e:              # orijinal yüklü, çevirinin tamamı sürüyor: bitince o yüklenir.
@@ -463,7 +472,8 @@ class Servis:
             yeniden = bool(bilgi.get("yeniden"))
             kodi.kayit(f"yarım çeviri sürüyor: {bilgi['is_id']}" + (" (yeniden çeviri)" if yeniden else ""))
             self.is_baslat(bilgi["is_id"], video_modulu.oynatma_yeri(xbmc), kodi.ayar_int("hizli_sure", 2),
-                           hizli=not yeniden, devam=True, otomatik=not yeniden, kendiliginden=True)
+                           hizli=not yeniden and kodi.hizli_acik(), devam=True, otomatik=not yeniden,
+                           kendiliginden=True)
             return not yeniden
         return False
 
@@ -587,7 +597,7 @@ class Servis:
         self.durum.secim_yaz(v.video_anahtari(), arama.secim_kaydi(
             "ai", "ai:" + bilgi["ceviri_kimligi"], aday.ad, aday.site, hedef,
             os.path.join(self.durum.yol("isler", is_id), bilgi["kaynak_dosya"]), v, kaynak=aday.kayit(), is_id=is_id))
-        self.is_baslat(is_id, video_modulu.oynatma_yeri(xbmc), kodi.ayar_int("hizli_sure", 2), hizli=True,
+        self.is_baslat(is_id, video_modulu.oynatma_yeri(xbmc), kodi.ayar_int("hizli_sure", 2), hizli=kodi.hizli_acik(),
                        otomatik=True, video_anahtari=v.video_anahtari())
 
     # ---------------------------------------------------------------------------------- sıradaki bölüm
@@ -600,6 +610,8 @@ class Servis:
         if anahtar in self.siradaki_bakildi:
             return
         oyn = xbmc.Player()
+        if not oyn.isPlayingVideo():        # durduktan sonra sorulmaz: Kodi her soruyu hata diye kaydediyor
+            return
         try:
             toplam, simdi = oyn.getTotalTime(), oyn.getTime()
         except RuntimeError:

@@ -11,7 +11,7 @@ from .cumle import CumleDagitimi, cumle_gruplari, cumle_suruyor_mu, dengele, par
 from .denetim import Denetimler
 from .hitap import SEN, SIZ, HitapDenetimi
 from .kaynak import (EK, JP_AD_EK, JP_EK_DESEN, JP_ETIKET, KATAKANA, OKUNUSLU_AD_EK, TIRELI, UNVAN_EKI, YALNIZ_UNVAN, _ek_latin,
-                     _terim_bicimleri, anlami_ayir, bicim_gecer, not_ve_konusmaci_ayir, romaji_mi, sarki_mi,
+                     _terim_bicimleri, anlami_ayir, bicim_gecer, latin_etiketleri, not_ve_konusmaci_ayir, romaji_mi, sarki_mi,
                      ses_satiri, ses_yaz)
 from .model import Iptal, ModelHatasi, Ret, json_coz
 from .sozluk import ekli_ad_mi, isaretle
@@ -183,6 +183,7 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
         parantez_ayir = self.modlar["parantez_not"] == "sil"
         etiket_ayir = self.modlar["isim_etiketi"] == "sil"
         sesler = self.sozluk.sesler(self.ayar) if self.sozluk is not None else {}
+        adli_etiketler = latin_etiketleri(x.metin for x in satirlar) if etiket_ayir else ()
         for i, s in enumerate(satirlar):
             if not s.metin.strip():
                 continue
@@ -225,7 +226,8 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                     self.sabit[i] = yalin
                     continue
             if (koseli_ayir or parantez_ayir or etiket_ayir) and not sarki_mi(metin):
-                metin, notlar, konusanlar = not_ve_konusmaci_ayir(metin, koseli_ayir, parantez_ayir, etiket_ayir)
+                metin, notlar, konusanlar = not_ve_konusmaci_ayir(metin, koseli_ayir, parantez_ayir, etiket_ayir,
+                                                                  adli_etiketler)
                 if notlar:
                     self.notlar[i] = notlar
                 if konusanlar:

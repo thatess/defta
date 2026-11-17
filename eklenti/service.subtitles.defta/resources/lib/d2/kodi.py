@@ -40,6 +40,11 @@ def ayar_bool(ad):
     return ayar(ad).strip().lower() == "true"
 
 
+def hizli_acik():
+    """"Önce bulunduğun yeri hızlıca çevir" ayarı. Ayarı hiç yazılmamış eski kurulumda (boş) açık sayılır."""
+    return ayar("hizli_cevir").strip().lower() != "false"
+
+
 def ayar_int(ad, varsayilan=0):
     try:
         return int(float(ayar(ad)))

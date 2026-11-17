@@ -196,6 +196,10 @@ msgctxt "#30140"
 msgid "Önce çevrilecek süre"
 msgstr ""
 
+msgctxt "#30153"
+msgid "Önce bulunduğun yeri hızlıca çevir"
+msgstr ""
+
 msgctxt "#30141"
 msgid "Şarkı sözleri"
 msgstr ""

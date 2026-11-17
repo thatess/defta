@@ -190,8 +190,9 @@ def disa_ceviriler(durum, hedef_klasor, kopyala, klasor_kur):
     return sayi
 
 
-def disa_hata(durum, hedef_klasor, kopyala, klasor_kur):
-    """Hata ayıklama: kayıtlar ve sözlükler (anahtar içermezler) tarihli bir klasöre."""
+def disa_hata(durum, hedef_klasor, kopyala, klasor_kur, kodi_kayitlari=None):
+    """Hata ayıklama: kayıtlar ve sözlükler (anahtar içermezler) tarihli bir klasöre. kodi_kayitlari: dosya adı ->
+    Kodi kaydının süzülmüş metni (kodi_kaydini_suz)."""
     hedef = hedef_klasor.rstrip("/\\") + "/defta-hata-" + time.strftime("%Y%m%d-%H%M%S")
     sayi = 0
     for klasor in ("kayitlar", "sozlukler"):
@@ -202,7 +203,46 @@ def disa_hata(durum, hedef_klasor, kopyala, klasor_kur):
             for ad in adlar:
                 if kopyala(os.path.join(k, ad), hedef + "/" + goreli + "/" + ad):
                     sayi += 1
+    # Son arama listesi (video, adaylar, puanlar; adres yok) ve Kodi kaydının süzülmüş hâli: çökme, senkron işareti
+    # ve hız sorularına bunlar olmadan bakılamıyor.
+    son_arama = durum.yol("gecici", "son_arama.json")
+    if os.path.isfile(son_arama) and kopyala(son_arama, hedef + "/son_arama.json"):
+        sayi += 1
+    for ad, metin_ in (kodi_kayitlari or {}).items():
+        gecici = durum.yol("gecici", ad)
+        kayit.metin_yaz(gecici, metin_)
+        if kopyala(gecici, hedef + "/" + ad):
+            sayi += 1
+        kayit.sil(gecici)
     return sayi
+
+
+_ADRES = re.compile(r"[A-Za-z][A-Za-z0-9+.-]{1,9}://\S+")
+_KAYIT_SATIRI = re.compile(r"\[defta\]| error <|EXCEPTION|Traceback|^\s+File \"|Error:|Exception:|CAddonMgr.*defta|"
+                           r"CPythonInvoker|Starting Kodi|Platform:|Running on|application stopped|exiting")
+_TARIHLI = re.compile(r"\d{4}-\d\d-\d\d ")
+KAYIT_SATIR_SINIRI = 4000
+
+
+def kodi_kaydini_suz(metin_, gizle=None):
+    """Kodi kaydından yalnız eklentinin satırları, hatalar ve açılış bilgisi; adresler (akış adresi jeton taşır) ve
+    anahtarlar silinmiş olarak. Çok uzunsa son KAYIT_SATIR_SINIRI satır."""
+    secilen = []
+    hata_ardi = 0
+    for satir in metin_.splitlines():
+        if _KAYIT_SATIRI.search(satir):
+            if "EXCEPTION" in satir or "Traceback" in satir or " error <" in satir:
+                hata_ardi = 12
+            else:                           # dökümün "File ..." satırı: ardındaki kod satırı da alınır
+                hata_ardi = max(hata_ardi - 1, 1 if 'File "' in satir else 0)
+        elif hata_ardi > 0 and not _TARIHLI.match(satir):
+            hata_ardi -= 1                  # hata dökümünün devam satırları
+        else:
+            hata_ardi = 0
+            continue
+        satir = _ADRES.sub("[adres]", satir)
+        secilen.append(gizle(satir) if gizle else satir)
+    return "\n".join(secilen[-KAYIT_SATIR_SINIRI:]) + "\n"
 
 
 def _guvenli(ad):

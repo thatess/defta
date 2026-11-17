@@ -111,6 +111,10 @@ class Denetimler:
                     kayan.update((a, b))
         for i in sira:
             eksik, fazla = k_ad[i] - c_ad[i], c_ad[i] - k_ad[i]
+            # Satır başında "Ad:" biçiminde geçen ad konuşanın etiketidir, sözün içindeki ad değil: çeviride olmaması
+            # hata sayılmaz (etiket sanılmayıp "düzeltilince" sözdeki doğru adın yerine konuşanın adı yazılıyordu).
+            eksik = {a for a in eksik
+                     if not re.search(r"(?m)^\s*(?:[-–—]\s*)?" + re.escape(a) + r"\s*:", kaynak[i])}
             if eksik and fazla and i not in kayan and not temizlik.latin_disi(kaynak[i]):
                 neden[i] = (f'the source names "{sorted(eksik)[0]}" but the translation names "{sorted(fazla)[0]}": '
                             f"keep the name the source has")

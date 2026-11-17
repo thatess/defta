@@ -395,6 +395,11 @@
     </category>
     <category id="ceviri" label="30003" help="">
       <group id="1" label="30024">
+        <setting id="hizli_cevir" type="boolean" label="30153" help="">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
         <setting id="hizli_sure" type="integer" label="30140" help="">
           <level>0</level>
           <default>2</default>

@@ -35,7 +35,7 @@ VARSAYILAN = {
     "girdi": {"tekrarlari_birlestir": True, "sub_fps": 23.976, "ass_sarki_stili": True, "ass_yazi_stili": True,
               "cift_dil": "referans"},
     # Unvan tabloları, hedef dile göre: kaynakta geçen sözcük -> çeviride yazılacak olan ("{ad}" yoksa ad arkasına gelir).
-    "unvanlar": {"tr": {"Lord": "Lord", "Master": "Master", "Lady": "Leydi", "Sir": "Sör", "Mr": "Bay", "Mrs": "Bayan",
+    "unvanlar": {"tr": {"Lord": "Lord", "Master": "Efendi", "Lady": "Leydi", "Sir": "Sör", "Mr": "Bay", "Mrs": "Bayan",
                         "Ms": "Bayan", "Miss": "Bayan", "King": "Kral", "Queen": "Kraliçe", "Prince": "Prens",
                         "Princess": "Prenses", "President": "Başkan", "Senator": "Senatör", "Governor": "Vali",
                         "Judge": "Yargıç", "Sheriff": "Şerif", "Doctor": "Doktor", "Dr": "Dr.", "Professor": "Profesör",

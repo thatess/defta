@@ -322,6 +322,24 @@ def _disa_klasoru(durum):
     return klasor
 
 
+def _kodi_kayitlari():
+    """Kodi'nin şimdiki ve önceki oturum kaydı (çökmeden sonra önceki oturum kodi.old.log'dadır), süzülmüş."""
+    sonuc = {}
+    for ad in ("kodi.log", "kodi.old.log"):
+        try:
+            dosya = xbmcvfs.File(xbmcvfs.translatePath("special://logpath/" + ad))
+            try:
+                ham = bytes(dosya.readBytes())
+            finally:
+                dosya.close()
+        except Exception:
+            continue
+        if ham:
+            sonuc[ad.replace(".log", "") + "-defta.txt"] = bakim.kodi_kaydini_suz(ham.decode("utf-8", "replace"),
+                                                                               gizli.gizle)
+    return sonuc
+
+
 def disa(tur):
     durum = _durum()
     klasor = _disa_klasoru(durum)
@@ -329,7 +347,10 @@ def disa(tur):
         return
     kopyala, klasor_kur = _dosya_islevleri()
     with kodi.Calisiyor(metin.al(metin.AYAR_DISA_CEVIRI if tur == "ceviri" else metin.AYAR_DISA_HATA)):
-        sayi = (bakim.disa_ceviriler if tur == "ceviri" else bakim.disa_hata)(durum, klasor, kopyala, klasor_kur)
+        if tur == "ceviri":
+            sayi = bakim.disa_ceviriler(durum, klasor, kopyala, klasor_kur)
+        else:
+            sayi = bakim.disa_hata(durum, klasor, kopyala, klasor_kur, _kodi_kayitlari())
     kodi.bildir(metin.al(metin.B_DISA_AKTARILDI), metin.al(metin.B_DISA_YAZI, sayi=sayi))
 
 

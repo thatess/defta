@@ -400,7 +400,8 @@ def _karma(xbmcvfs, v):
 def oynatma_yeri(xbmc):
     """Şu anki oynatma yeri (sn); oynatılmıyorsa 0."""
     try:
-        return float(xbmc.Player().getTime() or 0)
+        oyn = xbmc.Player()
+        return float(oyn.getTime() or 0) if oyn.isPlayingVideo() else 0.0
     except RuntimeError:
         return 0.0
 

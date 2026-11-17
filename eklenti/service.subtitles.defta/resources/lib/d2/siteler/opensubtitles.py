@@ -16,6 +16,7 @@ from . import (EK_ARAMA_SINIRI, EK_ZAMAN_ASIMI, Aday, SiteHatasi, dil_kodu, hede
 
 ADRES = "https://api.opensubtitles.com/api/v1/"
 JETON_OMRU = 23 * 3600
+TEST_BEKLEME = 1.5          # sn: anahtar testinde ilk deneme olmazsa ikinciden önce
 
 
 _API_ADRESI = re.compile(r"https://(?:[a-z0-9-]+\.)+opensubtitles\.com/api/v1/")
@@ -519,6 +520,15 @@ class OpenSubtitles:
 
     # ------------------------------------------------------------------------------------------------- test
     def test(self):
+        """Giriş yeni yapıldıysa (anahtarlar az önce yüklendi) hemen ardından gelen soru reddedilebiliyor: ilk yüklemede
+        "çalışmıyor", sonraki testte "çalışıyor" görünüyordu. Bir kez, kısa bir beklemeyle yeniden denenir."""
+        sonuc = self._test()
+        if not sonuc.get("calisiyor") and sonuc.get("neden") != "anahtar yok":
+            time.sleep(TEST_BEKLEME)
+            sonuc = self._test()
+        return sonuc
+
+    def _test(self):
         if not self.hazir():
             return {"calisiyor": False, "neden": "anahtar yok"}
         try:

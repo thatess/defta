@@ -142,7 +142,7 @@ def ara(tutamac, sorgu):
                                         tercih, ay)
     kayit.yaz(os.path.join(kodi.profil("gecici"), "son_arama.json"),
               {"video": video_kaydi(v), "adaylar": {k: a.kayit() for k, a in tum.items()}, "hazirlar": hazirlar,
-               "sira": sira, "zaman": time.time()})
+               "sira": sira, "cevrilecek": [x.anahtar for x in satirlar if x.eylem == "cevir"], "zaman": time.time()})
     for s in satirlar:
         # Etiket İngilizce dil adı: Kodi indirilen dosyanın dil ekini bundan çıkarır ("Türkçe"yi tanımaz)
         li = xbmcgui.ListItem(label=ingilizce_dil_adi(s.dil), label2=s.yazi)
@@ -342,7 +342,7 @@ def cevir(durum, v, son, anahtar):
     # Pencere beklemez: orijinal altyazı hemen yüklenir, izlemeye devam edilir. Hızlı çeviri hazır olunca, sonra da
     # çevirinin tamamı bitince servis kendisi yükler ("yukle").
     kodi.servise_gonder(mesaj, {"is_id": is_id, "video": v.video_anahtari(), "baslangic": baslangic, "sure": sure,
-                                "hizli": True, "yukle": True})
+                                "hizli": kodi.hizli_acik(), "yukle": True})
     hata = _servis_aldi(is_id)
     if hata:
         _kayit(f"çeviri başlamadı: {hata}")
@@ -358,42 +358,67 @@ def _yeni_sira(sira, kaymislar):
 
 
 def kaymis(durum, v, son, secili):
-    """Seçili altyazı kaymış diye işaretlenir ve hedef dil grubundaki sıradaki yüklenir (yalnız hazır altyazılar
-    arasında; paralı çeviri başlamaz). Hepsi denendiyse sıra başa döner."""
+    """Seçili altyazı kaymış diye işaretlenir ve sıradaki yüklenir.
+    İnsan altyazısı seçiliyken hedef dildeki öteki insan altyazıları arasında dönülür.
+    AI çevirisi seçiliyken sıra "Çevir" adaylarındadır: önce başka bir kaynağın hazır çevirisi (ücretsiz), o yoksa
+    listedeki sıradaki aday çevrilir (ücretli; kullanıcı kararı, 17.11.2026). Aday kalmadıysa hazır çeviriler arasında
+    başa dönülür."""
     if not secili:
         return None
     va = v.video_anahtari()
+    ai = secili.get("tur") == "ai"
     isaret = [secili.get("anahtar")]
-    if secili.get("tur") == "ai" and (secili.get("kaynak") or {}).get("site"):
+    if ai and (secili.get("kaynak") or {}).get("site"):
         k = secili["kaynak"]
         isaret.append(f"{k['site']}:{k['kimlik']}")
     durum.kaymis_isaretle(va, *isaret)
     kaymislar = durum.kaymislar(va)
-    imzalar = (kayit.oku(durum.yol("kaymis", kayit.ozet(va) + ".imza.json"), {}) or {})
+    imza_yolu = durum.yol("kaymis", kayit.ozet(va) + ".imza.json")
+    imzalar = (kayit.oku(imza_yolu, {}) or {})
     if secili.get("yol") and arama.var_mi(secili["yol"]):
         with open(secili["yol"], encoding="utf-8", errors="replace") as f:
             m = f.read()
         imzalar.setdefault("icerik", []).append(arama.icerik_ozeti(m))
         imzalar.setdefault("zaman", []).append(arama.zaman_imzasi(m))
     sira = _yeni_sira([tuple(x) for x in son.get("sira") or []], kaymislar)
-    adaylar = [x for x in sira if x[1] != secili.get("anahtar")]
-    for tur, anahtar in adaylar:
-        h = _hazir_hazirla(durum, v, anahtar) if tur == "ai" else _insan_hazirla(durum, v, son, anahtar)
-        if not h or not arama.var_mi(h["yol"]):
-            continue
-        with open(h["yol"], encoding="utf-8", errors="replace") as f:
-            m = f.read()
-        ayni_icerik = arama.icerik_ozeti(m) in imzalar.get("icerik", [])
-        ayni_zaman = bool(arama.zaman_imzasi(m)) and arama.zaman_imzasi(m) in imzalar.get("zaman", [])
-        # Başa dönünce atlama yapılmaz: işaretliler sıranın sonundadır, onlara gelindiyse denenmemiş aday kalmamıştır
-        # (işaretlinin kendi imzası da kayıtlıdır; atlansaydı hiçbirine dönülemezdi)
-        if (ayni_icerik or ayni_zaman) and anahtar not in kaymislar:
-            durum.kaymis_isaretle(va, anahtar)                       # atlanan seçim olarak yazılmaz
-            imzalar.setdefault("icerik", []).append(arama.icerik_ozeti(m))
-            continue
-        kayit.yaz(durum.yol("kaymis", kayit.ozet(va) + ".imza.json"), imzalar)
-        return _uygula(durum, v, h)
-    kayit.yaz(durum.yol("kaymis", kayit.ozet(va) + ".imza.json"), imzalar)
+    # Her tür kendi arasında döner: AI çevirileri ile insan altyazıları ayrı gruplardır
+    adaylar = [x for x in sira if x[1] != secili.get("anahtar") and (x[0] == "ai") == ai]
+
+    def hazirdan(liste_):
+        for tur, anahtar in liste_:
+            h = _hazir_hazirla(durum, v, anahtar) if tur == "ai" else _insan_hazirla(durum, v, son, anahtar)
+            if not h or not arama.var_mi(h["yol"]):
+                continue
+            with open(h["yol"], encoding="utf-8", errors="replace") as f:
+                m = f.read()
+            ayni_icerik = arama.icerik_ozeti(m) in imzalar.get("icerik", [])
+            ayni_zaman = bool(arama.zaman_imzasi(m)) and arama.zaman_imzasi(m) in imzalar.get("zaman", [])
+            # Başa dönünce atlama yapılmaz: işaretliler sıranın sonundadır, onlara gelindiyse denenmemiş aday
+            # kalmamıştır (işaretlinin kendi imzası da kayıtlıdır; atlansaydı hiçbirine dönülemezdi)
+            if (ayni_icerik or ayni_zaman) and anahtar not in kaymislar:
+                durum.kaymis_isaretle(va, anahtar)                   # atlanan seçim olarak yazılmaz
+                imzalar.setdefault("icerik", []).append(arama.icerik_ozeti(m))
+                continue
+            kayit.yaz(imza_yolu, imzalar)
+            return _uygula(durum, v, h)
+        return None
+
+    if ai:
+        yol = hazirdan([x for x in adaylar if x[1] not in kaymislar])       # denenmemiş hazır çeviri: ücretsiz
+        if yol:
+            return yol
+        kayit.yaz(imza_yolu, imzalar)
+        for anahtar in son.get("cevrilecek") or []:                         # listedeki sırayla, denenmemiş ilk kaynak
+            if anahtar in kaymislar or anahtar not in (son.get("adaylar") or {}):
+                continue
+            _kayit(f"kaymış: sıradaki kaynak çevriliyor ({anahtar.split(':', 1)[0]})")
+            yol = cevir(durum, v, son, anahtar)
+            if yol:
+                return yol
+    yol = hazirdan(adaylar)
+    if yol:
+        return yol
+    kayit.yaz(imza_yolu, imzalar)
     _bildir(metin.al(metin.B_BASKA_YOK), "")
     return secili.get("yol")
 
