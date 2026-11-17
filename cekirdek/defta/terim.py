@@ -569,6 +569,8 @@ def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bu
         ek = sorul([dict(ogeler[k], i=m) for m, k in enumerate(bolunen, 1)], EK_OY)
         for m, k in enumerate(bolunen, 1):
             oylar[k] += gecerli(m, ek, sorulacak[k][1]["yazim"], latinler[k], hepsi[k])
+    secilen = _aile_uyumu([a["yazim"] for _, a in sorulacak], [a.get("sayi") or 0 for _, a in sorulacak],
+                          oylar, [_kazanan(o, esik) for o in oylar])
     oneriler = []
     for k, ((c, a), o) in enumerate(zip(sorulacak, oylar)):
         # Cevabı gelmeyen de (tek oyda ek oy sorulmaz) belirsizdir: kayda "karşılıksız" diye geçip bir daha sorulmaz olmasın.
@@ -579,8 +581,37 @@ def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bu
         ayni = (latinler[k] if o == [] and len(hepsi[k]) >= 2 and latinler[k]
                 and all(_oy_anahtari(d) == _oy_anahtari(latinler[k]) for d in hepsi[k])
                 and not re.search(r"[一-龥々ぁ-ん]", a["yazim"]) else "")
-        oneriler.append((c, _kazanan(o, esik), okunus_gecerli or not temizlik.latin_disi(a["yazim"]), ayni))
+        oneriler.append((c, secilen[k], okunus_gecerli or not temizlik.latin_disi(a["yazim"]), ayni))
     return len(sorulacak), oneriler, len(bolunen)
+
+
+def _aile_uyumu(yazimlar, sayilar, oylar, kazananlar):
+    """Ortak sözcüğü olan terimlerin karşılıkları aynı aileden çıksın: oylar terim terim sayıldığından "Mount Doom"
+    bir oylamadan "Hüküm Dağı", "Mountain of Doom" ötekinden "Kıyamet Dağı" alabiliyordu. En sık geçen terimin kazananı
+    kalır; akrabası, modelin ona verdiği cevaplar içinde o karşılıkla daha çok sözcük paylaşan varsa onu alır. Yeni
+    cevap uydurulmaz, kararsız kalan (None) da karara bağlanmaz. Yalnız Latin harfli kaynakta."""
+    def sozcukler(yazim):
+        return set(re.findall(r"[^\W\d_]{4,}", yazim.lower())) if yazim.isascii() else set()
+
+    def kokler(deger):
+        return {temizlik.tr_kucuk(x)[:4] for x in re.findall(r"[^\W\d_]{3,}", deger)}
+    kaynak = [sozcukler(y) for y in yazimlar]
+    secilen, kesin = list(kazananlar), []
+    for k in sorted(range(len(yazimlar)), key=lambda n: (-sayilar[n], n)):
+        if secilen[k] is None:
+            continue
+        akraba = [j for j in kesin if kaynak[k] & kaynak[j]]
+        kesin.append(k)
+        if not akraba:
+            continue
+
+        def uyum(deger):
+            return sum(len(kokler(deger) & kokler(secilen[j])) for j in akraba)
+        say = Counter(_oy_anahtari(d) for d in oylar[k])
+        en_iyi = max(oylar[k], key=lambda d: (uyum(d), say[_oy_anahtari(d)]), default=None)
+        if en_iyi is not None and uyum(en_iyi) > uyum(secilen[k]):
+            secilen[k] = en_iyi
+    return secilen
 
 
 def _kazanan(oylar, esik):
@@ -784,6 +815,8 @@ def _adla_gecen_unvanlar(sozluk, ciftler, bilinen_unvan, tum_metin):
             unvan, ad = sozcukler
             kalip = g.get("kalip") or ""
             hedef = kalip.replace("{ad}", "").strip() or g.get("hedef")
+            if not kalip and hedef:                     # "Uncle Bilbo" -> "Bilbo Amca": unvanın karşılığı adsız "Amca"
+                hedef = re.sub(r"(?<!\w)" + re.escape(ad) + r"(?!\w)", "", hedef).strip() or hedef
             sozluk.terimden_cikar(yazim)
             if not (sozluk.girdiler.get(unvan) or {"hedef": "x"}).get("hedef"):
                 sozluk.girdi_sil(unvan)                 # tek başına sorulduğunda "sıradan sözcük" denmişti
@@ -831,9 +864,17 @@ def _adla_gecen_unvanlar(sozluk, ciftler, bilinen_unvan, tum_metin):
             if re.search(jp_ad + re.escape(unvan), tum_metin):
                 bulunan.add(unvan)
         elif unvan not in bilinen_unvan and re.search(r"(?<![\w'’-])" + re.escape(unvan) + r"\.? [A-ZÀ-Þ]", tum_metin):
+            dizili = [k for k in sozluk.girdiler if k.startswith(unvan + " ") and k[len(unvan) + 1:][:1].isupper()]
+            ardindan = {re.sub(r"['’]s?$", "", x) for x in re.findall(
+                r"(?<![\w'’-])" + re.escape(unvan) + r"\.? ([A-ZÀ-Þ][\w'’-]*)", tum_metin)}
+            # Model bir sıfata unvan demiş olabilir ("Dark Lord", "Dark Days"): ardından gelenlerin hiçbiri ad değilse
+            # unvan sayılmaz. Yoksa "Dark Days" bölünür, "Days" ad olur ve "Dark Lord" karşılığını yitirir.
+            adli = [y for y in dizili if sozluk.girdiler[y].get("tur") in ("name", "title")]
+            if not adli and not any(tur(x) == "name" for x in ardindan):
+                continue
             bulunan.add(unvan)
             # "Warden Hale" tek ad sanılıp sözlüğe girdiyse çıkarılır; ad kısmı kendi girdisini alır.
-            for yazim in [k for k in sozluk.girdiler if k.startswith(unvan + " ") and k[len(unvan) + 1:][:1].isupper()]:
+            for yazim in adli:
                 sozluk.terimden_cikar(yazim)
                 ad = yazim[len(unvan) + 1:]
                 if _anahtar(ad) not in sozluk.karar_verilenler():

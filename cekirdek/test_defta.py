@@ -1428,6 +1428,19 @@ Use Crimson Lotus Strike, Kenji-senpai.
                                    universal_newlines=True, check=True).stdout for tohum in range(6)}
         self.assertEqual(len(ciktilar), 1, ciktilar)
 
+    def test_sifata_unvan_denirse_dizi_bolunmez(self):
+        satirlar = self._satirlar(["The Dark Baron rises again.", "Fear the Dark Baron, child.", "In the Dark Ages we hid.",
+                                   "The Dark Ages are over.", "Tell Varn the Dark Tides came.", "Varn saw the Dark Tides."])
+        model = SahteModel(terim={"Dark": {"t": "title", "tr": "karanlık", "p": "Karanlık NAME"}, "Varn": {"t": "name"},
+                                  "Dark Baron": {"t": "epithet", "tr": "Karanlık Baron"},
+                                  "Dark Ages": {"t": "descriptive", "tr": "Karanlık Çağlar"},
+                                  "Dark Tides": {"t": "term", "tr": "Kara Gelgit"}})
+        dizi_analiz([("l.srt", satirlar, "")], self.ayar, model, self.sozluk, self.gunluk)
+        self.assertNotIn("Dark", self.sozluk.unvanlar)
+        self.assertEqual(self.sozluk.girdiler["Dark Baron"]["hedef"], "Karanlık Baron")
+        self.assertEqual(self.sozluk.girdiler["Dark Ages"]["hedef"], "Karanlık Çağlar")
+        self.assertFalse({"Ages", "Tides", "Baron"} & set(self.sozluk.girdiler))
+
     def test_unvan_kaydi_tablodan_yoksa_modelden(self):
         satirlar = self._satirlar(["I spoke to Lord Elrond today.", "Good night, Mr. Frodo.", "Yes, Captain.",
                                    "Ask Master Dwarf.", "Tell Warden Hale we sail.", "And Warden Greyfold knows.",
@@ -3819,6 +3832,30 @@ class Karar102Testleri(unittest.TestCase):
     def test_master_turkcede_efendi_yazilir(self):
         from defta.ayar import ayar_birlestir, unvan_tablosu
         self.assertEqual(unvan_tablosu(ayar_birlestir({}))["Master"], "Efendi {ad}")
+
+
+class Karar103Testleri(unittest.TestCase):
+    """Shield kaydından çıkan sözlük kusurları: aynı dağın iki adı, sıfatın unvan sayılması."""
+
+    def test_akraba_terim_en_sik_gecenin_karsiligina_uyar(self):
+        from defta import terim
+        yazimlar = ["Mount Doom", "Mountain of Doom", "White City"]
+        oylar = [["Hüküm Dağı", "Hüküm Dağı", "Kıyamet Dağı"], ["Kıyamet Dağı", "Kıyamet Dağı", "Hüküm Dağı"],
+                 ["Beyaz Şehir", "Beyaz Şehir", "Ak Şehir"]]
+        kazanan = [terim._kazanan(o, 2) for o in oylar]
+        self.assertEqual(terim._aile_uyumu(yazimlar, [6, 1, 2], oylar, kazanan), ["Hüküm Dağı", "Hüküm Dağı", "Beyaz Şehir"])
+
+    def test_akraba_icin_cevap_uydurulmaz_ve_kararsiz_karara_baglanmaz(self):
+        from defta import terim
+        yazimlar = ["Mount Doom", "Quest of Mount Doom", "Doom Gate"]
+        oylar = [["Hüküm Dağı"] * 3, ["Kıyamet Dağı Seferi"] * 3, ["Hüküm Kapısı", "Kıyamet Kapısı", "Felaket Kapısı"]]
+        kazanan = [terim._kazanan(o, 2) for o in oylar]
+        self.assertEqual(terim._aile_uyumu(yazimlar, [6, 1, 1], oylar, kazanan), ["Hüküm Dağı", "Kıyamet Dağı Seferi", None])
+
+    def test_latin_disi_kaynakta_aile_uyumu_karismaz(self):
+        from defta import terim
+        oylar = [["esper"] * 3, ["psişik güç", "psişik güç", "esper gücü"]]
+        self.assertEqual(terim._aile_uyumu(["超能力者", "超能力"], [9, 3], oylar, ["esper", "psişik güç"]), ["esper", "psişik güç"])
 
 
 if __name__ == "__main__":
