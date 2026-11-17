@@ -44,7 +44,7 @@ kayıt kopyası ağ klasörüne (smb://) yazılabilir.</news>
     </assets>
   </extension>
 </addon>
-<addon id="service.subtitles.defta" name="Defta" version="1.0.2" provider-name="Thates">
+<addon id="service.subtitles.defta" name="Defta" version="1.0.3" provider-name="Thates">
   <requires>
     <import addon="xbmc.python" version="3.0.1"/>
     <import addon="script.module.certifi" optional="true"/>
@@ -57,7 +57,7 @@ kayıt kopyası ağ klasörüne (smb://) yazılabilir.</news>
     <description lang="tr_TR">OpenSubtitles, SubDL, SubSource ve Jimaku'da altyazı arar; senkron olasılığına göre sıralar. İstediğin dilde altyazı yoksa bir altyazıyı OpenAI ile çevirir: önce bulunduğun yerden birkaç dakikayı hızlıca, kalanını arka planda özenle. Dizide adlar her bölümde aynı yazılır; sıradaki bölüm sen izlerken hazırlanabilir; yapılan çeviriler saklanır.</description>
     <description lang="en_GB">Searches OpenSubtitles, SubDL, SubSource and Jimaku, ranked by sync likelihood. When no subtitle exists in your language, translates one with OpenAI: the next few minutes right away, the rest carefully in the background. Names stay the same across a series, the next episode can be prepared while you watch, and finished translations are kept.</description>
     <platform>all</platform>
-    <news>1.0.2: hızlı çeviri filmde de görünür (yüklendikten sonra bir kez daha yüklenir) ve ayardan kapatılabilir. Kaymış: AI çevirisi seçiliyken sıradaki kaynağı çevirir, insan altyazıları kendi arasında döner. Konuşan adları (Ad:) çeviriden çıkar; çok adlı filmlerde sözlük daha hızlı kurulur; Master → Efendi. Anahtar testi ilk yüklemede yanlış çalışmıyor demez. Hata dosyalarına Kodi kaydının Defta satırları eklenir. 1.0.1: yüklenen anahtarların silinmesi düzeltildi.</news>
+    <news>1.0.3: oynatıcının verdiği sürüm adı alınamazsa nedeni kayda yazılır. 1.0.2: hızlı çeviri filmde de görünür (yüklendikten sonra bir kez daha yüklenir) ve ayardan kapatılabilir. Kaymış: AI çevirisi seçiliyken sıradaki kaynağı çevirir, insan altyazıları kendi arasında döner. Konuşan adları (Ad:) çeviriden çıkar; çok adlı filmlerde sözlük daha hızlı kurulur; Master → Efendi. Anahtar testi ilk yüklemede yanlış çalışmıyor demez. Hata dosyalarına Kodi kaydının Defta satırları eklenir. 1.0.1: yüklenen anahtarların silinmesi düzeltildi.</news>
     <license>MIT</license>
     <source>https://github.com/thatess/defta</source>
     <assets>

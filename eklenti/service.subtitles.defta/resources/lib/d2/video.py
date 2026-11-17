@@ -97,7 +97,9 @@ class Video:
                 parcalar.append(f"{alan}={getattr(self, alan)}")
         if getattr(self, "ad_kaynagi", ""):
             parcalar.append(f"ad_kaynağı={self.ad_kaynagi}")       # kodi (bilgi) · surum · dosya · elle
-        parcalar.append(f"sürüm={self.dosya_adi!r}" if self.dosya_adi else "sürüm=?")
+        tani = getattr(self, "surum_tanisi", "")
+        parcalar.append(f"sürüm={self.dosya_adi!r}" if self.dosya_adi
+                        else "sürüm=?" + (f" (oynatıcının verdiği ad: {tani})" if tani else ""))
         parcalar += [f"akış={self.akis}", f"süre={self.sure:.0f}sn", f"fps={self.fps}", f"karma={'var' if self.karma else 'yok'}"]
         if self.gomulu_diller:
             parcalar.append("gömülü=" + ",".join(self.gomulu_diller))
@@ -118,24 +120,33 @@ def jeton_gibi(ad):
                for parca in re.split(r"[\s._\-\[\](){}+,~!']+", ad or ""))
 
 
-def eklentinin_surum_adi(xbmc):
+def eklentinin_surum_adi(xbmc, tani=None):
     """Oynatan eklentinin altyazı eklentileri için bıraktığı sürüm adı (Red Light, Umbrella, Seren ve benzerleri ana
     pencerenin "subs.player_filename" özelliğine yazar). Debrid adresi dosya adı taşımadığında tek sürüm bilgisi budur.
-    Değer adres olabilir (jeton taşıyabilir): yalnız video dosyası olan son parçası alınır; adres hiçbir yere yazılmaz."""
+    Değer adres olabilir (jeton taşıyabilir): yalnız video dosyası olan son parçası alınır; adres hiçbir yere yazılmaz.
+    tani (liste) verilirse ad alınamadığında neden alınamadığı eklenir (değerin kendisi değil: jeton olabilir)."""
+    def neden(yazi):
+        if tani is not None:
+            tani.append(yazi)
+        return ""
     try:
         deger = (xbmc.getInfoLabel("Window(10000).Property(subs.player_filename)") or "").strip()
     except Exception:
-        return ""
+        return neden("okunamadı")
     if not deger:
-        return ""
+        return neden("boş")
     if "://" in deger:
-        return adres_dosya_adi(deger)
+        return adres_dosya_adi(deger) or neden("adres, video dosyası değil")
     ad = deger.split("|", 1)[0].split("?", 1)[0].replace("\\", "/").rsplit("/", 1)[-1].strip()
-    if len(ad) < 5 or not re.search(r"[ ._]", ad) or jeton_gibi(ad):
-        return ""
+    if len(ad) < 5 or not re.search(r"[ ._]", ad):
+        return neden(f"kısa ya da tek parça ({len(ad)} karakter)")
+    if jeton_gibi(ad):
+        return neden(f"jeton gibi ({len(ad)} karakter)")
     # Yalnız sürüm adına benzeyen değer: noktalı bir jeton ("eyJ...") kaydedilmesin
     s = surum_modulu.ayristir(ad)
-    return ad if ad.lower().endswith(_VIDEO_UZANTI) or surum_modulu.surum_adi_mi(s) or (s.yil and s.baslik) else ""
+    if ad.lower().endswith(_VIDEO_UZANTI) or surum_modulu.surum_adi_mi(s) or (s.yil and s.baslik):
+        return ad
+    return neden(f"sürüm adına benzemiyor ({len(ad)} karakter, {len(ad.split())} sözcük)")
 
 
 def adres_dosya_adi(yol):
@@ -295,7 +306,9 @@ def oynatilan(xbmc, xbmcvfs, karma=True):
     medya = (oku("getMediaType") or "").lower()
     v.dosya_adi = adres_dosya_adi(v.yol)
     if not v.dosya_adi and v.akis and not v.canli:
-        v.dosya_adi = eklentinin_surum_adi(xbmc)
+        tani = []
+        v.dosya_adi = eklentinin_surum_adi(xbmc, tani)
+        v.surum_tanisi = tani[0] if tani else ""
     v.surum = surum_modulu.ayristir(v.dosya_adi)
     kaynaklar = {}
     for alan in ("dizi_adi", "baslik", "ozgun_ad"):          # "Film.2014.1080p.BluRay.mkv" -> "Film"
