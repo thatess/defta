@@ -10,6 +10,8 @@ import shutil
 import struct
 import sys
 import tempfile
+import time
+import types
 import unittest
 import zipfile
 from unittest import mock
@@ -718,6 +720,33 @@ class SiteTestleri(unittest.TestCase):
             self.assertEqual(h.exception.tur, "sunucu")
             with mock.patch("d2.ag.istek", lambda *a, **k: (200, govde, {})):       # giriş yanıtı bozuk: oturumsuz
                 self.assertEqual(OpenSubtitles("k", "u", "parola1")._oturum(), (None, "https://api.opensubtitles.com/api/v1/"))
+
+    def test_opensubtitles_dusen_oturumda_indirme_bir_kez_yinelenir(self):
+        """Başka cihazda giriş yapılınca eski jeton düşer: 401 alan indirme hak harcamaz, yeni girişle bir kez yinelenir."""
+        istekler = []
+
+        def sahte(yontem, adres, basliklar=None, **k):
+            istekler.append((adres.rsplit("/", 1)[-1], (basliklar or {}).get("Authorization", "")))
+            if adres.endswith("login"):
+                return 200, {"token": "jeton-yeni99", "base_url": "api.opensubtitles.com"}, {}
+            if adres.endswith("download"):
+                if (basliklar or {}).get("Authorization") == "Bearer jeton-eski11":
+                    raise ag.YanitHatasi(401, {}, {})
+                return 200, {"link": "https://dl.opensubtitles.org/x/1", "file_name": "a.srt", "remaining": 19}, {}
+            return 200, b"1\n00:00:01,000 --> 00:00:02,000\nA\n", {}
+        depo = kayit.Depo(tempfile.mkdtemp())
+        depo.yaz("os_oturum", {"jeton": "jeton-eski11", "adres": "https://api.opensubtitles.com/api/v1/",
+                               "zaman": time.time(), "kullanici": "kullanici"})
+        aday = types.SimpleNamespace(indirme={"file_id": 7})
+        try:
+            with mock.patch("d2.ag.istek", sahte):
+                icerik, ad = OpenSubtitles("anahtar123", "kullanici", "parola123", depo).indir(aday)
+            self.assertEqual(ad, "a.srt")
+            self.assertEqual([a for a, _ in istekler], ["download", "login", "download", "1"])
+            self.assertEqual(istekler[2][1], "Bearer jeton-yeni99")
+            self.assertEqual(depo.oku("os_oturum")["jeton"], "jeton-yeni99")
+        finally:
+            shutil.rmtree(depo.klasor)
 
     def test_opensubtitles_giris_sunucusu_denetlenir(self):
         # Giriş yanıtındaki "base_url" içinde "opensubtitles" geçmesi yetiyordu: "opensubtitles.baska.invalid" ya da

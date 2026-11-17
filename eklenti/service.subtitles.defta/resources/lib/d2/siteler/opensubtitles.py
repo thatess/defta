@@ -2,7 +2,8 @@
 
 Api-Key ve User-Agent her istekte; kullanıcı adı/parola verilmişse oturum jetonu (24 saat) Authorization başlığında
 gider ve indirme hakkı 5'ten 20'ye çıkar. Arama parametreleri alfabetik ve küçük harfle gönderilir (yönlendirme
-olmasın). İndirme isteği (POST /download) hakkı düşürdüğü için kendiliğinden tekrarlanmaz; gelen bağlantının indirilmesi
+olmasın). İndirme isteği (POST /download) hakkı düşürdüğü için kendiliğinden tekrarlanmaz; tek istisna düşen oturumdur
+(401: istek hak harcamadan reddedildi, yeniden girişten sonra bir kez yinelenir). Gelen bağlantının indirilmesi
 tekrarlanabilir. AI ve makine çevirisi altyazılar istenmez.
 """
 import copy
@@ -272,8 +273,9 @@ class OpenSubtitles:
             b["Authorization"] = "Bearer " + jeton
         return b
 
-    def _iste(self, yontem, yol, sorgu=None, govde=None, ham=False, deneme=2, tekrar=True, zaman_asimi=15):
-        """tekrar=False: istek (indirme) oturum düşse de kendiliğinden yinelenmez; oturum yenilenir, hata döner."""
+    def _iste(self, yontem, yol, sorgu=None, govde=None, ham=False, deneme=2, zaman_asimi=15):
+        """Oturum düşmüşse (401) bir kez yeniden giriş yapılır ve istek yinelenir; indirmede de: 401 alan istek hak
+        harcamaz (başka cihazda giriş yapılınca eski jeton düşüyor, ilk indirme "anahtar" hatası veriyordu)."""
         jeton, adres = self._oturum()
         for tur in range(2):
             try:
@@ -282,8 +284,7 @@ class OpenSubtitles:
             except ag.YanitHatasi as e:
                 if e.kod == 401 and jeton and tur == 0:          # oturum düşmüş: bir kez yeniden giriş
                     jeton, adres = self._oturum(yenile=True)
-                    if tekrar:
-                        continue
+                    continue
                 raise
         raise SiteHatasi(self.ad, "anahtar")
 
@@ -500,8 +501,7 @@ class OpenSubtitles:
     # ---------------------------------------------------------------------------------------------- indirme
     def indir(self, aday):
         try:
-            _, veri, _ = self._iste("POST", "download", govde={"file_id": int(aday.indirme["file_id"])}, deneme=1,
-                                    tekrar=False)
+            _, veri, _ = self._iste("POST", "download", govde={"file_id": int(aday.indirme["file_id"])}, deneme=1)
         except (ag.YanitHatasi, ag.AgHatasi) as e:
             raise self._hata(e) from None
         veri = veri if isinstance(veri, dict) else {}
