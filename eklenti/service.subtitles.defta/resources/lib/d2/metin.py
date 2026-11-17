@@ -224,7 +224,6 @@ TABLO = [
     (30628, "P_ANAHTAR_BULUNAMADI", "Dosyada tanınan anahtar yok"),
     (30629, "P_IPTAL", "İptal"),
     (30630, "P_TEST_EKLENDI", "eklendi {tarih}"),
-    (30631, "P_TEST_BOLUMU", "Anahtar testi"),
     (30632, "P_DOSYADAKILER", "Dosyada bulunanlar"),
     (30633, "P_DEGISECEKLER", "Değişecek anahtarlar"),
     (30634, "P_ADRES_YAZ", "Adres yazın (smb://sunucu/paylaşım)"),
@@ -232,6 +231,7 @@ TABLO = [
     (30636, "P_AG_KULLANICI", "Kullanıcı adı (yoksa boş bırakın)"),
     (30637, "P_AG_PAROLA", "Parola"),
     (30638, "P_ADRES_ACILAMADI", "Adres açılamadı ya da içinde .env / .txt yok"),
+    (30639, "P_KAYDEDILDI", "Anahtarlar kaydedildi."),
 
     # Ne silindiği (bildirimde ve onayda)
     (30700, "N_CEVIRILER", "Çeviriler"),

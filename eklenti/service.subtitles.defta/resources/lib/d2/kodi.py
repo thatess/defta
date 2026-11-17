@@ -56,6 +56,14 @@ def ayar_yaz(ad, deger):
 SEKME_TABANLARI = (-200, -100)
 
 
+def bilgi_penceresini_kapat():
+    """Eklentinin bilgi sayfasını (Configure düğmesinin durduğu pencere) kapatır. O pencere eklentinin ayarlarını
+    açıldığı andaki hâliyle aklında tutar: bir düğme ayar yazdıktan sonra aynı sayfadan ayarlar yeniden açılırsa eski
+    (boş) değerler görünür ve Tamam'a ya da pencereyi kapatan bir düğmeye basılınca yeni yazılanların üstüne yazılır
+    (1.0.0'da yüklenen anahtarlar böyle siliniyordu). Sayfa kapanınca sonraki açılış ayarları diskten okur."""
+    xbmc.executebuiltin("Dialog.Close(addoninformation,true)")
+
+
 def ayarlari_ac(sekme=None):
     """Ayar penceresini açar. sekme (0'dan başlayan sıra) verilirse o sekme seçili gelir: düğme pencereyi kapatıp
     yeniden açtığında kullanıcı en başa dönmez."""

@@ -2813,8 +2813,13 @@ class Karar0134Testleri(unittest.TestCase):
             self.assertIn("Çalışıyor", xbmcgui.bildirimler[0][1])            # basıldığı an bildirim
             with mock.patch.object(eylemler, "anahtar_yukle", lambda: None), \
                     mock.patch.dict(eylemler.EYLEMLER, {"anahtar_yukle": lambda: None}):
+                del xbmc.komutlar[:]
                 eylemler.calistir(["x", "anahtar_yukle"])
             self.assertEqual(acilan, [1])
+            # Ayar yazan düğmeden sonra eklentinin bilgi sayfası kapatılır: o sayfa ayarların eski hâlini tutuyor,
+            # oradan yeniden açılan ayar penceresi boş anahtarları gösterip üstüne yazdırıyordu.
+            self.assertEqual(xbmc.komutlar, ["Dialog.Close(addoninformation,true)"])
+            self.assertIn("fabrika", eylemler.AYAR_YAZANLAR)
 
     def test_disa_aktarma_klasoru_dugmeye_basinca_sorulur(self):
         from d2 import bakim, eylemler

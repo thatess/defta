@@ -89,9 +89,9 @@ def anahtar_yukle():
         kodi.ayar_yaz(a, deger)
     with kodi.Calisiyor(metin.al(metin.AYAR_BAGLANTI_TESTI)):
         test_sonucu = baglanti_testi(goster=False, yalniz={_ayar_sitesi(a) for a in degisenler})
-    # Önce test sonucu (asıl merak edilen), sonra dosyada bulunanlar
-    kodi.goster(metin.al(metin.B_ANAHTARLAR), ozet + "\n\n" + metin.al(metin.P_TEST_BOLUMU) + ":\n" + test_sonucu
-                + "\n\n" + dosya_bolumu)
+    # Kısa tutulur (tek sayfa): her site için test satırı anahtarın son 4 karakterini ve çalışıp çalışmadığını söyler;
+    # dosya dökümü ayrıca yazılınca sayfa taşıyor, alt yarısı görülmüyordu.
+    kodi.goster(metin.al(metin.B_ANAHTARLAR), metin.al(metin.P_KAYDEDILDI) + " " + ozet + "\n\n" + test_sonucu)
 
 
 def _ag_adresi_sor(durum):
@@ -352,6 +352,7 @@ for _kalem, _ad in (("ceviriler", "sil_ceviri"), ("sozlukler", "sil_sozluk"), ("
 
 # Ayar yazdığı için pencereyi kapatan düğme -> yeniden açılınca seçili gelecek sekmenin sırası (ayarlar_uret.SEKMELER)
 YENIDEN_ACILAN = {"anahtar_yukle": 1}
+AYAR_YAZANLAR = ("anahtar_yukle", "fabrika")     # ayar yazan düğmeler: bilgi sayfası eski değerleri tutmasın
 
 
 def calistir(argv):
@@ -367,5 +368,7 @@ def calistir(argv):
     finally:
         # Yalnız ayar yazan düğme pencereyi kapatır (settings.xml: <close>); iş bitince aynı sekmede yeniden açılır.
         # Öteki düğmelerde pencere hiç kapanmaz: yeniden açmak kullanıcıyı ilk sekmeye atıyordu.
+        if eylem in AYAR_YAZANLAR:
+            kodi.bilgi_penceresini_kapat()
         if eylem in YENIDEN_ACILAN:
             kodi.ayarlari_ac(YENIDEN_ACILAN[eylem])
