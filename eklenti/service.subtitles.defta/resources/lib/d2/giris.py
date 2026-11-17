@@ -101,7 +101,7 @@ def suren_is(video_anahtari):
 def ara(tutamac, sorgu):
     durum = kayit.Durum(kodi.profil())
     ay = ayarlar()
-    oynayan = video_modulu.oynatilan(xbmc, xbmcvfs, karma=False)
+    oynayan = video_modulu.oynatilan(xbmc, xbmcvfs, karma=False, ad_bul=video_modulu.sunucu_adi_bul(kodi.ozellik))
     paylasilan = kodi.ozellik("karma." + video_modulu.karma_anahtari(oynayan))     # servis oynatma başında hesapladı
     if paylasilan:
         oynayan.karma = None if paylasilan == "-" else paylasilan

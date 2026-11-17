@@ -3105,6 +3105,72 @@ class Karar102Testleri(unittest.TestCase):
             v.sure, v.yol = 1452.0, "https://ornek.test/dl/liste.m3u8"   # oynatma listesi: başı ve sonu okunamaz
             self.assertIsNone(video_modulu._karma(xbmcvfs, v))
 
+    def test_surum_adi_sunucunun_basligindan(self):
+        """Adres de oynatan eklenti de ad vermiyorsa (Red Light'ta paket kaynağı) sunucunun başlığındaki dosya adı."""
+        istekler = []
+
+        class Yanit:
+            def __init__(self, baslik):
+                self.headers = {"Content-Disposition": baslik} if baslik else {}
+
+            def close(self):
+                pass
+
+        def ac(baslik):
+            def _ac(istek, timeout=None):
+                istekler.append(istek)
+                return Yanit(baslik)
+            return _ac
+        yol = "https://store-1.example/dld/AbC123?token=gizli|User-Agent=Oynatici%2F1&verifypeer=false"
+        tani = []
+        ad = video_modulu.sunucunun_dosya_adi(yol, tani, ac('attachment; filename="[Grup] Ornek Dizi S2 - 12 (BD 1080p).mkv"'))
+        self.assertEqual((ad, tani), ("[Grup] Ornek Dizi S2 - 12 (BD 1080p).mkv", []))
+        basliklar = {k.lower(): d for k, d in istekler[0].header_items()}
+        self.assertEqual((basliklar["range"], basliklar["user-agent"]), ("bytes=0-0", "Oynatici/1"))
+        self.assertNotIn("verifypeer", basliklar)
+        self.assertEqual(istekler[0].full_url, "https://store-1.example/dld/AbC123?token=gizli")
+        # Ad yoksa, jeton gibiyse ya da istek düşerse boş döner; tanıda adres ve hata metni olmaz
+        for baslik, beklenen in (("", "başlıkta ad yok"), ('attachment; filename="9f8a7c6b5d4e3f2a1b0c9d8e7f6a5b4c.mkv"', "jeton gibi")):
+            tani = []
+            self.assertEqual(video_modulu.sunucunun_dosya_adi(yol, tani, ac(baslik)), "")
+            self.assertIn(beklenen, tani[0])
+
+        def dusen(istek, timeout=None):
+            raise OSError("https://store-1.example/dld/AbC123?token=gizli açılamadı")
+        tani = []
+        self.assertEqual(video_modulu.sunucunun_dosya_adi(yol, tani, dusen), "")
+        self.assertEqual(tani, ["sunucunun verdiği ad: alınamadı (OSError)"])
+        self.assertEqual(video_modulu.sunucunun_dosya_adi("https://ornek.test/a/liste.m3u8", [], dusen), "")
+
+    def test_sunucu_adi_bir_kez_sorulur_ve_oynatilan_onu_kullanir(self):
+        bellek, sorulan = {}, []
+
+        def ozellik(ad, deger=None):
+            if deger is None:
+                return bellek.get(ad, "")
+            bellek[ad] = deger
+            return deger
+
+        def sahte(yol, tani=None, ac=None):
+            sorulan.append(1)
+            return "Ornek.Film.2014.1080p.BluRay.x264-GRP.mkv"
+        xbmc.oynatici.update({"oynuyor": True, "sure": 7200.0, "yol": "https://store-1.example/dld/AbC123?token=gizli",
+                              "etiket": {"title": "Ornek Film", "year": 2014, "mediatype": "movie"}})
+        try:
+            with mock.patch.object(video_modulu, "sunucunun_dosya_adi", sahte):
+                bul = video_modulu.sunucu_adi_bul(ozellik)
+                for _ in range(2):
+                    v = video_modulu.oynatilan(xbmc, xbmcvfs, karma=False, ad_bul=bul)
+                    self.assertEqual((v.dosya_adi, v.surum.grup), ("Ornek.Film.2014.1080p.BluRay.x264-GRP.mkv", "GRP"))
+                self.assertEqual(len(sorulan), 1)
+                self.assertFalse(any("store-1" in k or "gizli" in k + d for k, d in bellek.items()))
+                xbmc.oynatici["sure"] = 120.0                           # kısa video (fragman): sunucuya sorulmaz
+                xbmc.oynatici["yol"] = "https://store-1.example/dld/Zz9?token=gizli"
+                self.assertEqual(video_modulu.oynatilan(xbmc, xbmcvfs, karma=False, ad_bul=bul).dosya_adi, "")
+                self.assertEqual(len(sorulan), 1)
+        finally:
+            xbmc.oynatici.update({"oynuyor": False, "yol": "", "etiket": {}})
+
     def test_hizli_ceviri_ayari_bos_ya_da_true_ise_acik(self):
         from d2 import kodi
         for deger, beklenen in (("", True), ("true", True), ("false", False)):

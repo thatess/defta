@@ -7,7 +7,8 @@ adı alınır.
 import re
 import struct
 import threading
-from urllib.parse import unquote, urlsplit
+import urllib.request
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 from . import surum as surum_modulu
 
@@ -16,6 +17,9 @@ _VIDEO_UZANTI = (".mkv", ".mp4", ".avi", ".m4v", ".ts", ".m2ts", ".wmv", ".mov",
 _YEREL_SEMA = ("", "file", "smb", "nfs", "special")
 KARMA_SURESI = 8.0                  # akışta karma en çok bu kadar beklenir
 KARMA_EN_AZ_SURE = 600           # sn: adı bilinmeyen akışta karma yalnız bu kadar uzun videoda hesaplanır
+BASLIK_SURESI = 4.0                 # sn: sunucunun dosya adı başlığı en çok bu kadar beklenir
+_OYNATMA_LISTESI = (".m3u8", ".m3u", ".mpd")
+_TASINAN_BASLIKLAR = ("user-agent", "referer", "cookie", "authorization", "origin")
 
 
 class Video:
@@ -138,6 +142,12 @@ def eklentinin_surum_adi(xbmc, tani=None):
         return neden("boş")
     if "://" in deger:
         return adres_dosya_adi(deger) or neden("adres, video dosyası değil")
+    return _ad_denetle(deger, neden)
+
+
+def _ad_denetle(deger, neden):
+    """Dışarıdan gelen değer (oynatan eklentinin özelliği, sunucunun başlığı) sürüm adı mı: yalnız son parçası alınır;
+    kısa, tek parça, jeton gibi ya da sürüm adına benzemeyen değer alınmaz (neden(yazı) çağrılır, "" döner)."""
     ad = deger.split("|", 1)[0].split("?", 1)[0].replace("\\", "/").rsplit("/", 1)[-1].strip()
     if len(ad) < 5 or not re.search(r"[ ._]", ad):
         return neden(f"kısa ya da tek parça ({len(ad)} karakter)")
@@ -148,6 +158,86 @@ def eklentinin_surum_adi(xbmc, tani=None):
     if ad.lower().endswith(_VIDEO_UZANTI) or surum_modulu.surum_adi_mi(s) or (s.yil and s.baslik):
         return ad
     return neden(f"sürüm adına benzemiyor ({len(ad)} karakter, {len(ad.split())} sözcük)")
+
+
+def baslik_dosya_adi(deger):
+    """Content-Disposition başlığındaki dosya adı: önce filename*=UTF-8''..., sonra filename="..."; yoksa ""."""
+    deger = deger or ""
+    m = re.search(r"filename\*\s*=\s*([\w-]*)'[^']*'([^;]+)", deger, re.I)
+    if m:
+        try:
+            return unquote(m.group(2).strip().strip('"'), encoding=m.group(1) or "utf-8", errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            pass
+    m = re.search(r'filename\s*=\s*"((?:[^"\\]|\\.)*)"', deger, re.I) or re.search(r"filename\s*=\s*([^;]+)", deger, re.I)
+    if not m:
+        return ""
+    ad = re.sub(r"\\(.)", r"\1", m.group(1).strip())
+    try:                                    # başlık latin-1 okunur: UTF-8 yazılmış ad geri çevrilir
+        ad = ad.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+    return ad
+
+
+def sunucunun_dosya_adi(yol, tani=None, ac=None):
+    """Akış adresi dosya adı taşımıyor ve oynatan eklenti de vermiyorsa (Red Light'ta paket kaynağı): sunucunun
+    Content-Disposition başlığındaki dosya adı. Tek küçük istek (ilk bayt istenir, gövde okunmaz), en çok BASLIK_SURESI.
+    Adres ve hata metni (adres taşıyabilir) hiçbir yere yazılmaz; tani listesine yalnız sonucun türü eklenir.
+    ac(istek, timeout) -> yanıt: testte sahtesi verilir."""
+    def neden(yazi):
+        if tani is not None:
+            tani.append("sunucunun verdiği ad: " + yazi)
+        return ""
+    adres, _, ek = (yol or "").partition("|")
+    if sema(adres) not in ("http", "https") or urlsplit(adres).path.lower().endswith(_OYNATMA_LISTESI):
+        return ""
+    from . import ag
+    basliklar = {"User-Agent": ag._kullanici, "Range": "bytes=0-0", "Accept": "*/*"}
+    for ad, deger in parse_qsl(ek):                     # Kodi'nin "|User-Agent=...&Referer=..." eki
+        if ad.lower() in _TASINAN_BASLIKLAR:
+            basliklar[ad] = deger
+    sonuc = {}
+
+    def sor():
+        try:
+            istek = urllib.request.Request(adres, headers=basliklar, method="GET")
+            yanit = (ac or ag._ACICI.open)(istek, timeout=BASLIK_SURESI)
+            try:
+                sonuc["baslik"] = yanit.headers.get("Content-Disposition") or ""
+            finally:
+                yanit.close()
+        except Exception as e:
+            sonuc["hata"] = type(e).__name__
+    is_ = threading.Thread(target=sor, daemon=True)
+    is_.start()
+    is_.join(BASLIK_SURESI + 1)
+    if "baslik" not in sonuc:
+        return neden("alınamadı (" + sonuc.get("hata", "süre doldu") + ")")
+    ad = baslik_dosya_adi(sonuc["baslik"])
+    if not ad:
+        return neden("başlıkta ad yok")
+    return _ad_denetle(ad, neden)
+
+
+def sunucu_adi_bul(ozellik):
+    """oynatilan() için: sunucudan sürüm adını bir kez sorar, sonucu servis ile eklentinin ortak belleğine yazar
+    (ozellik(ad, deger=None): kodi.ozellik). Anahtar adresin özetidir; adresin kendisi yazılmaz."""
+    def bul(v, tani):
+        from . import kayit
+        anahtar = "ad." + kayit.ozet(v.yol, 16)
+        kayitli = ozellik(anahtar)
+        if kayitli:
+            if kayitli.startswith("-"):
+                tani.append(kayitli[1:])
+                return ""
+            return kayitli
+        yeni = []
+        ad = sunucunun_dosya_adi(v.yol, yeni)
+        tani.extend(yeni)
+        ozellik(anahtar, ad or "-" + "; ".join(yeni))
+        return ad
+    return bul
 
 
 def adres_dosya_adi(yol):
@@ -260,8 +350,9 @@ def _fps(deger):
 
 
 # ---------------------------------------------------------------------------------------- Kodi'den okuma
-def oynatilan(xbmc, xbmcvfs, karma=True):
-    """Oynatılan videonun bilgileri. xbmc, xbmcvfs modülleri dışarıdan verilir (testte sahteleri)."""
+def oynatilan(xbmc, xbmcvfs, karma=True, ad_bul=None):
+    """Oynatılan videonun bilgileri. xbmc, xbmcvfs modülleri dışarıdan verilir (testte sahteleri).
+    ad_bul(v, tani) -> ad: adres de oynatan eklenti de sürüm adı vermediğinde sorulur (sunucu_adi_bul)."""
     v = Video()
     oyn = xbmc.Player()
     if not oyn.isPlayingVideo():
@@ -309,7 +400,9 @@ def oynatilan(xbmc, xbmcvfs, karma=True):
     if not v.dosya_adi and v.akis and not v.canli:
         tani = []
         v.dosya_adi = eklentinin_surum_adi(xbmc, tani)
-        v.surum_tanisi = tani[0] if tani else ""
+        if not v.dosya_adi and ad_bul is not None and s in ("http", "https") and v.sure >= KARMA_EN_AZ_SURE:
+            v.dosya_adi = ad_bul(v, tani) or ""
+        v.surum_tanisi = "; ".join(tani)
     v.surum = surum_modulu.ayristir(v.dosya_adi)
     kaynaklar = {}
     for alan in ("dizi_adi", "baslik", "ozgun_ad"):          # "Film.2014.1080p.BluRay.mkv" -> "Film"
@@ -384,7 +477,7 @@ def _karma(xbmcvfs, v):
     akis_uygun = s in ("http", "https") and (v.dosya_adi or (v.sure or 0) >= KARMA_EN_AZ_SURE)
     if not v.yol or v.canli or not (s in _YEREL_SEMA or akis_uygun):
         return None
-    if s in ("http", "https") and urlsplit(v.yol.split("|", 1)[0]).path.lower().endswith((".m3u8", ".m3u", ".mpd")):
+    if s in ("http", "https") and urlsplit(v.yol.split("|", 1)[0]).path.lower().endswith(_OYNATMA_LISTESI):
         return None
     sonuc = {}
 

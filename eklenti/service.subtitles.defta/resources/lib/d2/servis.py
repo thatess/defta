@@ -405,7 +405,7 @@ class Servis:
         if self.izleyici is not None and self.izleyici.waitForAbort(1.5):    # oynatan eklentinin bilgisi dolsun
             return
         try:
-            v = video_modulu.oynatilan(xbmc, xbmcvfs, karma=False)
+            v = video_modulu.oynatilan(xbmc, xbmcvfs, karma=False, ad_bul=video_modulu.sunucu_adi_bul(kodi.ozellik))
             if not xbmc.Player().isPlayingVideo():
                 return
             eslesme.uygula(self.durum, v)               # eklentiyle aynı anahtarlar (yalnız AniList veren eklentiler)
