@@ -1861,6 +1861,20 @@ class CeviriIsiTestleri(unittest.TestCase):
         s._kodi_kopyasini_sil(self.bilgi, {"kaynak_dosya": "os-1.kaynak.srt"})
         self.assertTrue(os.path.exists(os.path.join(klasor, "Ornek.S01E05.en.srt")))
 
+    def test_film_sozlugu_serinindir(self):
+        # Aynı serinin filmleri tek sözlüğü paylaşır; filmin eski kendi sözlüğü seri adına taşınır; dizi değişmez.
+        def yol(yapim, baslik):
+            bilgi = dict(self.bilgi, yapim=yapim, baslik=baslik)
+            return ceviri_isi.CeviriIsi(self.durum, bilgi, "sk-test", {"hedef_dil": "tr"})._sozluk_yolu()
+        eski = self.durum.sozluk_yolu("imdb:tt0120737", "tr")
+        kayit.yaz(eski, {"girdiler": {}})
+        birinci = yol("imdb:tt0120737", "The Lord of the Rings: The Fellowship of the Ring")
+        self.assertFalse(os.path.exists(eski))
+        self.assertTrue(os.path.exists(birinci))
+        self.assertEqual(yol("imdb:tt0167261", "The Lord of the Rings: The Two Towers"), birinci)
+        self.assertEqual(yol("ad:dune:2021", "Dune"), yol("tmdb:movie:693134", "Dune: Part Two"))
+        self.assertEqual(yol("ad:ornek", "Ornek: Ikinci Sezon"), self.durum.sozluk_yolu("ad:ornek", "tr"))
+
     def test_sozlukle_yenilemede_karar_verilemeyen_girdi_kalir(self):
         # "Sözlükle birlikte yenile" bu bölümde geçen adların kararlarını siler ve bölümü yeniden inceler. Yeniden
         # karar verilemeyen (başka bölümde öğrenilmiş, burada aday olmayan) girdinin eski kararı kalır; yeniden

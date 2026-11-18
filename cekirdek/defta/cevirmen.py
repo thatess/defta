@@ -40,6 +40,11 @@ SORUN = {
 }
 
 
+
+# Konuşmacı etiketine benzeyen "Ad:" ya da "Ad 2:" (satır başında, çizgiden ya da cümle sonundan sonra; ardından söz).
+ETIKET_GIBI = re.compile(r"(?:(?<=^)|(?<=\n)|(?<=[-–—] )|(?<=[.!?…] ))(?:<i>)?[A-ZÇĞİÖŞÜÂÎÛ][\w'’.-]*(?: [\w'’.-]+){0,2}"
+                         r"(?: \d+)?:(?=\s)", re.M)
+
 class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
     def __init__(self, ayar, model, sistem, gunluk, sozluk=None):
         self.ayar, self.model, self.sistem, self.gunluk = ayar, model, sistem, gunluk
@@ -582,10 +587,14 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
             ceviri = sonuc[i]
         if self.terimler:
             kucuk = " ".join(self.kucuk(ceviri).split())            # satır sonu terimi bölmüş olabilir
+            # Konuşmacı etiketindeki ad ("Pippin: ...", "... ne dedin? Merry: Hiç.") çeviride yazılmaz: terim sayılmaz.
+            # Yoksa doğru çeviri "terim kaçtı" diye yeniden isteniyordu (LOTR'da 16 satır, hepsi etiket).
+            aranan = ETIKET_GIBI.sub("\0", giden)
             for desen, kok, yazi in self.terimler:
-                gecti = any(bicim_gecer(d, giden) for d in desen) if isinstance(desen, tuple) else bool(desen.search(giden))
+                gecti = (any(bicim_gecer(d, aranan) for d in desen) if isinstance(desen, tuple)
+                         else bool(desen.search(aranan)))
                 if gecti and yazi[0] in self.terim_maske:
-                    maskeli = giden
+                    maskeli = aranan
                     for uzun in self.terim_maske[yazi[0]]:
                         maskeli = maskeli.replace(uzun, "\0")
                     gecti = any(bicim_gecer(d, maskeli) for d in desen)
@@ -781,7 +790,9 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                 self.gunluk.hata(self.etiket, f"satır {i + 1}: Latin dışı harfler silindi ({temizlik.latin_disi(metin)})")
                 kabul[i] = temizlik.latin_disi_sil(metin)
             elif neden == "terim":
-                self.gunluk.uyari(self.etiket, f"satır {i + 1}: sözlük terimi çeviride görünmüyor: {metin!r}")
+                terim = self.kacan_terim.get(i)
+                self.gunluk.uyari(self.etiket, f"satır {i + 1}: sözlük terimi çeviride görünmüyor"
+                                  + (f" ({terim[0]} -> {terim[1]})" if terim else "") + f": {metin!r}")
                 kabul[i] = metin
             else:
                 self.gunluk.hata(self.etiket, f"satır {i + 1}: '{neden}' kontrolü geçmedi, çeviri yine de kullanıldı: {metin!r}")

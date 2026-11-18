@@ -1,4 +1,5 @@
 """Defta başlatıcı. Kullanım:  python ceviri.py   (ayarlar config.toml, anahtar .env)"""
+import json
 import os
 import re
 import sys
@@ -14,7 +15,7 @@ from defta.dosya import dosya_cevir, dosya_oku
 from defta.gunluk import Gunluk
 from defta.istem import istem_olustur
 from defta.model import Iptal, Model, ModelHatasi
-from defta.sozluk import Sozluk
+from defta.sozluk import Sozluk, seri_adi
 from defta.terim import dil_sor
 
 KOK = os.path.dirname(os.path.abspath(__file__))
@@ -53,6 +54,25 @@ def yapim_adi(goreli):
     baslik = govde[:m.start()] if m and m.start() > 0 else govde
     baslik = re.sub(r"[._]+", " ", baslik).strip(" -")
     return baslik or govde
+
+
+def mevcut_basliklar(klasor):
+    """Sözlük klasöründeki sözlüklerin başlıkları (seri eşleştirmesi için)."""
+    basliklar = []
+    try:
+        adlar = sorted(os.listdir(klasor))
+    except OSError:
+        return basliklar
+    for ad in adlar:
+        if ad.endswith(".json"):
+            try:
+                with open(os.path.join(klasor, ad), encoding="utf-8") as f:
+                    baslik = json.load(f).get("baslik")
+            except (OSError, ValueError, AttributeError):
+                continue
+            if isinstance(baslik, str) and baslik.strip():
+                basliklar.append(baslik.strip())
+    return basliklar
 
 
 def sozluk_anahtari(baslik):
@@ -121,8 +141,15 @@ def main():
     kilit = threading.Lock()
     durum = {}            # dosya -> (biten satır, toplam satır): tek ilerleme satırı için
 
+    # Aynı serinin filmleri tek sözlüğü paylaşır: başlık, sözlüğü olan ya da bu çalıştırmadaki bir seri başlığıyla başlıyorsa
+    # o serinin sözlüğü kullanılır ("The Lord of the Rings The Two Towers" -> "The Lord of the Rings").
+    basliklar = mevcut_basliklar(yol(k["sozluk"])) + sorted({yapim_adi(g) for g, _ in isler})
+
+    def seri(goreli):
+        return seri_adi(yapim_adi(goreli), basliklar)
+
     def sozluk_al(goreli):
-        baslik = yapim_adi(goreli)
+        baslik = seri(goreli)
         ad = sozluk_anahtari(baslik)
         with kilit:
             if ad not in sozlukler:
@@ -215,7 +242,7 @@ def main():
                                                      else "unvanlar yönetilmiyor"))
     yapimlar = {}
     for is_ in isler:
-        yapimlar.setdefault(sozluk_anahtari(yapim_adi(is_[0])), []).append(is_)
+        yapimlar.setdefault(sozluk_anahtari(seri(is_[0])), []).append(is_)
     havuz = ThreadPoolExecutor(max_workers=min(8, len(yapimlar)))
     gelecekler = [havuz.submit(yapim_isle, d) for d in yapimlar.values()]
     durduruldu = False

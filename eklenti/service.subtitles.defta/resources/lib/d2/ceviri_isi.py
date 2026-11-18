@@ -26,7 +26,7 @@ from defta.dosya import dosya_cevir, dosya_oku
 from defta.gunluk import Gunluk
 from defta.istem import istem_olustur
 from defta.model import Iptal, Kayitli, Model, ModelHatasi
-from defta.sozluk import Sozluk
+from defta.sozluk import Sozluk, seri_adi
 
 from . import kayit
 
@@ -192,7 +192,22 @@ class CeviriIsi:
         return cekirdek_srt.Satir(0, s.bas, s.bit, metin)
 
     def _sozluk_yolu(self):
-        return self.durum.sozluk_yolu(self.bilgi["yapim"], self.ayar["ceviri"]["hedef_dil"])
+        """Dizide sözlük dizinindir. Filmde serinindir (kullanıcının kararı, 18.11.2026): aynı serinin filmleri tek
+        sözlüğü paylaşır ("The Lord of the Rings: The Two Towers" -> "The Lord of the Rings"); filmin eski kendi
+        sözlüğü varsa ve serininki yoksa seri adına taşınır."""
+        hedef, yapim = self.ayar["ceviri"]["hedef_dil"], self.bilgi["yapim"]
+        film = yapim.startswith(("imdb:", "tmdb:movie:")) or re.match(r"ad:.+:\d{4}$", yapim)
+        baslik = str(self.bilgi.get("baslik") or "").strip()
+        anahtar = re.sub(r"[^\w]+", "", seri_adi(baslik).casefold().replace("×", "x")) if film and baslik else ""
+        if not anahtar:
+            return self.durum.sozluk_yolu(yapim, hedef)
+        yeni, eski = self.durum.sozluk_yolu("seri:" + anahtar, hedef), self.durum.sozluk_yolu(yapim, hedef)
+        if not os.path.exists(yeni) and os.path.exists(eski):
+            try:
+                os.replace(eski, yeni)
+            except OSError:
+                return eski
+        return yeni
 
     def _basvurulu(self, satirlar):
         return any(s.ref for s in satirlar)

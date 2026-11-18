@@ -113,17 +113,45 @@ ADLI_ETIKET_SATIRI = re.compile(r"^(?:" + temizlik.TIRE + r"\s*)?([A-ZÇĞİÖŞ
 ETIKET_ESIGI = 3
 
 
+# Sözün başındaki etiket ("Pippin: Biraz da lahana."): kendi satırındaki etiketten daha çok sıradan söze benzer
+# ("Look: ..."), o yüzden bir koşul daha var: etiketin hiçbir sözcüğü dosyada küçük harfle geçmez (özel ad hep büyük
+# harfle yazılır; "look", "remember" cümle içinde küçük harfle de geçer).
+ADLI_ETIKET_BAS = re.compile(r"^(?:" + temizlik.TIRE + r"\s*)?([A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*(?: [A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*){0,2}):\s+\S")
+
+
 def latin_etiketleri(metinler):
-    """Dosyadaki küçük harfli konuşmacı etiketleri: kendi satırında, ardından söz gelen "Ad:" satırlarından en az
-    ETIKET_ESIGI kez geçenler. Büyük harfli etiketler (GANDALF:) zaten tanınır; bu yalnız karışık yazımlılar içindir."""
-    sayim = {}
+    """Dosyadaki küçük harfli konuşmacı etiketleri: kendi satırında, ardından söz gelen "Ad:" satırlarından ya da
+    sözün başında duran "Ad: ..." etiketlerinden en az ETIKET_ESIGI kez geçenler (ikisi birlikte sayılır; sözün
+    başındakiler ADLI_ETIKET_BAS'taki koşulla). Büyük harfli etiketler (GANDALF:) zaten tanınır; bu yalnız karışık
+    yazımlılar içindir."""
+    metinler = list(metinler)
+    sayim, bastaki = {}, {}
     for metin in metinler:
         satirlar = [temizlik.ETIKET.sub("", x).strip() for x in metin.split("\n")]
-        for sira, satir in enumerate(satirlar[:-1]):
+        for sira, satir in enumerate(satirlar):
             m = ADLI_ETIKET_SATIRI.match(satir)
-            if m and len(satir) <= 26 and any(satirlar[sira + 1:]) and not temizlik.duyuru_etiketi(m.group(1)):
+            if (m and sira < len(satirlar) - 1 and len(satir) <= 26 and any(satirlar[sira + 1:])
+                    and not temizlik.duyuru_etiketi(m.group(1))):
                 sayim[m.group(1)] = sayim.get(m.group(1), 0) + 1
-    return {ad for ad, n in sayim.items() if n >= ETIKET_ESIGI}
+                continue
+            m = ADLI_ETIKET_BAS.match(satir)
+            if m and len(m.group(1)) <= 24 and not temizlik.duyuru_etiketi(m.group(1)):
+                bastaki[m.group(1)] = bastaki.get(m.group(1), 0) + 1
+    if bastaki:
+        kucukler = set(re.findall(r"\b[a-zçğıöşüâîû][\w'’-]*", "\n".join(temizlik.ETIKET.sub("", x) for x in metinler)))
+        for ad, n in bastaki.items():
+            if not any(soz.lower() in kucukler for soz in re.findall(r"[^\W\d_][\w'’-]*", ad)):
+                sayim[ad] = sayim.get(ad, 0) + n
+    etiketler = {ad for ad, n in sayim.items() if n >= ETIKET_ESIGI}
+    # Dosyanın etiket düzeni kesinse (en az iki ad yukarıdaki koşullarla tanındı), sözün başında en az iki kez geçen
+    # öbür etiketler de alınır: özensiz altyazı adları cümle içinde küçük harfle yazabiliyor ("bilbo" 15 kez, büyük
+    # harfle hiç), küçük harf koşulu "Merry:", "Pippin:", "Bilbo:" etiketlerini reddediyor, adlar çeviride kalıyordu.
+    if len(etiketler) >= 2:
+        etiketler |= {ad for ad, n in bastaki.items() if n >= 2}
+    return etiketler
+
+
+BIP = re.compile(r"\[\s*bleep(?:ed|ing)?\s*\]", re.I)
 
 
 def not_ve_konusmaci_ayir(metin, koseli_ayir=True, parantez_ayir=True, etiket_ayir=True, adli_etiketler=()):
@@ -180,8 +208,18 @@ def not_ve_konusmaci_ayir(metin, koseli_ayir=True, parantez_ayir=True, etiket_ay
                     konusan = m.group(2).strip()
                     satir = satir[:on.end()] + (m.group(1) or "") + satir[on.end() + m.end():]
         if koseli_ayir:
-            notlar.extend(KOSELI_NOT.findall(satir))
-            satir = KOSELI_NOT.sub("", satir)
+            # Cümlenin içindeki bip işareti ("the [bleep] sink") not değil, örtülmüş bir küfürdür: metinde kalır ki
+            # model küfrü çevirebilsin (silinince küfür düşüyordu). Satırda ondan başka söz yoksa not gibi silinir.
+            # İki konuşmacılı satırda yalnız bipten oluşan pay ("- [bleep]") o konuşmacının küfrüdür, not değil:
+            # silinirse tire sayısı tutmuyor, konuşmacı düşüyordu.
+            pay = (re.match(r"\s*[-–—]", ic) is not None
+                   and sum(1 for x in ham if re.match(r"\s*[-–—]", temizlik.ETIKET.sub("", x))) >= 2)
+            ortulu = bool(BIP.search(satir)) and (pay or bool(temizlik.ETIKET.sub("", KOSELI_NOT.sub("", satir)).strip(" -–—.,!?")))
+            notlar.extend(n for n in KOSELI_NOT.findall(satir) if not (ortulu and BIP.fullmatch(f"[{n}]")))
+            yeni = KOSELI_NOT.sub(lambda e: e.group(0) if ortulu and BIP.fullmatch(e.group(0)) else "", satir)
+            if yeni != satir and not temizlik.ETIKET.sub("", yeni).strip(" -–—.,!?…"):
+                yeni = ""                   # notu atılınca yalnız tire ve noktalama kalan satır ("- [bleep].") boştur
+            satir = yeni
         if temizlik.ETIKET.sub("", satir).strip(" -\u2013\u2014"):
             satirlar.append(re.sub(r"[ \t]+", " ", satir).strip())
             if konusan or len(konusanlar) < len(satirlar):     # etiket satırından gelen ad bu satırındır
@@ -290,6 +328,13 @@ def ses_satiri(metin):
         return None
     yinelenen = len(sozcukler) > 1 or (yari >= 2 and len(soz) % 2 == 0 and soz[:yari] == soz[yari:])
     return soz, (konusanlar.pop() if konusanlar else None), yinelenen
+
+
+def konusmaci_parcalari(metin):
+    """Birden çok konuşmacı etiketli satırı konuşmacı başına parçalara böler (（アーニャ）何でもいい / （ヨル）ガーン);
+    tek konuşmacılıysa satırın kendisi."""
+    parcalar = [p for p in re.split(r"(?=（[^（）]{1,30}）)", metin) if p.strip()]
+    return parcalar if len(parcalar) > 1 else [metin]
 
 
 def ses_latin(soz):

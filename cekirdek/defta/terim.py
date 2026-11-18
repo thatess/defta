@@ -8,17 +8,18 @@
   3. KARŞILIĞI SCRIPT BELİRLER (hedef_belirle): kullanıcının kuralları tür başına burada uygulanır; model bir
      kuralı çiğneyemez (kod adı çevrilmez, uydurma ad çevrilmez, sıradan sözcük sözlüğe girmez...).
 
-Sonuç Sozluk.girdi_ekle ile saklanır: tür, karşılık, yazım biçimleri, geçiş sayısı ve örnek satırla birlikte.
+Sonuç Sozluk.girdi_ekle ile saklanır: tür, karşılık, yazım bicimleri, geçiş sayısı ve örnek satırla birlikte.
 """
 import json
 import re
+import unicodedata
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 from . import temizlik
 from .ayar import VARSAYILAN, acik, dil_adi, hedef_kodu, unvan_sozcukleri, unvan_tablosu
 from .istem import dile_gore
-from .kaynak import EK as EK_LATIN, okunus_yazimi, ses_latin, ses_satiri
+from .kaynak import EK as EK_LATIN, konusmaci_parcalari, okunus_yazimi, ses_latin, ses_satiri
 from .model import Ret, json_coz
 from .sozluk import UNVAN as HITAP_EKI, _anahtar, _iskelet_yakinligi, ekli_ad_mi, tek_sozcuk_ad
 
@@ -55,11 +56,12 @@ EKLI_SOZ_IPUCU = ('an ordinary word with a Japanese honorific attached. If the h
                   'If the honorific adds nothing to a plain everyday word (お客さん "customer", 皆さん "everyone"), '
                   'it is "common"')
 # Karşılık isteğinde ekli sözcüğün tonu: Türkçesi bu istekten gelir.
-EKLI_KARSILIK_IPUCU = ('an ordinary word with a Japanese honorific attached, used to call or name someone or something: '
-                       'the one natural way a native speaker of TARGET language would say it every time, WITHOUT any '
-                       'honorific, in the same tone: a cute or affectionate one is the pet or diminutive form a child '
-                       'would use (クマさん -> the TARGET language word for "little bear", never the plain word for '
-                       '"bear"), a polite one for a trade or role (魚屋さん) is the plain polite word')
+EKLI_KARSILIK_IPUCU = ('an ordinary word with a Japanese honorific attached, used to call or name someone or something. '
+                       'Answer with a TARGET language word, never Japanese and never a romanization: the one a native '
+                       'speaker of TARGET language would use for it every time, WITHOUT any honorific, in the same tone: '
+                       'a cute or affectionate one is the pet or diminutive form a child would use (クマさん -> the TARGET '
+                       'language word for "little bear", never the plain word for "bear"), a polite one for a trade or '
+                       'role (魚屋さん) is the plain polite word')
 
 
 def _sinir(parca):
@@ -113,7 +115,7 @@ def _latin_adaylar(satir_metinleri, esik, bilinen_unvanlar):
         if n >= (1 if " " in parca or parca in unvanli else esik):
             sayim[parca] = n
     # Eserin kendi dünyasına ait cins adlar çoğu kez küçük harfle yazılır ama arada bir büyük harfle de geçer
-    # ("one of them Rangers" / "a ranger"): en sık yazımıyla, tekil biçimiyle aday olur.
+    # ("one of them Rangers" / "a ranger"): en sık yazımıyla, tekil bicimiyle aday olur.
     for parca in orta:
         if " " in parca or parca in sayim or len(parca) < 5 or not parca.isalpha():
             continue
@@ -121,6 +123,18 @@ def _latin_adaylar(satir_metinleri, esik, bilinen_unvanlar):
         bicimler = re.findall(r"(?<![\w'’-])(" + re.escape(kok) + r")s?(?![\w-])", tum, re.I)
         if len(bicimler) >= max(esik, 3) and kok not in SIRADAN_BUYUK:
             sayim.setdefault(Counter(bicimler).most_common(1)[0][0], len(bicimler))
+    # Tek başına bir cümle olan büyük harfli sözcük ("Strider!") seslenmedir; cümle başında atıldığı ve özensiz
+    # altyazı adları cümle içinde küçük harfle yazdığı için ("known as strider") yukarıda düşer. Tek başına en az iki
+    # kez geçer ve cümle içindeki küçük harfli hali bunun iki katını aşmazsa (What, Friend aşar) sorulur: ad mı
+    # sıradan sözcük mü, model karar verir.
+    yalniz = Counter(m.group(1) for satir in satir_metinleri for cumle in re.split(r"(?<=[.!?…])\s+", satir)
+                     for m in [re.fullmatch(r"([A-Z][a-z]{3,})[.!?…,]*", cumle.strip(" -–—\"“”"))] if m)
+    for soz, n in yalniz.items():
+        if n < 2 or soz in sayim or soz in ZAMIRLER or soz.lower() in SIRADAN_BUYUK or soz in bilinen_unvanlar:
+            continue
+        kucuk = len(re.findall(_sinir(soz.lower()), tum))
+        if kucuk <= 2 * n:
+            sayim[soz] = n + kucuk
     # Başka bir adayın içinde geçmekten öteye gitmeyen tek sözcük ("Mount Doom" içindeki "Doom") aday değildir;
     # bütün sözcükleri zaten ayrı ayrı aday olan dizi ("Frodo Baggins") de ayrıca sorulmaz.
     diziler = [p for p in sayim if " " in p]
@@ -133,7 +147,7 @@ def _latin_adaylar(satir_metinleri, esik, bilinen_unvanlar):
         if all(s in sayim and s[:1].isupper() for s in sozcukler):
             del sayim[dizi]
     cogullar = {}
-    for parca in [p for p in sayim if " " not in p]:      # çoğul biçim tekilin altında toplanır: Vardy + Vardies
+    for parca in [p for p in sayim if " " not in p]:      # çoğul bicim tekilin altında toplanır: Vardy + Vardies
         for cogul in (parca + "s", parca + "es", parca[:-1] + "ies" if parca.endswith("y") else ""):
             if cogul and cogul in sayim and cogul != parca:
                 cogullar[cogul] = parca
@@ -143,6 +157,11 @@ def _latin_adaylar(satir_metinleri, esik, bilinen_unvanlar):
     return sayim, cogullar, unvanlar, ciftler, onler
 
 
+def asil_kanji(yazim):
+    """Okunuşlu yazımın kanji kısmı: 黄昏(たそがれ) -> 黄昏."""
+    return yazim.split("(")[0]
+
+
 def _japonca_adaylar(metin):
     """Japonca kaynakta ad izi taşıyan yazımlar. aday -> (sayı, öteki yazımları) döndürür."""
     adaylar = {}
@@ -150,8 +169,14 @@ def _japonca_adaylar(metin):
         asil = f"{m.group(1)}({m.group(2)})"
         sayi, bicimler = adaylar.get(asil, (0, set()))
         adaylar[asil] = (sayi + 1, bicimler | {m.group(1), m.group(2)})
-    for asil in [a for a, (sayi, _) in adaylar.items() if sayi < 2 and re.search(r"[(][ぁ-ん]+[)]$", a)]:
-        del adaylar[asil]                               # bir kez geçen hiragana okunuş: sıradan okuma yardımı
+    # Bir kez geçen hiragana okunuş, sözcük metinde okunuşsuz da geçiyorsa yalnız okuma yardımıdır (霊幻(れいげん) ilk
+    # geçişte; sözcüğün kendisi zaten aday). Hiç başka geçmiyorsa adaydır: çoğu sıradan sözcüktür (熾烈(しれつ)) ve oyla
+    # elenir, ama anlatıcının bir kez söylediği kod adı da böyle yazılır (黄昏(たそがれ)); sözlükte olmayınca model
+    # İngilizce yayındaki çevirisini ("Twilight") yazıyordu.
+    okunussuz = OKUNUSLU.sub(" ", metin)
+    for asil in [a for a, (sayi, _) in adaylar.items() if sayi < 2 and re.search(r"[(][ぁ-ん]+[)]$", a)
+                 and asil_kanji(a) in okunussuz]:
+        del adaylar[asil]
     okunuslu = {b for _, bicimler in adaylar.values() for b in bicimler}
     for m in AYRACLI.finditer(metin):
         adaylar[m.group(0)] = (adaylar.get(m.group(0), (0, set()))[0] + 1, set())
@@ -163,7 +188,7 @@ def _japonca_adaylar(metin):
     for parca, n in sayim.items():
         if n >= 2 and parca not in okunuslu:
             adaylar.setdefault(parca, (n, set()))
-    for parca, n in etiketler.items():                  # konuşmacı etiketi: yalnızca ad biçimindekiler
+    for parca, n in etiketler.items():                  # konuşmacı etiketi: yalnızca ad bicimindekiler
         if parca not in okunuslu and (KATAKANA_AD.fullmatch(parca) or (n >= 2 and re.fullmatch(r"[一-龥々]{2,4}", parca))):
             adaylar.setdefault(parca, (n + sayim.get(parca, 0), set()))
     for parca, n in list(kanji_ad.items()) + roller.most_common(20):
@@ -229,7 +254,7 @@ def adaylari_bul(dosyalar, bilinen, esik=2, azami=320, unvanlar=None, ciftler=No
                      "ipucu": "stands directly before names: a title or rank, or simply part of the name?"}
                     for o, n in onler.items() if n >= 2 and o not in latin and o not in unvanlar]
     adaylar += [{"yazim": p, "bicimler": b, "sayi": n,
-                 "ipucu": 'the part in parentheses is how it is READ: "l" follows that reading (or the official English form, as for any item)' if b else ""}
+                 "ipucu": 'the part in parentheses is how it is READ: "l" is that reading in Latin letters (the official spelling of that same sound), never a translation of the word' if b else ""}
                 for p, (n, b) in _japonca_adaylar(metin).items()]
     adaylar += [{"yazim": p, "bicimler": b, "sayi": n, "ekli": kok, "ipucu": EKLI_SOZ_IPUCU}
                 for p, (n, b, kok) in _ekli_sozcukler(metin, max(esik, 3)).items()]
@@ -259,8 +284,8 @@ def _alanlar(dil, unvan=False, anlam=False):
 - "fictional": a word or phrase IN an invented language, quoted as such (Qapla', Dracarys, Alohomora). The NAME of a language is not fictional: it is "descriptive" and is translated (Klingon, Dothraki, Parseltongue).
 - "common": an ordinary word, interjection, sound effect or fragment that is NOT a name or term of this work; this includes everyday loanwords for things, animals and jobs (Look, Monday, ドア, バカ, ニャー, タクシー, コーヒー, ナース, ポリス, ママ). Most doubtful candidates are this.
 "l" - only when the candidate is not written in Latin letters: how it is written in Latin letters AS IT SOUNDS, because the viewers hear the original audio and must read the name they hear. When you recognise the work, use the romanised spelling of that same sound that the official release of THIS work uses, which is often not the letter-by-letter romanisation; otherwise the usual romanised spelling, and a name taken from a European language is written the way that language spells it (ケンジ -> Kenji, シャーロット -> Charlotte, ジョージ -> George). It is still the same name: a family name stays the family name, never the full name, the given name or another name of the same person. NEVER an English translation or localised name, even when the English release uses one: a character called ホシ is "Hoshi", never "Star"; 黒い牙 is "Kuroi Kiba", never "Black Fang".
-"r" - only for a "name" written with kanji: how those characters are READ in the work's own audio, in hiragana (健二 -> けんじ, 黒い牙 -> くろいきば). Give it every time.
-"e" - the ESTABLISHED {dil} form. Give it every time one exists: (1) for a work you recognise, the form its published {dil} translation uses, also when that form is a translation ([[tr|Diagon Alley -> Diagon Yolu, the Leaky Cauldron -> Çatlak Kazan, the Sorting Hat -> Seçmen Şapka, house-elf -> ev cini, Muggle -> Muggle||Diagon Alley, the Leaky Cauldron, the Sorting Hat, house-elf, Muggle]]); (2) for every real-world, historical or mythological person or place, its standard {dil} name, the same one an encyclopedia in {dil} uses ([[tr|Rome -> Roma, Hercules -> Herkül, Alexander the Great -> Büyük İskender, Athens -> Atina, Venice -> Venedik, Vienna -> Viyana||Rome, Hercules, Alexander the Great, Athens, Venice, Vienna]]). Leave "e" out only for a name that has no such form; never make one up.
+"r" - only for a "name" or "codename" written with kanji: how those characters are READ in the work's own audio, in hiragana (健二 -> けんじ, 黒い牙 -> くろいきば). Give it every time.
+"e" - the ESTABLISHED {dil} form. Give it every time one exists: (1) for a work you recognise, the form its published {dil} translation uses, also when that form is a translation ([[tr|Diagon Alley -> Diagon Yolu, the Leaky Cauldron -> Çatlak Kazan, the Sorting Hat -> Seçmen Şapka, house-elf -> ev cini, Muggle -> Muggle||Diagon Alley, the Leaky Cauldron, the Sorting Hat, house-elf, Muggle]]); (2) for every real-world, historical or mythological person or place, its standard {dil} name, the same one an encyclopedia in {dil} uses ([[tr|Rome -> Roma, Hercules -> Herkül, Alexander the Great -> Büyük İskender, Athens -> Atina, Venice -> Venedik, Vienna -> Viyana||Rome, Hercules, Alexander the Great, Athens, Venice, Vienna]]). A character of an ancient epic, myth or classical text has an established form only when that form is in everyday {dil} use, not only in scholarly translations[[tr| (Herkül, Truva, Zeus have one; Telemachus, Circe, Calypso, Antinous have none, so never "Telemakhos", "Kirke", "Kalypso")]]: otherwise the source spelling stays. Leave "e" out only for a name that has no such form; never make one up.
 "real" - true only for a real-world, historical or mythological person or place.
 "tr" - only for "descriptive", "epithet", "title" and "people" that have no established form, and for a "term" made of ordinary words of the source language (賞金稼ぎ, shadow-walker), never for an invented word (horcrux, dilithium): one natural {dil} rendering[[tr| (Keepers of Stonefall -> Stonefall Bekçileri, 団長 -> Komutan, 賞金稼ぎ -> ödül avcısı)]]. A proper name inside it stays unchanged. Lower case unless it is part of a name.
 "e" and "tr" render these same words; they are never the full name, real name, other name or family relation of whoever the item refers to (a nickname stays a nickname: "Ron" has no "e", never "Ronald Weasley").
@@ -284,7 +309,7 @@ def kesif_istemi(ayar):
     dil = dil_adi(ayar)
     return f"""You read the subtitles of one film or episode and list the names and terms that a translator into {dil} must render the same way every time and that are NOT in "found" (a script already collected those). You do NOT translate the subtitles.
 
-What the script cannot see, and you look for: names and code names written in kanji or hiragana (赤ひげ, かぐや姫), invented words and the story world's own creature or group words written in lower case (muggle, horcrux, wight, droid), the word for the special power or being the story is built around (霊力, gift, giant), offices and roles used instead of a name, recurring epithets. Only things that occur at least twice in these lines, copied exactly as the lines write them, in their shortest form. Never list ordinary words, honorifics, or anything already in "found". Usually there are fewer than 15; an empty list is a correct answer.
+What the script cannot see, and you look for: names and code names written in kanji or hiragana (赤ひげ, かぐや姫), invented words and the story world's own creature or group words written in lower case (muggle, horcrux, wight, droid), the word for the special power or being the story is built around (霊力, gift, giant), ordinary words the story uses as its own name for a group, a role or a kind of person or being and repeats in that sense, even when they look like everyday words (the "company" that sets out together, the "watchers" of an order, the "wardens" who roam its borders, "shades" for its ghosts), offices and roles used instead of a name, recurring epithets. Only things that occur at least twice in these lines, copied exactly as the lines write them, in their shortest form. Never list ordinary words, honorifics, or anything already in "found" (in any letter case: careless subtitles write names in lower case too). List the story world's own lower-case words first, then names. Usually there are fewer than 15; an empty list is a correct answer.
 
 Return ONLY this JSON object:
 {{"language": "ISO 639-1 code of the language of the lines", "work": "the title of the work if you recognise it, otherwise an empty string", "items": ["exact spelling", "exact spelling"]}}"""
@@ -310,9 +335,11 @@ def ses_adaylari(dosyalar):
         for s in dosya_satirlari:
             if s.ekran or not s.metin.strip():
                 continue
-            ses = ses_satiri(s.metin)
-            satirlar.append((s.metin, ses[0] if ses else None))
-            if ses:
+            # Birden çok konuşmacılı satırda her konuşmacının sözü ayrı bakılır: （ヨル）ガーン da tek başına bir sestir.
+            butun = ses_satiri(s.metin)
+            parcalar = [butun] if butun else [x for x in map(ses_satiri, konusmaci_parcalari(s.metin)) if x]
+            satirlar.append((s.metin, parcalar[0][0] if len(parcalar) == 1 and butun else None))
+            for ses in parcalar:
                 k = sesler.setdefault(ses[0], {"sayi": 0, "konusanlar": set(), "yinelenen": False,
                                                "ornek": s.metin.replace("\n", " / ")[:80]})
                 k["sayi"] += 1
@@ -327,7 +354,88 @@ def ses_adaylari(dosyalar):
     return sesler
 
 
+# Kod adının genel sözcüğü (Operation Strix, Project Apple): ad duyulduğu gibi kalır, genel sözcüğü karşılık isteği
+# hedef dile, o dilin söz dizimiyle çevirir ("Strix Operasyonu"); cevapta ad aynen yoksa yazım olduğu gibi kalır
+# (kullanıcının kararı, 18.11.2026: kalıp dile özgü yazılmaz, hedef dilden gelir).
+KOD_ADI_GENEL = re.compile(r"(?i)(operation|project|mission|plan|protocol|program(?:me)?|code\s*name)[\s:]+(.+)")
+KOD_ADI_IPUCU = ('the name of an operation, project or mission made of a generic word and a name: translate ONLY the '
+                 'generic word into TARGET language and put the two together in the word order and form natural in '
+                 'TARGET language; the name "NAME" stays exactly as written')
+
+
+def kod_adi_adi(latin):
+    """"Operation Strix" -> "Strix": kod adının genel sözcükten sonraki adı; kalıba uymuyorsa boş."""
+    m = KOD_ADI_GENEL.fullmatch((latin or "").strip())
+    return m.group(2).strip() if m else ""
+
+
+# Katakanayla yazılmış genel sözcük (オペレーション〈梟〉): Latin yazım onu düşürmüşse ("Strix") geri konur.
+KATAKANA_GENEL = {"オペレーション": "Operation", "プロジェクト": "Project", "ミッション": "Mission", "プラン": "Plan",
+                  "プロトコル": "Protocol", "プログラム": "Program"}
+
+
+def kod_adi_latin(yazim, latin):
+    """Kod adının genel sözcüklü Latin yazımı: kaynakta katakana genel sözcük varsa ve yazım onu taşımıyorsa eklenir."""
+    latin = (latin or "").strip()
+    genel = next((v for k, v in KATAKANA_GENEL.items() if yazim.startswith(k)), "")
+    if genel and latin and not kod_adi_adi(latin):
+        return f"{genel} {latin}"
+    return latin
+
+
+# Halk, ırk ve yaratık türü adını küçük harfle yazan diller (Türkçe "hobbit, elf, cüce, ork"; Almanca adları büyük
+# yazar, listede yok). Gerçek dünyadan bir halk ("Japon") büyük harfli kalır. Kullanıcının kararı, 18.11.2026.
+HALK_KUCUK_HARF = {"tr", "az", "en", "fr", "es", "it", "pt", "nl", "sv", "no", "nb", "da", "fi", "pl", "cs", "sk",
+                   "ro", "hu", "hr", "sr", "bs", "sl", "ru", "uk", "bg", "el", "id", "ms", "vi", "ca", "et", "lv", "lt"}
+
+
+def halk_harfi(hedef, hedef_kodu="tr"):
+    """Tek ya da çok sözcüklü kurgusal halk adının her sözcüğü küçük harfle ("Hobbit" -> "hobbit"); hedef dil
+    listede yoksa olduğu gibi."""
+    if hedef_kodu not in HALK_KUCUK_HARF or not hedef:
+        return hedef
+    kucuk = temizlik.tr_kucuk if hedef_kodu in ("tr", "az") else str.lower
+    return " ".join(kucuk(w[:1]) + w[1:] for w in hedef.split(" "))
+
+
+def okunus_adi_mi(yazim, latin, siradan=False):
+    """Kaynak okunuşu katakanayla vermiş (東国(オスタニア)) ve Latin yazım o okunuşun sesi: ad odur ("Ostania"). Sesi
+    tutmayan yazım uydurma ya da İngilizce uyarlamadır (婆(ババア) -> "Dash Baba"): okunuş adı sayılmaz."""
+    m = OKUNUS_KATAKANA.search(yazim)
+    if not m or not isinstance(latin, str) or not latin.strip():
+        return False
+    parcalar = [p for p in re.split(r"[・=＝]", re.sub(r"[()（）]", "", m.group(0))) if p]
+    if len(latin.split()) != len(parcalar):         # okunuşta olmayan sözcük eklenmiş ("Dash Baba")
+        return False
+    okunus = temizlik.kana_latin(re.sub(r"[^ァ-ヺー]", "", m.group(0))) or ""
+    if siradan and _mekanik_mi(yazim, latin):       # sıradan sözcüğün harf harf okunuşu ad değildir (婆(ババア) "Baba")
+        return False
+    return not okunus or _iskelet_yakinligi(okunus, latin) >= 0.5
+
+
+def odunc_okunus_mu(yazim, latin):
+    """Unvan ya da lakabın katakana okunuşu Avrupa dilinden ödünç bir sözcük mü (管理官(ハンドラー) -> "Handler")? Latin
+    yazım okunuşun harf harf karşılığı değilse ödünçtür ve duyulduğu gibi yazılır (kullanıcının kararı, 18.11.2026);
+    harf harf karşılığıysa Japonca sözcüktür (婆(ババア) -> "Babaa") ve çevrilir."""
+    return okunus_adi_mi(yazim, latin) and not _mekanik_mi(yazim, latin)
+
+
 def hedef_belirle(yazim, cevap, taninan, latin_zorunlu=True, hedef_kodu="tr"):
+    """Kararın türü ve hedefi; kurgusal halk adı hedef dilin yazımıyla küçük harfli (halk_harfi)."""
+    tur, hedef = _hedef_ham(yazim, cevap, taninan, latin_zorunlu, hedef_kodu)
+    if tur == "people" and hedef and cevap.get("real") is not True:
+        hedef = halk_harfi(hedef, hedef_kodu)
+    if tur == "name" and hedef and cevap.get("real") is not True:
+        hedef = duyulan_sira(yazim, hedef, [cevap])     # yerleşik biçim Batı sırasıyla gelse de duyulan sıra
+    # Çevrilmeden kalan Latin harfli uydurma terim (mithril, athelas) halk adı gibi küçük harfle yazılır (kullanıcının
+    # kararı, 18.11.2026); kısaltma (TARDIS) ve içinde büyük harf olan yazım (PolyJuice) olduğu gibi kalır.
+    if (tur == "term" and hedef and not temizlik.latin_disi(yazim) and cevap.get("real") is not True
+            and _oy_anahtari(hedef) == _oy_anahtari(yazim) and not any(k.isupper() for w in hedef.split() for k in w[1:])):
+        hedef = halk_harfi(hedef, hedef_kodu)
+    return tur, hedef
+
+
+def _hedef_ham(yazim, cevap, taninan, latin_zorunlu=True, hedef_kodu="tr"):
     """Modelin söylediği türe kullanıcının kuralını uygular. (tür, hedef) döndürür.
 
     hedef == yazim: olduğu gibi kalır.  hedef == "": sözlüğe girmez (sıradan sözcük ya da karşılığı bulunamadı).
@@ -344,7 +452,7 @@ def hedef_belirle(yazim, cevap, taninan, latin_zorunlu=True, hedef_kodu="tr"):
     yabanci = bool(temizlik.latin_disi(yazim))
     latin = tek_sozcuk_ad(yazim, latin)
     aynen = (latin if yabanci else yazim) if not (yabanci and latin_zorunlu and not latin) else ""
-    # Yerleşik biçime yalnızca eser tanındıysa ya da ad gerçek dünyadansa güvenilir; yoksa uydurmadır.
+    # Yerleşik bicime yalnızca eser tanındıysa ya da ad gerçek dünyadansa güvenilir; yoksa uydurmadır.
     guvenilir = taninan or cevap.get("real") is True
     if tur == "common":                         # sıradan sözcük sözlüğe girmez
         return tur, ""
@@ -352,13 +460,22 @@ def hedef_belirle(yazim, cevap, taninan, latin_zorunlu=True, hedef_kodu="tr"):
         return tur, "" if yabanci and latin_zorunlu else yazim
     # Kaynak okunuşunu katakanayla vermiş: ad odur (東国(オスタニア) -> Ostania). Kişiyi niteleyen türlerde (lakap, unvan)
     # okunuş yalnızca söyleniştir, karşılık olmaz: 婆(ババア) "Baba" diye yazılmaz, aşağıdaki kuralla çevrilir.
-    if OKUNUS_KATAKANA.search(yazim) and latin and tur not in ("epithet", "title"):
+    if (okunus_adi_mi(yazim, latin, bool(isinstance(cevap.get("w"), str) and cevap["w"].strip()))
+            and (tur not in ("epithet", "title") or odunc_okunus_mu(yazim, latin))):
         return tur, latin
-    if tur == "codename":                       # kod adı çevrilmez: özgün (ya da resmî İngilizce) yazımıyla kalır
+    if tur == "codename":                       # kod adı çevrilmez, duyulduğu gibi kalır; yalnız "Operation" gibi
+        if yabanci and aynen:                   # okunuşu tutmayan yazım çeviridir: okunuş yazılır (Twilight -> Tasogare)
+            duzeltilen = {"l": aynen}
+            _kod_adi_duyuldugu_gibi(duzeltilen, yazim, [cevap])
+            aynen = duzeltilen["l"]
+        aynen = kod_adi_latin(yazim, aynen) if yabanci else aynen
+        ad, karsilik = kod_adi_adi(aynen), temiz("k")   # genel sözcüğü karşılık isteği hedef dile çevirir
+        if ad and karsilik and temizlik.tr_kucuk(ad) in temizlik.tr_kucuk(karsilik):
+            return tur, karsilik
         return tur, aynen
-    if tur == "name":                           # uydurma ad çevrilmez; yalnızca yerleşik biçimi varsa o
-        # Latin dışı kaynakta ad duyulduğu gibi yazılır: "yerleşik biçim" yalnız gerçek dünyadan adda (ローマ -> Roma)
-        # kullanılır; kurgusal adın İngilizce yayındaki çevirisi ya da uyarlaması alınmaz. Yerleşik biçim adın
+    if tur == "name":                           # uydurma ad çevrilmez; yalnızca yerleşik bicimi varsa o
+        # Latin dışı kaynakta ad duyulduğu gibi yazılır: "yerleşik bicim" yalnız gerçek dünyadan adda (ローマ -> Roma)
+        # kullanılır; kurgusal adın İngilizce yayındaki çevirisi ya da uyarlaması alınmaz. Yerleşik bicim adın
         # kendisine başka sözcük ekliyorsa (soyadı -> tam ad) o da alınmaz: ad aynı ad kalır.
         if yabanci and cevap.get("real") is not True:
             yerlesik = ""
@@ -372,8 +489,6 @@ def hedef_belirle(yazim, cevap, taninan, latin_zorunlu=True, hedef_kodu="tr"):
     # Latin dışı kaynakta İngilizce yazımla ("l") aynı karşılık çeviri değildir; hedef dil İngilizceyse odur.
     if karsilik and not (yabanci and latin and hedef_kodu != "en"
                          and temizlik.tr_kucuk(karsilik) == temizlik.tr_kucuk(latin)):
-        if tur == "people" and " " not in karsilik and hedef_kodu == "tr":
-            karsilik = temizlik.tr_kucuk(karsilik[:1]) + karsilik[1:]       # ırk adı küçük harfle (buçukluk)
         return tur, karsilik
     if yabanci:
         # Karşılığı gelmeyen kanji/hiragana yazımın "l" alanı İngilizce çevirisidir (爆弾犬 -> "bomb dog"), sıradan
@@ -382,13 +497,13 @@ def hedef_belirle(yazim, cevap, taninan, latin_zorunlu=True, hedef_kodu="tr"):
         return tur, "" if re.search(r"[一-龥々ぁ-ん]", yazim) or siradan else aynen
     if _cevrilir(cevap, yazim):
         return tur, ""          # çevrilecek söz ama karşılığı gelmedi: sözlüğe girmez, çevirmen bağlama göre çevirir
-    # Çevrilmeyen Latin yazım kalır (Vardy, Dúnedain, mithril); güvenilir yerleşik biçimin yalnızca harfi kazanır:
+    # Çevrilmeyen Latin yazım kalır (Vardy, Dúnedain, mithril); güvenilir yerleşik bicimin yalnızca harfi kazanır:
     # kaynak "Hobbit" yazsa da Türkçesi "hobbit"tir.
     return tur, yerlesik if guvenilir and yerlesik and temizlik.tr_kucuk(yerlesik) == temizlik.tr_kucuk(aynen) else aynen
 
 
 def _cevrilir(cevap, yazim):
-    """Latin harfli yazım çevrilecek bir söz mü: sınıflandırma kaynaktan farklı bir biçim (halfling -> buçukluk) ya da
+    """Latin harfli yazım çevrilecek bir söz mü: sınıflandırma kaynaktan farklı bir bicim (halfling -> buçukluk) ya da
     sıradan anlam ("ring") verdi. Özel ad gibi kalan (Vardy, Dúnedain, mithril) çevrilmez."""
     bicim = next((str(cevap.get(a)).strip() for a in ("tr", "e") if str(cevap.get(a) or "").strip()), "")
     siradan = isinstance(cevap.get("w"), str) and cevap["w"].strip()
@@ -429,8 +544,28 @@ def _mekanik_mi(yazim, latin):
     """Latin yazım, kaynaktaki kananın harf harf okunuşu mu (ステラ -> "Sutera", ロイド・フォージャー -> "Roido Foja")?"""
     kana = re.sub(r"[^ぁ-んァ-ヺー]", "", yazim.split("(")[-1] if "(" in yazim else yazim)
     okunus = temizlik.kana_latin(kana) if kana else None
-    yalin = lambda m: re.sub(r"ou|oo|uu|aa|ii|ee", lambda x: x.group(0)[0], re.sub(r"[^a-z]", "", m.lower()))
+    # Uzun ünlü işareti harfin kendisidir ("Furankī" = "Furanki"): silinirse harf harf okunuş fark edilmez.
+    duz = lambda m: "".join(k for k in unicodedata.normalize("NFKD", m.lower()) if not unicodedata.combining(k))
+    yalin = lambda m: re.sub(r"ou|oo|uu|aa|ii|ee", lambda x: x.group(0)[0], re.sub(r"[^a-z]", "", duz(m)))
     return bool(okunus) and yalin(okunus) == yalin(latin)
+
+
+def _sesi_tutan_yerlesik(yazim, yerlesikler, oy_sayisi):
+    """Oyların yarısından çoğunun verdiği yerleşik bicim, kaynaktaki katakananın sesini tutuyorsa (her parça
+    kendi parçasına, ünsüz iskeletiyle) o bicim; yoksa boş. "Sylvia Sherwood" シルヴィア・シャーウッド'nın sesidir,
+    "Star" ホシ'nin değildir."""
+    if not yerlesikler or not re.fullmatch(r"[ァ-ヺー・=＝ ]+", yazim):
+        return ""
+    anahtar, kac = Counter(_oy_anahtari(d) for d in yerlesikler).most_common(1)[0]
+    if kac * 2 <= oy_sayisi:
+        return ""
+    bicim = Counter(d for d in yerlesikler if _oy_anahtari(d) == anahtar).most_common(1)[0][0]
+    kaynak = [p for p in re.split(r"[・=＝ ]+", yazim) if p]
+    hedef = bicim.split()
+    if len(kaynak) != len(hedef) or temizlik.latin_disi(bicim) or _mekanik_mi(yazim, bicim):
+        return ""
+    benzerlik = [_iskelet_yakinligi(temizlik.kana_latin(k) or "", h) for k, h in zip(kaynak, hedef)]
+    return bicim if sum(benzerlik) / len(benzerlik) >= 0.5 else ""
 
 
 def _degerler(liste, alan, yazim=""):
@@ -454,19 +589,22 @@ def _karara_bagla(gruplar, partiler):
 
 def karsilik_istemi(ayar):
     dil = dil_adi(ayar)
-    return dile_gore(f"""You render terms of one film or series into {dil}. "title_hint" names the work. Each item is a term from its subtitles, with what it refers to in this work ("m") and lines where it occurs. Give for each the one {dil} word or short phrase that names exactly what it is IN THIS WORK, as a careful professional {dil} translator of this work would write it every time; if the work has a published {dil} translation, use the form it uses. Be specific: when the work shows what the thing actually is or does, name that, not a vaguer general word (in a story where "the gifted" see the future, each of them is a seer[[tr|: "kâhin", not "yetenekli"||, not just someone gifted]]). Render the item's own words: a nickname, epithet or title stays one, never the name of whoever it refers to. When one item is built on another (a power and the people who have it, a group and its members, a craft and those who practise it), build its rendering on the other item's rendering, so that the two read as one family[[tr| ("büyü" / "büyücü", never two unrelated words)||]]. Never use a word that names a different kind of person or thing in this work (one who talks to spirits is not one who moves objects with the mind). Use what you know about the work as well as the lines, and follow an item's "hint". Write it in {dil}: {"" if hedef_kodu(ayar) == "en" else "never in English, "}never as a romanization of the original. Give the base form (singular, without case or possessive endings): the translation inflects it as each sentence needs. Lower case unless it is part of a name.
+    return dile_gore(f"""You render terms of one film or series into {dil}. "title_hint" names the work. Each item is a term from its subtitles, with what it refers to in this work ("m") and lines where it occurs. Give for each the one {dil} word or short phrase that names exactly what it is IN THIS WORK, as a careful professional {dil} translator of this work would write it every time; if the work has a published {dil} translation, use the form it uses. Be specific: when the work shows what the thing actually is or does, name that, not a vaguer general word (in a story where "the gifted" see the future, each of them is a seer[[tr|: "kâhin", not "yetenekli"||, not just someone gifted]]). Render the item's own words: a nickname, epithet or title stays one, never the name of whoever it refers to. "names" lists names that occur inside the item, with their fixed spelling: each stays exactly as given, only the rest is rendered; a word derived from one of them (an adjective or demonym, "Trojan" from "Troy") is built on its given spelling. When one item is built on another (a power and the people who have it, a group and its members, a craft and those who practise it), build its rendering on the other item's rendering, so that the two read as one family[[tr| ("büyü" / "büyücü", never two unrelated words)||]]. Never use a word that names a different kind of person or thing in this work (one who talks to spirits is not one who moves objects with the mind). Use what you know about the work as well as the lines, and follow an item's "hint". Write it in {dil}: {"" if hedef_kodu(ayar) == "en" else "never in English, "}never in the original language or script, never as a romanization of the original. Give the base form (singular, without case or possessive endings): the translation inflects it as each sentence needs. Lower case unless it is part of a name.
 Return ONLY this JSON object: {{"items": [{{"i": 1, "tr": "..."}}]}}""", hedef_kodu(ayar))
 
 
 def _karsilik_sorulacak(c, yazim):
     """Türkçesini karşılık isteğinin vereceği karar: karşılık alan bütün türler (halk adı, unvan, lakap, tanım, kavram).
-    Bu türlerin Türkçesi yalnızca bu istekten gelir; sınıflandırmanın "yerleşik biçim" ya da karşılık alanı hedef
+    Bu türlerin Türkçesi yalnızca bu istekten gelir; sınıflandırmanın "yerleşik bicim" ya da karşılık alanı hedef
     olmaz (Spy'daki "esper" oradan geçiyordu). İki istisna: okunuşu katakanayla verilmiş yazımın karşılığı
     okunuşudur (星(ステラ) -> Stella); Latin harfli yazım ancak sınıflandırma çevrilir dediyse sorulur (halfling,
     kingsfoil), özel ad gibi kalan (Dúnedain, Vardy, mithril) yazımıyla kalır."""
+    if c.get("t") == "codename":
+        return bool(kod_adi_adi(kod_adi_latin(yazim, c.get("l")) if temizlik.latin_disi(yazim) else yazim))
     if c.get("t") not in KARSILIKLI:
         return False
-    if OKUNUS_KATAKANA.search(yazim) and c.get("l") and c.get("t") not in ("epithet", "title"):
+    if (okunus_adi_mi(yazim, c.get("l"), bool(isinstance(c.get("w"), str) and c["w"].strip()))
+            and (c.get("t") not in ("epithet", "title") or odunc_okunus_mu(yazim, c.get("l")))):
         return False
     return bool(temizlik.latin_disi(yazim)) or _cevrilir(c, yazim)
 
@@ -511,8 +649,25 @@ def _karsilik_partileri(ogeler):
     return [[ogeler[n] for n in sorted(p)] for p in partiler]
 
 
+def _adlara_uyan(cevaplar, yazim, adlar):
+    """Karşılık cevaplarından terimde geçmeyen bir adı taşıyanlar atılır; terimde geçen adı aynen taşıyanlar varsa
+    yalnız onlar kalır (yoksa hepsi kalır: ad Türkçe ekle bitişmiş olabilir)."""
+    def gecer(ad, metin):
+        return re.search(r"(?<!\w)" + re.escape(temizlik.tr_kucuk(ad)) + r"(?!\w)", temizlik.tr_kucuk(metin))
+    disari = [h for y, h in adlar.items() if y not in yazim and not any(gecer(h, y2) for y2 in [yazim])]
+    kalan = [d for d in cevaplar if not any(gecer(h, d) for h in disari)]
+    ic = [h for y, h in adlar.items() if y != yazim and y in yazim]
+    tutan = [d for d in kalan if all(gecer(h, d) for h in ic)]
+    return tutan if ic and tutan else kalan
+
+
+def anlasilirlik_istemi(ayar):
+    dil = dil_adi(ayar)
+    return f"""Each item is a word or short phrase written as {dil}. For each, say whether an ordinary adult speaker of {dil} reads it as a {dil} word or an established loanword everyone understands ("ok": true), or as a foreign word, a fan or genre jargon word, or a transliteration they would not understand without explanation ("ok": false). Proper names inside a phrase (of people, places, code names) do not count: judge only the other words ("Strix Operasyonu" is fine if "Operasyonu" is). Judge only the wording, not whether it fits a story. Return ONLY this JSON object: {{"items": [{{"i": 1, "ok": true}}]}}"""
+
+
 def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bul=None, dil="", latin_zorunlu=True,
-                          okunus_gecerli=False):
+                          okunus_gecerli=False, bilinen_adlar=None, dogrula=None):
     """Karşılık alan kararların Türkçesi eserin adı, anlam notu ve en çok 6 satırla sorulur. Cevaplardan en az ikisi
     birleşmediyse yalnızca o terimler için aynı soru EK_OY kez daha sorulur ve hepsinin oyuyla karar verilir: en çok
     oyu alan (en az 2), beraberlikte önce verilen. Yine birleşmeyenin önerisi None'dır: kayda geçmez, sonraki bölümde
@@ -529,9 +684,33 @@ def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bu
         return 0, [], 0
     # Sınıflandırmanın Latin yazımı şimdi alınır: yazım isteği aynı anda "l" alanını değiştiriyor olabilir.
     latinler = [str(c.get("l") or "").strip().lower() for c, _ in sorulacak]
+    # Bilinen adlar (sözlükteki ve bu turda "ad" denenler): terimin içinde geçen ad aynen kalır (ハニー姫 -> "Prenses
+    # Honey", "Bal Prensesi" değil); terimde geçmeyen bir adı taşıyan cevap oya girmez (部長 -> "Kulüp başkanı Musashi").
+    adlar = dict(bilinen_adlar or {})
+    for k, liste in enumerate(kararlar):
+        for c in liste:
+            if (isinstance(c.get("i"), int) and 1 <= c["i"] <= len(partiler[k]) and c.get("t") == "name"
+                    and isinstance(c.get("l"), str) and c["l"].strip()):
+                # gerçek dünyadan adın hedef dildeki yerleşik biçimi (Troy -> "Troya") sözlüğe giren yazımdır
+                yerlesik = c.get("e") if c.get("real") is True and isinstance(c.get("e"), str) and c["e"].strip() else ""
+                adlar.setdefault(partiler[k][c["i"] - 1]["yazim"], (yerlesik or c["l"]).strip())
+    adlar = {y: h for y, h in adlar.items() if len(y) >= 2 and len(h) >= 3}
+
+    def turemis(ad, yazim):
+        """Adın türemiş bicimi terimde geçiyor mu (Troy -> "Trojan War"): kök adın son harfi atılmış hali."""
+        return (len(ad) >= 4 and " " not in ad and not temizlik.latin_disi(ad)
+                and any(w != ad and w.startswith(ad[:-1]) for w in re.findall(r"[A-Za-z]+", yazim)))
+    icindeki = [{y: h for y, h in adlar.items() if y != a["yazim"] and (y in a["yazim"] or turemis(y, a["yazim"]))}
+                for _, a in sorulacak]
     ogeler = [{"i": n, "s": a["yazim"], **({"m": c["m"]} if c.get("m") else {}),
                **({"hint": EKLI_KARSILIK_IPUCU.replace("TARGET language", dil or "the target language")}
                   if a.get("ekli") else {}),
+               **({"hint": KOD_ADI_IPUCU.replace("TARGET language", dil or "the target language").replace(
+                   "NAME", kod_adi_adi(kod_adi_latin(a["yazim"], c.get("l")) if temizlik.latin_disi(a["yazim"])
+                                       else a["yazim"]))}
+                  if c.get("t") == "codename" else {}),
+               **({"names": icindeki[n - 1]} if icindeki[n - 1] else {}),
+               **({"hint": COGUL_IPUCU} if c.get("t") == "people" and cogul_gibi(a["yazim"]) and not a.get("ekli") else {}),
                "lines": (ornek_bul(a["yazim"]) if ornek_bul else []) or a["ornek"]}
               for n, (c, a) in enumerate(sorulacak, 1)]
 
@@ -549,17 +728,41 @@ def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bu
             turlar = [[havuz.submit(bir, p) for p in partiler_] for _ in range(kez)]
             return [{"items": [x for g in tur for x in g.result()]} for tur in turlar]
 
+    # Hedef dilde anlaşılmayan cevap ("esper": İngilizce tür jargonu) oya girmez; ayrı cevaplar tek küçük istekle
+    # denetlenir (dogrula). Denetim yanıt vermezse hepsi geçerli sayılır.
+    reddedilen, denetlenen = set(), set()
+
+    # Kod adı ve içinde bilinen ad taşıyan terim denetlenmez: adın kendisi yabancıdır, cevap ondan elenmemeli.
+    # Lakap ve tanım da denetlenmez: yerleşik çevirileri çoğu kez uydurma birleşik sözcüktür (Strider -> "Yolgezer").
+    haric = {n for n, (c, _) in enumerate(sorulacak, 1)
+             if c.get("t") in ("codename", "epithet", "descriptive") or icindeki[n - 1]}
+    haric_yazim = {sorulacak[n - 1][1]["yazim"] for n in haric}
+
+    def denetle(yanitlar_, haric_=frozenset()):
+        if dogrula is None:
+            return
+        yeni = sorted({x["tr"].strip() for y in yanitlar_ for x in y.get("items") or []
+                       if isinstance(x, dict) and isinstance(x.get("tr"), str) and x["tr"].strip()
+                       and x.get("i") not in haric_ and _oy_anahtari(x["tr"]) not in denetlenen})
+        if yeni:
+            denetlenen.update(_oy_anahtari(d) for d in yeni)
+            reddedilen.update(_oy_anahtari(d) for d in dogrula(yeni))
+
     def gecerli(n, yanitlar, yazim, latin, hepsi=None):
         # Latin harfli kaynakta yazımın kendisi de geçerli yanıttır ("hobbit"): çevrilmeyeceğini söyler.
         latin_kaynak = not temizlik.latin_disi(yazim)
         tum = [d for d in _degerler([x for y in yanitlar for x in y.get("items") or []
                                      if isinstance(x, dict) and x.get("i") == n], "tr", yazim)
-               if not (latin_zorunlu and temizlik.latin_disi(d))]
+               if not (latin_zorunlu and temizlik.latin_disi(d))
+               and (latin_kaynak and _oy_anahtari(d) == _oy_anahtari(yazim) or _oy_anahtari(d) not in reddedilen
+                    or yazim in haric_yazim)]
+        tum = _adlara_uyan(tum, yazim, adlar)
         if hepsi is not None:
             hepsi.extend(tum)
         return [d for d in tum if latin_kaynak or okunus_gecerli or d.lower() != latin]
 
     yanitlar = sorul(ogeler, max(1, oy))
+    denetle(yanitlar, haric)
     esik = min(2, len(yanitlar))
     hepsi = [[] for _ in sorulacak]          # Latin yazımla aynı olanlar da: hepsi öyleyse terim yazımıyla kalır
     oylar = [gecerli(n, yanitlar, a["yazim"], latin, hepsi[n - 1])
@@ -567,6 +770,7 @@ def _karsiliklari_tamamla(kararlar, partiler, sor, oy, isci, baslik="", ornek_bu
     bolunen = [k for k, o in enumerate(oylar) if _kazanan(o, esik) is None] if len(yanitlar) > 1 else []
     if bolunen:
         ek = sorul([dict(ogeler[k], i=m) for m, k in enumerate(bolunen, 1)], EK_OY)
+        denetle(ek, {m for m, k in enumerate(bolunen, 1) if k + 1 in haric})
         for m, k in enumerate(bolunen, 1):
             oylar[k] += gecerli(m, ek, sorulacak[k][1]["yazim"], latinler[k], hepsi[k])
     secilen = _aile_uyumu([a["yazim"] for _, a in sorulacak], [a.get("sayi") or 0 for _, a in sorulacak],
@@ -625,7 +829,7 @@ def _kazanan(oylar, esik):
 
 def _oy_anahtari(deger):
     """Aynı cevabın yazım farkları tek oy sayılır: büyük/küçük harf, şapka, boşluk ve tire ("kral otu" / "kralotu",
-    "askerî öğrenci" / "askeri öğrenci"). Kazananın en sık yazılan biçimi alınır. Noktalı ve noktasız i de tek harf
+    "askerî öğrenci" / "askeri öğrenci"). Kazananın en sık yazılan bicimi alınır. Noktalı ve noktasız i de tek harf
     sayılır: Türkçe küçük harf kuralı başka hedef dilde "Inspector" ile "inspector"ı ayrı cevap yapardı."""
     return re.sub(r"[\s-]+", "", temizlik.tr_kucuk(deger).translate(SAPKASIZ).replace("ı", "i"))
 
@@ -635,8 +839,9 @@ def karsiliklari_uygula(oneriler):
     aynı olan (İngilizce) alınmaz. Ek oyla da birleşmeyen karar "belirsiz" işaretlenir: kayda geçmez."""
     for c, deger, latin_kaynak, ayni in oneriler:
         if deger is None:
-            # ayni: bütün cevaplar Latin yazımın kendisiydi; yazım isteği "l"yi değiştirmediyse karar budur
-            if not (ayni and str(c.get("l") or "").strip().lower() == ayni):
+            # ayni: bütün cevaplar Latin yazımın kendisiydi; yazım isteği "l"yi değiştirmediyse karar budur.
+            # Kod adı belirsiz kalmaz: karşılığı birleşmezse duyulduğu gibi yazımıyla girer.
+            if c.get("t") != "codename" and not (ayni and str(c.get("l") or "").strip().lower() == ayni):
                 c["belirsiz"] = True
         elif latin_kaynak or deger.lower() != str(c.get("l") or "").strip().lower():
             c["k"] = deger
@@ -650,6 +855,42 @@ Return ONLY this JSON object: {"items": [{"i": 1, "l": "..."}]}"""
 YAZIMLI = ("name", "codename", "term")
 
 
+def _bilesik_adlari_esitle(kararlar, partiler, sozluk):
+    """Ortası noktalı katakana tam adın (ロイド・フォージャー) parçaları sözlükte ya da bu turda ayrı ad olarak resmî
+    yazımla karara bağlandıysa tam ad o parçalardan kurulur: üç oyun üçü "Roid Fōjā" dese de parçalar "Loid" ve
+    "Forger" ise ad "Loid Forger"dır. Parçası bilinmeyen tam ad olduğu gibi kalır."""
+    bilinen = {y: g["hedef"] for y, g in sozluk.girdiler.items() if g.get("tur") == "name" and g.get("hedef")
+               and not temizlik.latin_disi(g["hedef"])}
+    for k, liste in enumerate(kararlar):
+        for c in liste:
+            if (isinstance(c.get("i"), int) and 1 <= c["i"] <= len(partiler[k]) and c.get("t") == "name"
+                    and isinstance(c.get("l"), str) and c["l"].strip() and not _mekanik_mi(partiler[k][c["i"] - 1]["yazim"],
+                                                                                         c["l"])):
+                bilinen.setdefault(partiler[k][c["i"] - 1]["yazim"], c["l"].strip().translate(MAKRONSUZ))
+    for k, liste in enumerate(kararlar):
+        for c in liste:
+            if not (isinstance(c.get("i"), int) and 1 <= c["i"] <= len(partiler[k]) and c.get("t") == "name"):
+                continue
+            yazim = partiler[k][c["i"] - 1]["yazim"]
+            parcalar = [p for p in re.split(r"[・=＝]", yazim) if p]
+            if len(parcalar) < 2 or not all(re.fullmatch(r"[ァ-ヺー]+", p) for p in parcalar):
+                continue
+            eski = str(c.get("l") or "").translate(MAKRONSUZ).split()
+            yeni = []
+            for n, parca in enumerate(parcalar):
+                eski_parca = eski[n] if len(eski) == len(parcalar) else ""
+                if parca in bilinen and (not eski_parca or _iskelet_yakinligi(temizlik.kana_latin(parca) or "",
+                                                                             eski_parca) >= 0.5):
+                    yeni.append(bilinen[parca])
+                elif eski_parca:
+                    yeni.append(eski_parca)
+                else:
+                    yeni = []
+                    break
+            if yeni and " ".join(yeni) != " ".join(eski):
+                c["l"] = " ".join(yeni)
+
+
 def _yazimlari_tamamla(kararlar, partiler, sor, oy, isci, baslik):
     """Kana içeren ad, kod adı ve terimde seçilen Latin yazım harf harf okunuşsa (ステラ -> "Sutera", 黄昏(たそがれ) ->
     "Tasogare") ya da hiç yoksa yazım ayrıca sorulur. Oyların hepsi okunuşu verdiyse oylamanın "resmî yazım üstündür"
@@ -661,8 +902,10 @@ def _yazimlari_tamamla(kararlar, partiler, sor, oy, isci, baslik):
                 continue
             yazim = partiler[k][c["i"] - 1]["yazim"]
             latin = str(c.get("l") or "").strip()
-            if (c.get("t") in YAZIMLI and not (c.get("e") and c.get("t") != "codename") and re.search(r"[ぁ-んァ-ヺ]", yazim)
+            if ((c.get("t") in YAZIMLI and not (c.get("e") and c.get("t") != "codename") and re.search(r"[ぁ-んァ-ヺ]", yazim)
+                    or c.get("t") in ("title", "epithet") and OKUNUS_KATAKANA.search(yazim))
                     and (not latin or _mekanik_mi(yazim, latin))):
+                # okunuşu katakanayla verilmiş unvanın yazımı da sorulur: ödünç sözcükse (ハンドラー) duyulduğu gibi kalır
                 eksik.append((c, partiler[k][c["i"] - 1]))
     if not eksik:
         return 0
@@ -690,20 +933,106 @@ def _ceviriyse_tanima_cevir(secilen, yazim, oylar):
     döner ve karşılığını hedef dilde karşılık isteği verir ("Pençe"); İngilizce çevirisi sözlüğe girmez. Okunuşa
     uyan yazım (鈴木 -> Suzuki) ve okunuşu verilmemiş ad olduğu gibi kalır."""
     latin = secilen.get("l")
-    if not latin or not _KANJILI.search(yazim) or "(" in yazim or "（" in yazim:
+    if latin and _KANJILI.search(yazim) and OKUNUS_KATAKANA.search(yazim) and not okunus_adi_mi(yazim, latin):
+        pass                    # okunuşu katakanayla verilmiş ad: yazım o okunuş değilse (婆(ババア) -> "Dash Baba") uyarlamadır
+    elif not latin or not _KANJILI.search(yazim) or "(" in yazim or "（" in yazim:
         return
-    okunuslar = [c["r"].strip() for c in oylar if isinstance(c.get("r"), str) and _KANA_OKUNUS.fullmatch(c["r"].strip())]
-    okunus = temizlik.kana_latin(re.sub(r"[・\s]", "", Counter(okunuslar).most_common(1)[0][0])) if okunuslar else ""
+    else:
+        okunuslar = [c["r"].strip() for c in oylar if isinstance(c.get("r"), str) and _KANA_OKUNUS.fullmatch(c["r"].strip())]
+        okunus = temizlik.kana_latin(re.sub(r"[・\s]", "", Counter(okunuslar).most_common(1)[0][0])) if okunuslar else ""
+        if not okunus or _iskelet_yakinligi(okunus, latin) >= 0.5:
+            return
+    secilen["t"] = "descriptive"
+    secilen.pop("l", None)
+    secilen.pop("e", None)
+    secilen.setdefault("m", f'a name that means "{latin}"')
+
+
+def _kod_adi_duyuldugu_gibi(secilen, yazim, oylar):
+    """Kanji ya da hiraganayla yazılmış kod adı duyulduğu gibi yazılır (kullanıcının kararı, 18.11.2026): Latin yazım
+    okunuşun sesi değilse İngilizce yayındaki çevirisidir (黄昏(たそがれ) -> "Twilight"); yerine okunuş yazılır
+    ("Tasogare"). Okunuş kaynakta parantezle verilmişse o, verilmemişse modelin okunuşu ("r") alınır."""
+    latin = secilen.get("l")
+    if (not latin or not re.search(r"[一-龥々ぁ-ん]", yazim.split("(")[0].split("（")[0])
+            or re.search(r"[(（][ァ-ヺー・]+[)）]", yazim) or kod_adi_adi(kod_adi_latin(yazim, latin))):
+        return              # okunuşu katakanayla verilmiş (梟(ストリクス)) ya da genel sözcüklü kod adı: yazımı kalır
+    m = re.search(r"[(（]([ぁ-ゖー]+)[)）]", yazim)
+    if m:
+        kana = m.group(1)
+    else:
+        okunuslar = [c["r"].strip() for c in oylar if isinstance(c.get("r"), str) and _KANA_OKUNUS.fullmatch(c["r"].strip())]
+        kana = re.sub(r"[・\s]", "", Counter(okunuslar).most_common(1)[0][0]) if okunuslar else ""
+        if kana and re.search(r"[ぁ-ん]", yazim) and not _KANJILI.search(yazim):
+            kana = yazim                # yalnız hiragana: okunuş yazımın kendisi
+    okunus = temizlik.kana_latin(kana) if kana else ""
     if okunus and _iskelet_yakinligi(okunus, latin) < 0.5:
-        secilen["t"] = "descriptive"
-        secilen.pop("l", None)
-        secilen.pop("e", None)
-        secilen.setdefault("m", f'a name that means "{latin}"')
+        secilen["l"] = okunus[:1].upper() + okunus[1:]
+
+
+def _ses_anahtari(metin):
+    """Ad sırası karşılaştırması için kaba ses anahtarı: uzun ünlü yazımları teklenir (kyouhei = Kyōhei = Kyohei)."""
+    m = re.sub(r"[^a-z]", "", metin.translate(MAKRONSUZ).lower())
+    for uzun, kisa in (("ou", "o"), ("oo", "o"), ("uu", "u"), ("aa", "a"), ("ii", "i"), ("ee", "e")):
+        m = m.replace(uzun, kisa)
+    return m
+
+
+def _ad_sirasi_duyuldugu_gibi(secilen, yazim, oylar):
+    """Kanjiyle yazılmış Japonca tam ad duyulduğu sırayla yazılır (kullanıcının kararı, 18.11.2026): önce soyadı
+    ("Kageyama Shigeo", "Kamuro Shinji"). Oylar adı Batı sırasıyla verdiyse ("Shigeo Kageyama") ve iki sözcüğün
+    ters sırası okunuşun sesiyse sıra çevrilir. Okunuş modelin "r" alanından, yoksa kaynaktaki parantezden alınır;
+    katakana Batılı adlar (ロイド・フォージャー) kendi sırasında kalır."""
+    if isinstance(secilen.get("l"), str):
+        secilen["l"] = duyulan_sira(yazim, secilen["l"], oylar)
+
+
+def duyulan_sira(yazim, latin, oylar):
+    """_ad_sirasi_duyuldugu_gibi'nin yazım üzerinde çalışan hali; yerleşik biçimden gelen hedefe de uygulanır."""
+    taban = yazim.split("(")[0].split("（")[0]
+    if len(latin.split()) != 2 or not _KANJILI.search(taban):
+        return latin
+    okunuslar = [c["r"].strip() for c in oylar if isinstance(c.get("r"), str) and _KANA_OKUNUS.fullmatch(c["r"].strip())]
+    kana = re.sub(r"[・\s]", "", Counter(okunuslar).most_common(1)[0][0]) if okunuslar else ""
+    if not kana:
+        m = re.search(r"[(（]([ぁ-ゖー]+)[)）]", yazim)
+        kana = m.group(1) if m else ""
+    okunus = _ses_anahtari(temizlik.kana_latin(kana) or "") if kana else ""
+    once, sonra = latin.split()
+    if okunus and okunus == _ses_anahtari(sonra + once) != _ses_anahtari(once + sonra):
+        return f"{sonra} {once}"
+    return latin
+
+
+def japon_ad_sirasi(sozluk):
+    """Okunuşu bilinmeyen kanjili tam ad (神室真司) iki parçası sözlükte ayrı ad olarak varsa (神室 Kamuro, 真司
+    Shinji) kaynaktaki sırayla o parçalardan yazılır. Değişenleri döndürür."""
+    adlar = {y.split("(")[0].split("（")[0]: g["hedef"] for y, g in sozluk.girdiler.items()
+             if g.get("tur") == "name" and g.get("hedef") and len(g["hedef"].split()) == 1
+             and _KANJILI.search(y) and not temizlik.latin_disi(g["hedef"])}
+    degisen = []
+    for yazim, g in list(sozluk.girdiler.items()):
+        taban = yazim.split("(")[0].split("（")[0]
+        if g.get("tur") != "name" or not g.get("hedef") or len(g["hedef"].split()) != 2 or not _KANJILI.search(taban):
+            continue
+        sirali = duyulan_sira(yazim, g["hedef"], [])          # okunuşu parantezde verilmiş tam ad
+        if sirali != g["hedef"]:
+            sozluk.girdi_yaz(yazim, hedef=sirali)
+            degisen.append(yazim)
+            continue
+        for n in range(1, len(taban)):
+            on, son = taban[:n], taban[n:]
+            if on in adlar and son in adlar and {adlar[on].lower(), adlar[son].lower()} == {w.lower() for w in g["hedef"].split()}:
+                yeni = f"{adlar[on]} {adlar[son]}"
+                if yeni != g["hedef"]:
+                    sozluk.girdi_yaz(yazim, hedef=yeni)
+                    degisen.append(yazim)
+                break
+    return degisen
 
 
 def _cogunluk(yanitlar, yazimlar=None):
     """Aynı adaylar için verilmiş birkaç yanıtı tek yanıta indirir: tür ve her alan için çoğunluğun dediği.
-    Yerleşik biçim ("e") ancak yanıtların yarısından çoğu bir yerleşik biçim verdiyse alınır."""
+    Yerleşik bicim ("e") ancak yanıtların yarısından çoğu bir yerleşik bicim verdiyse alınır."""
     oylar = {}
     for yanit in yanitlar:
         for c in yanit.get("items") or []:
@@ -719,9 +1048,21 @@ def _cogunluk(yanitlar, yazimlar=None):
                 # Oylar ayrılmışsa resmî yazım harf harf okunuşa üstün gelir ("Stella" / "Sutera")
                 resmi = [d for d in degerler if not _mekanik_mi(yazimlar[i], d)]
                 mekanik = Counter(d for d in degerler if d not in resmi)
-                if resmi and Counter(resmi).most_common(1)[0][1] >= max(mekanik.values(), default=0):
+                # Oyların çoğu yerleşik bicimi ("e") aynı sesin resmî yazımı diye verdiyse o alınır: üç oyun ikisi
+                # "Furankī Furankurin" dese de üçü "e" alanında "Franky Franklin" diyorsa ad budur. Ses tutmayan
+                # yerleşik bicim çeviridir (ホシ -> "Star"), alınmaz.
+                yerlesik = _sesi_tutan_yerlesik(yazimlar[i], _degerler(liste, "e", yazimlar[i]), len(yanitlar))
+                # Resmî yazımların çoğunluğu açıksa ("Loid", "Loid" / "Roido") yerleşik biçim onu değiştirmez.
+                en_cok = Counter(resmi).most_common(1)[0][1] if resmi else 0
+                if yerlesik and any(_oy_anahtari(d) == _oy_anahtari(yerlesik) for d in resmi):
+                    degerler = [d for d in resmi if _oy_anahtari(d) == _oy_anahtari(yerlesik)]
+                elif resmi and en_cok > max(mekanik.values(), default=0):
                     degerler = resmi
-            # yerleşik biçim ve sıradan anlam ancak yanıtların çoğu verdiyse alınır
+                elif yerlesik:
+                    degerler = [yerlesik]
+                elif resmi and en_cok >= max(mekanik.values(), default=0):
+                    degerler = resmi
+            # yerleşik bicim ve sıradan anlam ancak yanıtların çoğu verdiyse alınır
             if degerler and (alan not in ("e", "w") or len(degerler) * 2 > len(yanitlar)):
                 secilen[alan] = Counter(degerler).most_common(1)[0][0]
         if tur == "name" and yazimlar and i in yazimlar and re.fullmatch(r"[ァ-ヺー]{2,}", yazimlar[i]) and (
@@ -734,8 +1075,17 @@ def _cogunluk(yanitlar, yazimlar=None):
             uyan = [w for w in sozcukler if okunus and _iskelet_yakinligi(okunus, w) >= 0.7]
             if uyan:
                 secilen["l"] = Counter(uyan).most_common(1)[0][0].capitalize()
+        if tur == "codename" and yazimlar and i in yazimlar:
+            _kod_adi_duyuldugu_gibi(secilen, yazimlar[i], liste)
+        if (tur == "name" and yazimlar and i in yazimlar and not temizlik.latin_disi(yazimlar[i])
+                and re.search(r"[A-Z][\w'’-]*\s+(?:[a-z]+\s+)+[A-Z]", yazimlar[i])
+                and sum(1 for c in liste if c.get("real") is True) * 2 <= len(yanitlar)):
+            # Sıradan bir bağlaçla kurulan ad ("Boromir of Gondor", "Elrond of Rivendell") opak değildir: içindeki adlar
+            # kalır, gerisi çevrilir ("Gondorlu Boromir"). Gerçek kişinin adı (Leonardo da Vinci) olduğu gibi kalır.
+            secilen["t"] = tur = "descriptive"
         if tur == "name" and yazimlar and i in yazimlar:
             _ceviriyse_tanima_cevir(secilen, yazimlar[i], liste)
+            _ad_sirasi_duyuldugu_gibi(secilen, yazimlar[i], liste)
         if sum(1 for c in liste if c.get("real") is True) * 2 > len(yanitlar):
             secilen["real"] = True
         # Anlam notu serbest metindir, oylanamaz: yanıtların en az yarısı not verdiyse çoğunluğun türünü
@@ -757,7 +1107,7 @@ def _iste(model, sistem, yuk, ayar, gunluk, dosya, tur, dusunme=None):
             veri = json_coz(ham)
             if isinstance(veri, dict) and isinstance(veri.get("items") or [], list):
                 return veri
-            gunluk.hata(dosya, f"{tur} yanıtı beklenen biçimde değil (JSON nesnesi, \"items\" listesi), deneme {deneme}")
+            gunluk.hata(dosya, f"{tur} yanıtı beklenen bicimde değil (JSON nesnesi, \"items\" listesi), deneme {deneme}")
         except Ret as e:
             gunluk.hata(dosya, f"{tur} reddedildi ({e}), deneme {deneme}")
         except ValueError as e:
@@ -779,7 +1129,7 @@ def takma_ad_mi(hedef, yazim, tum_metin):
 
 def baglam_sayisi_sil(hedef, terim, ornekler):
     """Karşılığa terimin kendisinde olmayan, geçtiği cümleden gelen sayı girmişse silinir ("Cadet Corps Class" ->
-    "Harbiyeli Birliği Sınıfı", "104. Harbiyeli…" değil): sözlük her geçtiği yerde aynı biçimi dayatır, sayı ise
+    "Harbiyeli Birliği Sınıfı", "104. Harbiyeli…" değil): sözlük her geçtiği yerde aynı bicimi dayatır, sayı ise
     cümleden cümleye değişir. Terimin yazımında da olan sayı ("District 9") ya da cümlede rakamla geçmeyen sayı
     ("Seventh Squad" -> "7. Takım") kalır."""
     baglam = set(re.findall(r"\d+", " ".join(ornekler))) - set(re.findall(r"\d+", terim))
@@ -798,6 +1148,40 @@ def dil_sor(satirlar, ayar, model, gunluk, dosya):
     adim = max(1, len(metinler) // 20)
     yanit = _iste(model, DIL_ISTEMI, {"lines": metinler[adim // 2::adim][:20]}, ayar, gunluk, dosya, "dil") or {}
     return yanit["language"].strip().lower()[:8] if isinstance(yanit.get("language"), str) else ""
+
+
+def _latin_ad(sozluk, ad, metin=""):
+    """Kaynaktaki adın sözlükteki Latin yazımı (girdi ya da konuşmacı etiketi), yoksa metinde okunuşuyla yazıldığı
+    yerden okunuşu; o da yoksa boş."""
+    g = sozluk.girdiler.get(ad) or {}
+    bulunan = (g.get("hedef") if g.get("tur") in ("name", "codename", "epithet") else "") or sozluk.adlar.get(ad, "")
+    if not bulunan:                 # etikette okunuşuyla yazılmış ad (郷田(ごうだ)武蔵(むさし)): okunuşu
+        for etiket in list(sozluk.adlar) + [metin]:
+            m = re.search(re.escape(ad) + r"[(（]([ぁ-ゖー]+)[)）]", etiket)
+            if m and temizlik.kana_latin(m.group(1)):
+                okunus = temizlik.kana_latin(m.group(1))
+                return okunus[:1].upper() + okunus[1:]
+    return bulunan
+
+
+def _addan_kalip(hedef, latin_ad):
+    """"ad + unvan" teriminin karşılığından unvan kalıbı: karşılık adı da taşıyorsa ad yerine {ad} konur ("Başkan
+    Musashi" -> "Başkan {ad}", "Prenses Anya" -> "Prenses {ad}"); taşımıyorsa unvan addan önce sayılır."""
+    if latin_ad:
+        m = re.search(r"(?<!\w)" + re.escape(latin_ad) + r"(?!\w)", hedef, re.I)
+        if m:
+            kalan = (hedef[:m.start()] + "{ad}" + hedef[m.end():]).strip()
+            if kalan != "{ad}":
+                return kalan[:1].upper() + kalan[1:]
+    return hedef[:1].upper() + hedef[1:] + " {ad}"
+
+
+def _kaliptan_adi_cikar(kalip, latin_ad):
+    """Kalıp adın kendisini de taşıyorsa ("Prenses Anya {ad}": karşılık "Prenses Anya" idi) ad çıkarılır."""
+    if not latin_ad:
+        return kalip
+    temiz = " ".join(re.sub(r"(?<!\w)" + re.escape(latin_ad) + r"(?!\w)", " ", kalip, flags=re.I).split())
+    return temiz if temiz.replace("{ad}", "").strip() else kalip
 
 
 def _adla_gecen_unvanlar(sozluk, ciftler, bilinen_unvan, tum_metin):
@@ -839,7 +1223,8 @@ def _adla_gecen_unvanlar(sozluk, ciftler, bilinen_unvan, tum_metin):
         if g.get("tur") != "title" or not g.get("hedef") or ad is None or not temizlik.latin_disi(yazim):
             continue
         unvan = yazim[len(ad):]
-        kalip = g.get("kalip") or g["hedef"][:1].upper() + g["hedef"][1:] + " {ad}"
+        latin_ad = _latin_ad(sozluk, ad, tum_metin)
+        kalip = _kaliptan_adi_cikar(g.get("kalip"), latin_ad) if g.get("kalip") else _addan_kalip(g["hedef"], latin_ad)
         hedef = kalip.replace("{ad}", "").strip()
         sozluk.terimden_cikar(yazim)
         if unvan not in sozluk.girdiler:
@@ -899,15 +1284,27 @@ def _kesifleri_birlestir(yanitlar):
     return sonuc
 
 
+def _kesif_sayisi(yazim, metin):
+    """Keşfin bulduğu yazım kaynakta kaç kez geçiyor. Latin harflide büyük-küçük harf ayrılmaz ve küçük harfli tek
+    sözcüğün çoğulu da sayılır: model en kısa bicimi veriyor ("wraith"), kaynak 1 kez tekil 2 kez çoğul yazınca
+    tam eşleşme 1 sayıyor, sözcük "en az iki kez" koşulunda eleniyordu."""
+    if not yazim:
+        return 0
+    if not yazim.isascii():
+        return metin.count(yazim)
+    desen = re.escape(yazim) + (r"(?:e?s)?" if re.fullmatch(r"[a-z][a-z'-]*", yazim) else "")
+    return len(re.findall(r"(?<![\w'’-])" + desen + r"(?![\w-])", metin, re.I))
+
+
 def _kesif_yazimi(c):
-    """Keşif öğesi: düz yazım; eski biçim ({"s": ...}) de okunur."""
+    """Keşif öğesi: düz yazım; eski bicim ({"s": ...}) de okunur."""
     c = c.get("s") if isinstance(c, dict) else c
     return c.strip() if isinstance(c, str) else ""
 
 
 def ortusenleri_esitle(sozluk):
     """"Dark Lord" ve "Dark Lord Sauron" ayrı ayrı sorulur; ikincisi birincinin karşılığı + ad olarak yazılır ki aynı
-    lakap iki biçimde çıkmasın ("Karanlıklar Efendisi" / "Karanlık Lord Sauron")."""
+    lakap iki bicimde çıkmasın ("Karanlıklar Efendisi" / "Karanlık Lord Sauron")."""
     for uzun in [k for k in sozluk.terimler if " " in k and k.isascii()]:
         for kisa, hedef in list(sozluk.terimler.items()):
             kalan = uzun[len(kisa) + 1:] if uzun.startswith(kisa + " ") else ""
@@ -917,6 +1314,77 @@ def ortusenleri_esitle(sozluk):
             if sozluk.terimler[uzun] != yeni and uzun in sozluk.girdiler:
                 sozluk.girdi_yaz(uzun, hedef=yeni)
             break
+
+
+def _tekil_bicimleri(soz):
+    """Latin harfli sözcüğün olası tekilleri (İngilizce çoğul ekleri): dwarves -> dwarf/dwarfe, men -> man, ponies ->
+    pony, wraiths -> wraith."""
+    s = soz.lower()
+    aday = []
+    if s.endswith("ves"):
+        aday += [s[:-3] + "f", s[:-3] + "fe"]
+    if s.endswith("ies"):
+        aday.append(s[:-3] + "y")
+    if s.endswith("men"):
+        aday.append(s[:-3] + "man")
+    if s.endswith("es"):
+        aday.append(s[:-2])
+    if s.endswith("s") and not s.endswith("ss"):
+        aday.append(s[:-1])
+    return [a for a in aday if len(a) >= 2]
+
+
+COGUL_IPUCU = ("the item is written in the plural here: give the SINGULAR base form of its rendering, the form used for "
+               "one of them; the translation adds the plural ending itself")
+
+
+def cogul_gibi(yazim):
+    """Latin harfli tek sözcük İngilizce çoğul görünüyor mu (dwarves, elves, orcs, men)? Halk adının karşılığı tekil
+    istensin diye; "Mithrandir" gibi -s ile bitmeyen ya da "Gandalf" gibi bitmeyen yazım dokunulmaz."""
+    return (bool(re.fullmatch(r"[a-z][a-z'-]+", yazim)) and len(yazim) > 3
+            and (yazim.endswith(("ves", "ies", "men")) or (yazim.endswith("s") and not yazim.endswith(("ss", "us", "is")))))
+
+
+def cogullari_esitle(sozluk):
+    """Latin harfli kaynakta çoğul ayrı girdi olmuşsa (dwarves, wraiths) karşılığı tekilinkiyle aynı olur: çeviri çoğulu
+    kendisi yapar; yoksa aynı halk "cüce" ve "cüceler" diye iki karşılık alıyordu. Yalnız halk, kavram, tanım ve lakapta."""
+    turler = ("people", "term", "descriptive", "epithet")
+    kucuk = {k.lower(): k for k, g in sozluk.girdiler.items()
+             if g.get("tur") in turler and g.get("hedef") and not temizlik.latin_disi(k)}
+    for k, g in list(sozluk.girdiler.items()):
+        if g.get("tur") not in turler or not g.get("hedef") or temizlik.latin_disi(k):
+            continue
+        tekil = next((kucuk[t] for t in _tekil_bicimleri(k) if t in kucuk and kucuk[t] != k), None)
+        if tekil and sozluk.girdiler[tekil].get("tur") == g.get("tur") and sozluk.girdiler[tekil]["hedef"] != g["hedef"]:
+            sozluk.girdi_yaz(k, hedef=sozluk.girdiler[tekil]["hedef"])
+
+
+def ad_ekli_lakaplari_esitle(sozluk):
+    """Bilinen bir adla bir katakana ekten kurulan lakap (ロイドマン = ロイド + マン), eki aynı biçimde taşıyan başka bir ad
+    (ボンドマン -> Bondman) sözlükteyse o kalıpla kurulur: "Loidman". Esprinin kaynağı o addır; ek çevrilince ("Loid
+    Adam") bağ kopuyordu. Eki taşıyan başka ad yoksa modelin kararı kalır. Dilden bağımsızdır: Latin yazımlar
+    sözlükteki adlardan gelir. Değişenleri döndürür."""
+    adlar = {y: g["hedef"] for y, g in sozluk.girdiler.items()
+             if g.get("tur") == "name" and g.get("hedef") and re.fullmatch(r"[ァ-ヺー]{2,}", y)
+             and not temizlik.latin_disi(g["hedef"]) and " " not in g["hedef"]}
+    degisen = []
+    for yazim, g in list(sozluk.girdiler.items()):
+        if g.get("tur") not in ("epithet", "name", "descriptive") or not re.fullmatch(r"[ァ-ヺー]{4,}", yazim):
+            continue
+        for ad in sorted((a for a in adlar if yazim.startswith(a) and a != yazim), key=len, reverse=True):
+            ek = yazim[len(ad):]
+            ek_latin = (temizlik.kana_latin(ek) or "").lower()
+            if len(ek) < 2 or not ek_latin:
+                continue
+            ornek = next((h for a, h in adlar.items() if a.endswith(ek) and len(a) > len(ek) and a != yazim
+                          and h.lower().endswith(ek_latin) and len(h) > len(ek_latin)), None)
+            if ornek:
+                yeni = adlar[ad] + ornek[-len(ek_latin):]
+                if g.get("hedef") != yeni:
+                    sozluk.girdi_yaz(yazim, hedef=yeni)
+                    degisen.append(yazim)
+                break
+    return degisen
 
 
 ETIKET_OKUNUSU = re.compile(r"([一-龥々]{1,4})[(（]([ぁ-ゖー]{2,})[)）]")
@@ -985,7 +1453,9 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
             sozluk.terimden_cikar(soz)
             sozluk.girdi_yaz(soz, tur="common")
     ses_sorulacak = [soz for soz, k in sesler.items()
-                     if (k["ad_degil"] or k["yinelenen"] or k["sayi"] >= 2)
+                     # bir kez geçen kısa katakana sözcük de sorulur (ガーン): yansıma sesi çoğu kez bir kez geçer;
+                     # sıradan sözcük olduğuna (チワワ) model karar verir
+                     if (k["ad_degil"] or k["yinelenen"] or k["sayi"] >= 2 or re.fullmatch(r"[ァ-ヺー]{2,5}", soz))
                      and (sozluk.girdiler.get(soz) or {"tur": "common"}).get("tur") == "common"
                      and "ses" not in (sozluk.girdiler.get(soz) or {})] if ayar["modlar"]["ses_sozcukleri"] == "orijinal" else []
     partiler = [adaylar[i:i + PARTI] for i in range(0, len(adaylar), PARTI)]
@@ -1029,6 +1499,13 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
     def karsilik_sor(yuk):
         return _iste(model, karsilik_istemi(ayar), yuk, ayar, gunluk, ilk, "karşılık", ayar["sozluk"]["karsilik_dusunme"]) or {}
 
+    def anlasilmayanlar(sozler):
+        """Hedef dilde anlaşılmayan karşılık cevapları (esper); yanıt yoksa boş."""
+        yanit = _iste(model, anlasilirlik_istemi(ayar), {"items": [{"i": n, "s": x} for n, x in enumerate(sozler, 1)]},
+                      ayar, gunluk, ilk, "anlaşılırlık", ayar["sozluk"]["karsilik_dusunme"]) or {}
+        return [sozler[c["i"] - 1] for c in yanit.get("items") or [] if isinstance(c, dict) and c.get("ok") is False
+                and isinstance(c.get("i"), int) and 1 <= c["i"] <= len(sozler)]
+
     def yazim_sor(yuk):
         return _iste(model, yazim_istemi(ayar), yuk, ayar, gunluk, ilk, "yazım", ayar["sozluk"]["karsilik_dusunme"]) or {}
     tum_satirlar = [x.metin.replace("\n", " / ") for _, st, _ in dosyalar for x in st if x.metin.strip() and not x.ekran]
@@ -1044,9 +1521,13 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
         """Sınıflandırma oylarından karar; ardından karşılık ve yazım istekleri aynı anda gider (biri "k", öteki "l"
         alanını tamamlar). (kararlar, karşılığı sorulan, yazımı sorulan)."""
         kararlar_ = _karara_bagla(oylar_, partiler_)
+        _bilesik_adlari_esitle(kararlar_, partiler_, sozluk)
         with ThreadPoolExecutor(max_workers=2) as h:
             k = h.submit(_karsiliklari_tamamla, kararlar_, partiler_, karsilik_sor, oy, isci, baslik, ornek_bul,
-                         dil_adi(ayar), latin_zorunlu, kod == "en")
+                         dil_adi(ayar), latin_zorunlu, kod == "en",
+                         {**sozluk.adlar,
+                          **{y: g["hedef"] for y, g in sozluk.girdiler.items() if g.get("tur") == "name" and g.get("hedef")}},
+                         anlasilmayanlar)
             y = h.submit(_yazimlari_tamamla, kararlar_, partiler_, yazim_sor, oy, isci, baslik)
             (sorulan_karsilik, oneriler, ek_oylu), sorulan_yazim = k.result(), y.result()
         karsiliklari_uygula(oneriler)              # yazım isteği "l"yi değiştirmiş olabilir: ondan sonra
@@ -1064,7 +1545,7 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
             diller[ad] = yanit["language"].strip().lower()[:8]
         for c in yanit.get("items") or []:
             yazim = _kesif_yazimi(c)
-            sayi = (len(re.findall(_sinir(yazim), tum_metin)) if yazim.isascii() else tum_metin.count(yazim)) if yazim else 0
+            sayi = _kesif_sayisi(yazim, tum_metin)
             if (sayi < 2 or len(yazim) > 40 or yazim in yeni or _anahtar(yazim) in karar_verilen
                     or _anahtar(yazim) in sorulan or ekli_ad_mi(yazim)):
                 continue
@@ -1095,9 +1576,13 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
             return
         tur, hedef = hedef_belirle(yazim, cevap, taninan, latin_zorunlu, kod)
         if tur in ("name", "codename", "epithet") and takma_ad_mi(hedef, yazim, tum_metin):
-            # "yerleşik biçim" ya da karşılık diye verilen, aynı altyazıda geçen başka bir ad: takma addır
+            # "yerleşik bicim" ya da karşılık diye verilen, aynı altyazıda geçen başka bir ad: takma addır
             tur, hedef = hedef_belirle(yazim, {k: v for k, v in cevap.items() if k not in ("e", "k")}, taninan,
                                        latin_zorunlu, kod)
+        if tur in ("name", "codename") and hedef and not re.search(r"[A-ZÀ-ÞĞİŞ]", hedef) and re.search(r"[a-zß-ÿğış]", hedef):
+            # Kaynak adı küçük harfle yazmış ("mordor", "isildur": özensiz altyazı): özel ad baş harfi büyük yazılır.
+            # Yoksa ad sözlüğe "kaynaktaki gibi kalır" diye küçük harfle giriyor, çeviri de öyle yazıyordu.
+            hedef = re.sub(r"(?<![\w'’])([a-zß-ÿğış])", lambda m: m.group(1).upper(), hedef)
         if re.search(r"\d", hedef):        # sayı, karşılık isteğine giden satırların hepsinde aranır (ornekler: ilk ikisi)
             hedef = baglam_sayisi_sil(hedef, yazim + " " + str(cevap.get("l") or ""), ornekler + ornek_bul(yazim))
         ornek = ornekler[0] if ornekler else ""
@@ -1162,6 +1647,9 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
     if okunusla_duzelen:
         gunluk.uyari(ilk, "okunuşu etikette yazan adın yazımı okunuşa göre düzeltildi: " + ", ".join(okunusla_duzelen))
     ortusenleri_esitle(sozluk)
+    cogullari_esitle(sozluk)
+    ad_ekli_lakaplari_esitle(sozluk)
+    japon_ad_sirasi(sozluk)
     gunluk.uyari(ilk, f"terim sözlüğü: {len(adaylar)} aday, {len(partiler)} sınıflandırma isteği"
                       + (f", {len(kesifler)} keşif isteği ({len(yeni)} yeni yazım)" if kesifler else "")
                       + (f", {karsiliksiz} aday için karşılık isteği" if karsiliksiz else "")

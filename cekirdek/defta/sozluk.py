@@ -44,6 +44,27 @@ AKRABALIK = {"uncle", "aunt", "auntie", "aunty", "grandpa", "grandma", "granny",
 JP_EKLI = re.compile(r".*(" + "|".join(JP_HITAP_EKLERI) + ")$")
 
 
+ARTIKELLER = {"the", "a", "an"}
+
+
+def seri_adi(baslik, bilinenler=()):
+    """Sözlüğün bağlandığı seri (kullanıcının kararı, 18.11.2026: aynı serinin filmleri tek sözlüğü paylaşır).
+    "Ad: Alt başlık" ya da "Ad - Alt başlık" biçiminde başlığın ilk bölümü ("The Lord of the Rings: The Two Towers" ->
+    "The Lord of the Rings"); iki nokta bitişikse ("Re:Zero") bölünmez. Ayırıcı yoksa (klasör adlarında iki nokta
+    olamaz) sözlüğü zaten olan bir başlık bu başlığın sözcük sözcük başıysa ve artikel dışında en az iki sözcükse o
+    seri alınır ("The Lord of the Rings The Two Towers"). Yoksa başlığın kendisi."""
+    baslik = " ".join(str(baslik or "").split())
+    for ayirici in (": ", " - ", " – ", " — "):
+        if ayirici in baslik:
+            on = baslik.split(ayirici, 1)[0].strip()
+            if len(on) >= 3:
+                return on
+    sozcukler = baslik.casefold().split()
+    uyan = [b for b in bilinenler if b and b.casefold().split() == sozcukler[:len(b.split())]
+            and len(b.split()) < len(sozcukler) and len([w for w in b.casefold().split() if w not in ARTIKELLER]) >= 2]
+    return max(uyan, key=lambda b: len(b.split())) if uyan else baslik
+
+
 def tek_sozcuk_ad(yazim, latin):
     """Tek sözcüklük katakana adın Latin yazımı tek sözcüktür: model bazen tam adı veriyordu (アーニャ ->
     "Anya Forger"); terim denetimi o zaman yalnızca "Anya" geçen her satırı yeniden sorduruyordu. Okunuşa en
@@ -380,6 +401,9 @@ class Sozluk:
         """
         if yazim in self.girdiler or _anahtar(yazim) in {_anahtar(k) for k in self.terimler}:
             return
+        adsiz = " ".join(kalip.replace("{ad}", " ").split())
+        if hedef and adsiz and adsiz.casefold() == hedef.casefold():
+            hedef = adsiz                   # unvanın tek başına yazımı adla yazılışının harfini alır ("bay" / "Bay {ad}")
         self.girdiler[yazim] = {"tur": tur, "hedef": hedef, "yazimlar": list(bicimler), "karar": karar,
                                 "sayi": sayi, "ornek": ornek, **({"kalip": kalip} if kalip else {}),
                                 **({"anlam": anlam} if anlam and hedef else {}),

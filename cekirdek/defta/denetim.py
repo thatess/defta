@@ -24,14 +24,62 @@ def ardisik_mi(once, sonra):
     return -ARDISIK_BOSLUK <= sonra.bas - once.bit <= ARDISIK_BOSLUK
 
 
-KLISE = {"tr": re.compile(r"kahretsin|kahrolası|lanet olası|seni aptal|seni pislik")}
+KLISE = {"tr": re.compile(r"kahretsin|kahrolası|lanet olası|lanet olsun|seni aptal|seni pislik|"
+                         r"(?<![\wçğıöşü])lanet(?=\s+(?!et|ed|oku|ol)[\wçğıöşü])")}
+
+# Bip'li pekiştiricinin nitelik gibi çevrilmesi ("[bleep] raw" -> "bok gibi çiğ"): bip bir sözcüğün önündeyse ve
+# kaynakta benzetme ("like") yoksa çevirideki bu kalıp pekiştiriciyi niteliğe çevirmiştir.
+BIP_ONUNDE = re.compile(r"[\[(]\s*bleep(?:ed|ing)?\s*[\])]\s+[a-z]", re.I)
+NITELIK_KUFUR = {"tr": re.compile(r"bok gibi")}
+# Cümlenin ortasına, İngilizce sözcüğün yerine düşmüş küfür kalıbı ("ortalığı amına koyayım savaş alanına çeviriyorsun").
+ARAYA_KUFUR = {"tr": re.compile(r"[\wçğıöşü]\s+(amına koyayım|amk)\s+[\wçğıöşü]|[\wçğıöşü],\s*(lan),\s*[\wçğıöşü]")}
 
 # Hedef dilde yazılmamış tepki sesi (İngilizce ya da Japonca okunuşuyla kalmış): satırın tamamı ya da başı.
 YABANCI_SES = {"tr": re.compile(r"(?<![\wçğıöşü])(u+gh+|a+r+gh+|u+wa+h*|n+g+h+|hmph|oops|ouch|ga+h|e+w+|whoa+|yikes|phew)(?![\wçğıöşü])")}
 
 
+# Bip sesiyle örtülmüş küfür (kaynakta) ve hedef dilde küfür izi: kaynakta örtülü küfür varken çeviride hiç küfür
+# yoksa model onu düşürmüştür, bir kez daha sorulur.
+ORTULU_KUFUR = re.compile(r"[\[(]\s*bleep(?:ed|ing)?\s*[\])]|\b[fs]\*{2,}|\*{4,}", re.I)
+KUFUR_IZI = {"tr": re.compile(r"sik|bok|amına|piç|pislik|göt|(?<![\wçğıöşü])lan(?![\wçğıöşü])|orospu|şerefsiz|sıç|"
+                              r"anasını|kahpe|yavşak|puşt|ibne|hıyar|dangalak|salak|gerizekalı")}
+
+
+def _bip_pekistirici(kaynak):
+    """Bip bir sözcüğün önünde ve kaynakta benzetme yok: pekiştiricidir ("[bleep] raw", "the [bleep] grill")."""
+    return bool(BIP_ONUNDE.search(kaynak)) and not re.search(r"\blike\b", kaynak, re.I)
+
+
+def _duz(metin):
+    return temizlik.ETIKET.sub("", metin).replace("⟦", "").replace("⟧", "")
+
+
 class Denetimler:
     """Cevirmen'in parçası: script somut bir işaret görürse o satırı nedeniyle birlikte bir kez sorar."""
+
+    def _kalip_supheleri(self, kaynak, kucuk, kod):
+        """Çevirinin kendi sözlerinde ölçülen kalıp işaretleri: dublaj klişesi, cümle ortasına düşen küfür, bip'li
+        pekiştiricinin nitelik gibi çevrilmesi. Şüphe üzerine gelen yanıt da bunlara bakılarak kabul edilir."""
+        nedenler = []
+        klise = KLISE.get(kod)
+        m = klise.search(kucuk) if klise else None
+        if m:
+            neden = f'"{m.group(0)}" is a dubbing cliché: use what a person would really say, at the same strength'
+            if _bip_pekistirici(kaynak):
+                neden += (f'; the bleeped word is an intensifier: drop "{m.group(0)}" entirely and put the anger in a '
+                          "curse word at the very end of the sentence or in a stronger word")
+            nedenler.append(neden)
+        araya = ARAYA_KUFUR.get(kod)
+        m = araya.search(kucuk) if araya else None
+        if m:
+            nedenler.append(f'"{m.group(1) or m.group(2)}" sits in the middle of a clause where the English word stood: put it at '
+                            "the very end of the sentence, or let a stronger word or the tone carry the force")
+        nitelik = NITELIK_KUFUR.get(kod)
+        if nitelik and _bip_pekistirici(kaynak) and nitelik.search(kucuk):
+            nedenler.append("the bleeped word in the source is an intensifier in front of a word: it carries the "
+                            "speaker's anger, not a quality of the thing; put the force in a curse word, the tone or a "
+                            "stronger word and translate the rest in full")
+        return nedenler
 
     def _supheler(self, idler, kabul):
         """index -> modele sorulacak kısa neden. Yalnızca kesin ölçülebilen işaretlere bakar."""
@@ -40,22 +88,26 @@ class Denetimler:
         def ekle(i, neden):                  # bir satırın birden çok işareti varsa hepsi birlikte sorulur
             supheli[i] = f"{supheli[i]}; also {neden}" if i in supheli else neden
 
-        def duz(i):
-            return temizlik.ETIKET.sub("", kabul[i]).replace("⟦", "").replace("⟧", "")
-
         for i in idler:
-            kaynak, ceviri = self._kaynak(i), duz(i)
+            kaynak, ceviri = self._kaynak(i), _duz(kabul[i])
             kucuk = temizlik.tr_kucuk(ceviri)
-            # dublaj klişesi (kaynak dil ne olursa olsun)
-            klise = KLISE.get(kod)
-            m = klise.search(kucuk) if klise else None
-            if m:
-                ekle(i, f'"{m.group(0)}" is a dubbing cliché: use what a person would really say, at the same strength')
+            for neden in self._kalip_supheleri(kaynak, kucuk, kod):
+                ekle(i, neden)
             ses = YABANCI_SES.get(kod)
             m = ses.search(kucuk) if ses else None
             if m:
                 ekle(i, f'"{m.group(0)}" is not how {dil_adi(self.ayar)} speakers write this sound: write the sound '
                         f"in its {dil_adi(self.ayar)} spelling")
+            kufur = KUFUR_IZI.get(kod)
+            if (kufur and ORTULU_KUFUR.search(kaynak) and ORTULU_KUFUR.sub("", temizlik.ETIKET.sub("", kaynak)).strip(" .,!?-–—\n")
+                    and ceviri.strip() and not kufur.search(kucuk)):
+                if _bip_pekistirici(kaynak):
+                    ekle(i, "the source has a bleeped intensifier in front of a word and the translation lost its "
+                            "force: put the anger in a curse word at the very end of the sentence or in a stronger "
+                            "word, never as a quality of the thing (not 'like shit'), and translate the rest in full")
+                else:
+                    ekle(i, "the source has a bleeped swear word and the translation has none: render it as the "
+                            f"{dil_adi(self.ayar)} swear word of that kind at that strength; never drop it")
             if temizlik.latin_disi(kaynak):
                 continue
             # eksik içerik şüphesi: çeviri kaynağa göre çok kısa. Çince, Japonca, Korece çeviride bakılmaz: orada bir
@@ -135,7 +187,7 @@ class Denetimler:
         supheli = self._supheler(idler, kabul)
         if not supheli:
             return
-        kalan = sorted(supheli)
+        kalan, kod = sorted(supheli), hedef_kodu(self.ayar)
         yuk = self._yuk(kalan, {i: (kabul[i], supheli[i]) for i in kalan})
         try:
             ham = self.model.iste(self.sistem, yuk)
@@ -151,6 +203,11 @@ class Denetimler:
             if i not in gecerli:
                 continue
             if _yalin(sonuc[i]) == _yalin(kabul[i]):
+                continue
+            yeni_kalip = self._kalip_supheleri(self._kaynak(i), temizlik.tr_kucuk(_duz(sonuc[i])), kod)
+            if yeni_kalip:                  # yanıt düzeltirken yeni bir kalıp hatası getirdi: önceki çeviri kalır
+                self.gunluk.uyari(self.etiket, f"satır {i + 1}: şüphe üzerine gelen yanıt kullanılmadı "
+                                               f"({yeni_kalip[0][:90]}): {sonuc[i]!r}")
                 continue
             self.gunluk.uyari(self.etiket, f"satır {i + 1}: şüphe üzerine düzeltildi ({supheli[i][:90]}): "
                                            f"{kabul[i]!r} -> {sonuc[i]!r}")
