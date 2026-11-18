@@ -143,10 +143,23 @@ def cumle_suruyor_mu(satirlar, i):
     return not cumle_sonu_mu(metin) and yakin
 
 
+def buyuk_harf_duzeni(satirlar):
+    """Dosya cümle ortasında da her altyazıya büyük harfle başlıyor mu (bazı TV altyazıları: "And it's no secret" /
+    "That over the past few years,")? Öyleyse büyük harf dize işareti değildir: cümle yine birleştirilir; dize sanılınca
+    parçalar ayrı çevriliyor, anlam kırılıyordu (Kitchen Nightmares, gerçek test F)."""
+    sayi = buyuk = 0
+    for once, sonra in zip(satirlar, satirlar[1:]):
+        a, b = temizlik.ETIKET.sub("", once.metin).strip(), temizlik.ETIKET.sub("", sonra.metin).lstrip(" \"“'‘-–")
+        if a and b and b[:1].isalpha() and not cumle_sonu_mu(a) and not sarki_mi(a) and not temizlik.latin_disi(a):
+            sayi += 1
+            buyuk += b[:1].isupper()
+    return sayi >= 60 and buyuk >= 0.9 * sayi
+
+
 def dize_mi(satirlar, grup):
     """Şarkı ya da şiir dizeleri mi? Noktasız biten ama her biri büyük harfle başlayan üç ve daha çok altyazı
     tek cümle değil, alt alta dizelerdir (♪ işareti olmasa da): birleştirilip yeniden bölünmez."""
-    if len(grup) < 3:
+    if len(grup) < 3 or buyuk_harf_duzeni(satirlar):
         return False
     return all(temizlik.ETIKET.sub("", satirlar[j].metin).lstrip(" \"“'‘")[:1].isupper() for j in grup[1:])
 

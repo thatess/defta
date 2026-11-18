@@ -133,6 +133,7 @@ SEKMELER = [
         ]),
     ]),
     ("bakim", M.SEKME_BAKIM, [
+        (M.GRUP_SOZLUK, [eylem("sozluk_duzelt", M.AYAR_SOZLUK_DUZELT)]),
         (M.GRUP_TEMIZLIK, [eylem("tumunu_temizle", M.AYAR_TUMUNU_TEMIZLE)]),
         (M.GRUP_AYRI_SIL, [eylem("sil_ceviri", M.AYAR_SIL_CEVIRI), eylem("sil_sozluk", M.AYAR_SIL_SOZLUK),
                            eylem("sil_yarim", M.AYAR_SIL_YARIM), eylem("sil_indirilen", M.AYAR_SIL_INDIRILEN),

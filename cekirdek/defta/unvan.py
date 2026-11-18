@@ -37,6 +37,13 @@ class UnvanDenetimi:
             beklenen = kalip.replace("{ad}", hedef_ad)
             if temizlik.tr_kucuk(beklenen) in temizlik.tr_kucuk(duz):
                 continue
+            # "Princess Sibylla of Jerusalem" -> "Kudüs Prensesi Sibylla": "of" ile gelen yer adı unvanı tamlamaya
+            # çevirir (Türkçede iyelik ekiyle), bu da kayıttaki biçimdir.
+            if (kalip.endswith(" {ad}") and re.match(r"\s+of\s", kaynak[m.end():])
+                    and re.search(r"(?<![\w-])" + re.escape(temizlik.tr_kucuk(kalip[:-len(" {ad}")]))
+                                  + r"s?[ıiuü]\s+" + re.escape(temizlik.tr_kucuk(hedef_ad)) + r"(?![\w-])",
+                                  temizlik.tr_kucuk(duz))):
+                continue
             onarilmis = self._unvani_duzelt(sonuc[i], kalip, hedef_ad) if self.unvan_duzelt else None
             if onarilmis is None:
                 return f'the source says "{m.group(0)}": write it as "{beklenen}", in exactly this form'

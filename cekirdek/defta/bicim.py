@@ -58,7 +58,8 @@ def _ass_zaman(metin):
 def _ass_metin(metin, stil_italik):
     """(metin, üstte mi, ekran yazısı mı, karaoke mi). Kodlar {..} içindedir: italik <i> etiketine çevrilir,
     konum kodu (\\pos, \\move) satırı ekran yazısı yapar, çizim kipindeki (\\p1) vektör komutları atılır."""
-    cikti, durum = [], {"italik": False, "ust": False, "ekran": False, "kara": False, "cizim": False}
+    cikti, durum = [], {"italik": False, "ust": False, "ekran": False, "kara": False, "cizim": False,
+                        "konum": None, "kucuk": False}
 
     def italik(yeni):
         if yeni != durum["italik"]:
@@ -81,6 +82,11 @@ def _ass_metin(metin, stil_italik):
                 durum["ust"] = True
             elif re.match(r"(pos|move)\s*\(", kod):
                 durum["ekran"] = True
+                sayilar = re.findall(r"-?\d+(?:\.\d+)?", kod)
+                if len(sayilar) >= 2 and durum["konum"] is None:
+                    durum["konum"] = (float(sayilar[1]), float(sayilar[0]))      # (y, x): satır sırası için
+            elif m.start() == 0 and re.fullmatch(r"fscy\s*\d+(?:\.\d+)?", kod) and float(kod[4:].strip()) <= 60:
+                durum["kucuk"] = True                                        # yarım boy yazı: okunuş (furigana)
             elif re.fullmatch(r"p\d+", kod):
                 durum["cizim"] = kod != "p0"
             elif re.match(r"[kK][fo]?\d", kod):
@@ -91,7 +97,40 @@ def _ass_metin(metin, stil_italik):
     yazi = "".join(cikti).replace("\\N", "\n").replace("\\n", " ").replace("\\h", " ")
     yazi = re.sub(r"<i>(\s*)</i>", r"\1", yazi)
     yazi = "\n".join(x.strip() for x in yazi.split("\n") if x.strip())
+    _ass_metin.son = (durum["konum"], durum["kucuk"])                 # TV altyazısı düzeni için (_tv_duzeni)
     return yazi, durum["ust"], durum["ekran"], durum["kara"]
+
+
+_KANA_YALNIZ = re.compile(r"[ぁ-ゖァ-ヺー・…\s]+")
+
+
+def _tv_duzeni(kayitlar):
+    """Japon TV yayınından dönüştürülmüş ASS (ARIB): her satır ayrı konumlu bir olaydır, okunuşlar (furigana) yarım
+    boy ayrı olaylardır. Konum burada ekran yazısı demek değildir. Okunuşlar atılır, aynı anda duran satırlar
+    yukarıdan aşağı tek altyazıda birleşir; yoksa "さんた", "はたち" gibi okunuşlar ayrı replik diye çevriliyor,
+    sözlük adımı bütün satırları ekran yazısı sayıp boş kalıyordu (Dandadan, Vinland Saga, gerçek test K)."""
+    konusma = [k for k in kayitlar if not k["sarki"]]
+    konumlu = [k for k in konusma if k.get("konum") is not None]
+    japonca = sum(1 for k in konusma if re.search(r"[ぁ-ゖァ-ヺ一-龥]", k["metin"]))
+    if len(konusma) < 20 or len(konumlu) < 0.8 * len(konusma) or japonca < 0.5 * len(konusma):
+        return kayitlar
+    kalan = [k for k in kayitlar if not (k.get("kucuk") and _KANA_YALNIZ.fullmatch(temizlik.ETIKET.sub("", k["metin"])))]
+    gruplar, sonuc = {}, []
+    for k in kalan:
+        if k["sarki"] or k.get("yazi_stili"):
+            sonuc.append(k)
+            continue
+        anahtar = (k["bas"], k["bit"])
+        if anahtar not in gruplar:
+            gruplar[anahtar] = dict(k, ekran=False, parcalar=[])
+            sonuc.append(gruplar[anahtar])
+        gruplar[anahtar]["parcalar"].append(k)
+    for k in sonuc:
+        if "parcalar" in k:
+            sirali = sorted(k.pop("parcalar"), key=lambda x: x.get("konum") or (0, 0))
+            k["metin"] = "\n".join(x["metin"] for x in sirali)
+            k["ust"] = k["stil_ust"] = False
+    return sonuc
 
 
 def _ass(icerik, girdi, sarki_modu):
@@ -131,13 +170,17 @@ def _ass(icerik, girdi, sarki_modu):
                 stil = d.get("style", "").strip().lstrip("*")
                 stil_italik, stil_ust = stiller.get(stil, (False, False))
                 metin, ust, ekran, kara = _ass_metin(d.get("text", ""), stil_italik)
+                konum, kucuk = _ass_metin.son
                 if bas is None or bit is None or bit <= bas or not temizlik.ETIKET.sub("", metin).strip():
                     continue
                 sarki = bool(girdi["ass_sarki_stili"] and (tur == "comment" or kara or SARKI_STILI.search(stil)))
-                ekran = bool(ekran or (girdi["ass_yazi_stili"] and YAZI_STILI.search(stil))) and not sarki
+                yazi_stili = bool(girdi["ass_yazi_stili"] and YAZI_STILI.search(stil))
+                ekran = bool(ekran or yazi_stili) and not sarki
                 kayitlar.append({"bas": bas, "bit": bit, "metin": metin, "ust": ust and not ekran,
-                                 "stil_ust": stil_ust and not ekran, "ekran": ekran, "sarki": sarki, "stil": stil, "ref": ""})
+                                 "stil_ust": stil_ust and not ekran, "ekran": ekran, "sarki": sarki, "stil": stil, "ref": "",
+                                 "konum": konum, "kucuk": kucuk, "yazi_stili": yazi_stili})
     kayitlar.sort(key=lambda k: k["bas"])                            # sıralama kararlıdır: eşit zamanda dosya sırası
+    kayitlar = _tv_duzeni(kayitlar)
     kayitlar = _cift_dil(_sarkiyi_teklestir(kayitlar, sarki_modu), girdi["cift_dil"])
     satirlar, son = [], {}                                           # son: metin -> o metinle yazılmış son satır
     for k in kayitlar:

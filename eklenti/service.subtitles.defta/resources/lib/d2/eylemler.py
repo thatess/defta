@@ -295,6 +295,81 @@ def fabrika():
     kodi.bildir(metin.al(metin.AYAR_FABRIKA), metin.al(metin.B_SILINDI))
 
 
+_TUR_ADI = {"name": metin.TUR_AD, "descriptive": metin.TUR_TANIM, "codename": metin.TUR_KOD_ADI,
+            "epithet": metin.TUR_LAKAP, "title": metin.TUR_UNVAN, "people": metin.TUR_HALK, "term": metin.TUR_TERIM,
+            "fictional": metin.TUR_KURGU, "sound": metin.TUR_SES}
+
+
+def sozluk_duzelt():
+    """Sözlüğü göster ve düzelt: yapım seçilir, kararlar sık geçenden aza listelenir; seçilen girdinin karşılığı
+    değiştirilir, kaynaktaki gibi bırakılır ya da sözlükten çıkarılır. Değişen girdi "elle" işaretlenir: sözlüğün
+    tutarlılık geçişleri ona dokunmaz, o sırada süren bir çeviri de kaydederken onu ezmez (Sozluk.kaydet)."""
+    from defta.sozluk import Sozluk
+    klasor = _durum().yol("sozlukler")
+    try:
+        adlar = sorted(a for a in os.listdir(klasor) if a.endswith(".json"))
+    except OSError:
+        adlar = []
+    sozlukler = [(os.path.join(klasor, a), Sozluk(os.path.join(klasor, a))) for a in adlar]
+    sozlukler = [(y, s) for y, s in sozlukler if _gorunen_girdiler(s)]
+    if not sozlukler:
+        kodi.goster(metin.al(metin.AYAR_SOZLUK_DUZELT), metin.al(metin.P_SOZLUK_YOK))
+        return
+    while True:
+        sec = kodi.secim(metin.al(metin.P_SOZLUK_SEC), [
+            metin.al(metin.P_SOZLUK_BASLIK, baslik=s.baslik or os.path.basename(y)[:-5], sayi=len(_gorunen_girdiler(s)))
+            for y, s in sozlukler])
+        if sec < 0:
+            return
+        _sozlugu_duzelt(sozlukler[sec][1])
+
+
+def _gorunen_girdiler(sozluk):
+    """Çeviride kullanılan kararlar: sık geçenden aza (aynı sayıda kaynak yazıma göre)."""
+    return sorted(((k, g) for k, g in sozluk.girdiler.items() if g.get("hedef") and g.get("tur") in _TUR_ADI),
+                  key=lambda x: (-(x[1].get("sayi") or 0), x[0]))
+
+
+def _sozlugu_duzelt(sozluk):
+    while True:
+        girdiler = _gorunen_girdiler(sozluk)
+        satirlar = [("• " if g.get("karar") == "elle" else "") + f"{k} → {g['hedef']}  [{metin.al(_TUR_ADI[g['tur']])}]"
+                    for k, g in girdiler]
+        sec = kodi.secim(metin.al(metin.P_SOZLUK_BASLIK, baslik=sozluk.baslik or "", sayi=len(girdiler)), satirlar)
+        if sec < 0:
+            return
+        yazim, girdi = girdiler[sec]
+        islemler = [metin.P_KARSILIGI_DEGISTIR]
+        if not any(ord(k) > 0x24F for k in yazim) and girdi["hedef"] != yazim:
+            islemler.append(metin.P_KAYNAKTAKI_GIBI)          # Latin harfli kaynak: yazımıyla kalabilir
+        islemler.append(metin.P_SOZLUKTEN_CIKAR)
+        islem = kodi.secim(f"{yazim} → {girdi['hedef']}", [metin.al(x) for x in islemler])
+        if islem < 0:
+            continue
+        alanlar = {}
+        if islemler[islem] == metin.P_KARSILIGI_DEGISTIR:
+            yeni = kodi.yazi_sor(metin.al(metin.P_YENI_KARSILIK) + f" ({yazim})", girdi["hedef"])
+            if yeni is None or not yeni.strip() or yeni.strip() == girdi["hedef"]:
+                continue
+            alanlar["hedef"] = yeni.strip()
+            if girdi.get("tur") == "title" and girdi.get("kalip"):
+                kalip = kodi.yazi_sor(metin.al(metin.P_UNVAN_KALIBI, ad="{ad}"), girdi["kalip"])
+                if kalip and kalip.count("{ad}") == 1:
+                    alanlar["kalip"] = " ".join(kalip.split())
+        elif islemler[islem] == metin.P_KAYNAKTAKI_GIBI:
+            alanlar["hedef"] = yazim
+        else:
+            alanlar["hedef"] = ""
+            alanlar.update(anlam=None, siradan=None)
+        alanlar = {a: d for a, d in alanlar.items() if d is not None}
+        sozluk.girdi_yaz(yazim, karar="elle", **alanlar)
+        if "anlam" in girdi and alanlar.get("hedef") == "":
+            sozluk.girdiler[yazim].pop("anlam", None)
+            sozluk.girdiler[yazim].pop("siradan", None)
+        sozluk.kaydet()
+        kodi.bildir(metin.al(metin.B_SOZLUK_KAYDEDILDI), metin.al(metin.B_SOZLUK_SONRAKI))
+
+
 def _dosya_islevleri():
     def kopyala(kaynak, hedef):
         return bool(xbmcvfs.copy(kaynak, hedef))
@@ -363,7 +438,7 @@ def esleme_simdi():
 EYLEMLER = {
     "anahtar_yukle": anahtar_yukle, "baglanti_testi": lambda: testi_goster(), "tumunu_temizle": tumunu_temizle,
     "fabrika": fabrika, "disa_ceviri": lambda: disa("ceviri"), "disa_hata": lambda: disa("hata"),
-    "esleme_simdi": esleme_simdi,
+    "esleme_simdi": esleme_simdi, "sozluk_duzelt": sozluk_duzelt,
 }
 for _kalem, _ad in (("ceviriler", "sil_ceviri"), ("sozlukler", "sil_sozluk"), ("yarim", "sil_yarim"),
                     ("indirilen", "sil_indirilen"), ("kayitlar", "sil_kayit"), ("gecici", "sil_gecici"),

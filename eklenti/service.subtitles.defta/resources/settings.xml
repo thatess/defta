@@ -564,7 +564,15 @@
       </group>
     </category>
     <category id="bakim" label="30005" help="">
-      <group id="1" label="30030">
+      <group id="1" label="30710">
+        <setting id="sozluk_duzelt" type="action" label="30711" help="">
+          <level>0</level>
+          <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sozluk_duzelt)</data>
+          <constraints><allowempty>true</allowempty></constraints>
+          <control type="button" format="action"></control>
+        </setting>
+      </group>
+      <group id="2" label="30030">
         <setting id="tumunu_temizle" type="action" label="30160" help="">
           <level>0</level>
           <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,tumunu_temizle)</data>
@@ -572,7 +580,7 @@
           <control type="button" format="action"></control>
         </setting>
       </group>
-      <group id="2" label="30019">
+      <group id="3" label="30019">
         <setting id="sil_ceviri" type="action" label="30161" help="">
           <level>0</level>
           <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,sil_ceviri)</data>
@@ -622,7 +630,7 @@
           <control type="button" format="action"></control>
         </setting>
       </group>
-      <group id="3" label="30022">
+      <group id="4" label="30022">
         <setting id="fabrika" type="action" label="30180" help="">
           <level>0</level>
           <data>RunScript(special://home/addons/service.subtitles.defta/ayar_eylemi.py,fabrika)</data>

@@ -245,6 +245,28 @@ TABLO = [
     (30707, "N_ESLEME", "Anime eşlemesi"),
     (30708, "N_OZET", "{cevir} çeviri, {sozluk} sözlük · {mb} MB"),
     (30709, "N_ADET_MB", "{sayi} dosya · {mb} MB"),
+    # Sözlüğü göster ve düzelt (1.0.9)
+    (30710, "GRUP_SOZLUK", "Sözlük"),
+    (30711, "AYAR_SOZLUK_DUZELT", "Sözlüğü göster ve düzelt"),
+    (30712, "P_SOZLUK_SEC", "Hangi yapımın sözlüğü?"),
+    (30713, "P_SOZLUK_YOK", "Henüz sözlük yok: ilk çeviriden sonra burada görünür."),
+    (30714, "P_SOZLUK_BASLIK", "{baslik} · {sayi} karar"),
+    (30715, "P_KARSILIGI_DEGISTIR", "Karşılığı değiştir"),
+    (30716, "P_KAYNAKTAKI_GIBI", "Kaynaktaki gibi kalsın"),
+    (30717, "P_SOZLUKTEN_CIKAR", "Sözlükten çıkar (her yerde bağlama göre çevrilir)"),
+    (30718, "P_YENI_KARSILIK", "Yeni karşılık"),
+    (30719, "P_UNVAN_KALIBI", "Adla birlikte yazılışı (ad yerine {ad} yazın)"),
+    (30720, "B_SOZLUK_KAYDEDILDI", "Sözlük kaydedildi"),
+    (30721, "B_SOZLUK_SONRAKI", "Değişiklik bundan sonraki çevirilerde geçerli"),
+    (30722, "TUR_AD", "ad"),
+    (30723, "TUR_TANIM", "tanım"),
+    (30724, "TUR_KOD_ADI", "kod adı"),
+    (30725, "TUR_LAKAP", "lakap"),
+    (30726, "TUR_UNVAN", "unvan"),
+    (30727, "TUR_HALK", "halk"),
+    (30728, "TUR_TERIM", "terim"),
+    (30729, "TUR_KURGU", "uydurma dil"),
+    (30730, "TUR_SES", "ses"),
 ]
 
 _YAZI = {}

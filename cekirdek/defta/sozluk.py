@@ -1,8 +1,10 @@
 """Dizi başına kalıcı sözlük: terim girdileri, hitap tablosu, karakter adları ve dosya başına bilgiler.
 
 Her bilgi dosyada tek yerde durur. Bir sözcüğün karşılığı yalnızca "girdiler"dedir; çeviride kullanılan üç liste
-(terimler, korunacak, degismez) ondan türetilir ve dosyaya yazılmaz. Script yalnızca yeni girdi ekler; var olan
-kararı değiştirmez. Elle düzeltmek isteyen "girdiler"deki "hedef"i (ve varsa "anlam"ı) değiştirir.
+(terimler, korunacak, degismez) ondan türetilir ve dosyaya yazılmaz. Script yeni girdi ekler; var olan kararı
+yalnızca tutarlılık geçişleri değiştirir (çoğul = tekil, ortuşen lakap, ad ekli lakap, Japon ad sırası, etiketteki
+okunuş: terim.py) ve bunlar "karar": "elle" olan girdiye dokunmaz. Elle düzeltmek isteyen "girdiler"deki "hedef"i
+(ve varsa "anlam"ı) değiştirir ve "karar"ı "elle" yapar.
 
 Dosyanın bölümleri:
   baslik       yapımın adı
@@ -78,7 +80,12 @@ def tek_sozcuk_ad(yazim, latin):
 
 
 def _iskelet_yakinligi(okunus, yazim):
-    iskelet = lambda m: re.sub(r"[aeiouy]", "", m.lower().replace("l", "r"))      # Japonca okunuşta r = l
+    # Japonca okunuşta r = l; İngilizce yazımın aynı sesleri: qu = ku, c (e/i/y önünde) = s, c = k, x = ks, sh = s
+    # (クインシー "Kuinshii" ile "Quincy" aynı ad: eskiden benzemez çıkıyor, okunuş adı tanınmıyordu)
+    def iskelet(m):
+        m = re.sub(r"qu", "k", m.lower().replace("l", "r"))
+        m = re.sub(r"c(?=[eiy])", "s", m).replace("c", "k").replace("x", "ks").replace("sh", "s")
+        return re.sub(r"[aeiouy]", "", m)
     return SequenceMatcher(None, iskelet(okunus), iskelet(yazim)).ratio()
 
 
@@ -438,6 +445,18 @@ class Sozluk:
 
     def kaydet(self):
         os.makedirs(os.path.dirname(self.yol) or ".", exist_ok=True)
+        # Bu nesne açıkken kullanıcı sözlüğü elle düzeltmiş olabilir (Kodi: "Sözlüğü göster ve düzelt"): diskteki
+        # "elle" kararlar korunur; yoksa o sırada süren bir çeviri kaydederken düzeltmeyi ezerdi.
+        try:
+            with open(self.yol, encoding="utf-8-sig") as f:
+                diskteki = (json.load(f) or {}).get("girdiler") or {}
+        except (OSError, ValueError, AttributeError):
+            diskteki = {}
+        for yazim, g in diskteki.items():
+            if (isinstance(g, dict) and g.get("karar") == "elle" and self.girdiler.get(yazim) != g
+                    and (self.girdiler.get(yazim) or {}).get("karar") != "elle"):
+                self.girdiler[yazim] = g
+                self._kirli = True
         dosyalar = {}
         for ad in dict.fromkeys(self.analiz_edilen + list(self.dil) + list(self.sahneler) + list(self.kurgu)):
             bilgi = {alan: kaynak[ad] for alan, kaynak in (("dil", self.dil), ("sahneler", self.sahneler),
@@ -481,6 +500,11 @@ class Sozluk:
         """Kaynakta geçen, kişi adı olduğu bilinen yazımlar: karşılığı bir karakter adı olan terimler."""
         return {k for k, v in self.terimler.items() if v in self.karakterler}
 
+    def kurulmus(self):
+        """Sözlük daha önceki bölümlerle kurulmuş mu (en az bir dosya incelendi, en az 20 karar var)? Kurulmuş
+        sözlükte sözlük adımının istekleri bir oy az sorulur: yeni adaylar azdır, adlar ve hitap zaten bellidir."""
+        return bool(self.analiz_edilen) and len(self.girdiler) >= 20
+
     def karar_verilenler(self):
         """Hakkında karar verilmiş tüm kaynak sözcükler (karşılaştırma anahtarı olarak)."""
         yazimlar = [y for k, g in self.girdiler.items() for y in [k] + list(g.get("yazimlar") or [])]
@@ -516,7 +540,7 @@ class Sozluk:
         if sahneler:
             self.sahneler[dosya] = sahneler
         for k in analiz.get("characters") or []:
-            if not isinstance(k, dict) or len(self.karakterler) >= 40:
+            if not isinstance(k, dict) or len(self.karakterler) >= 80:      # seri sözlüğü birkaç filmi taşır
                 continue
             ad, notu = str(k.get("name") or "").strip(), str(k.get("note") or "").strip()
             yazim = str(k.get("source") or "").strip()

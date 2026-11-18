@@ -103,6 +103,10 @@ def _bosluk(metin):
 # Teletext ve kapalı altyazıdan kalan yön / konuşmacı işaretleri ("Tabii. >", "< Burası mı?", ">> Hello"): tek başına
 # duran < ve > işaretleri. Etiketin parçası olanlar (<i>) boşlukla çevrili olmadığı için eşleşmez.
 YON_ISARETI = re.compile(r"(?m)^[ \t]*[<>]{1,3}[ \t]+|[ \t]+[<>]{1,3}[ \t]*$|(?<=[ \t])[<>]{1,3}(?=[ \t])")
+# Japon TV altyazısının işaretleri: ➡ cümlenin sonraki altyazıda sürdüğünü, 🔊 / 📱 sesin hoparlörden ya da telefondan
+# geldiğini gösterir. Söz değildir; kalırsa çeviriye geçiyor ("Kaçın, kaçın! ➡"). Süren cümleyi script zaten
+# noktalamadan anlar.
+YAYIN_ISARETI = re.compile(r"[ \t]*[➡⇒][ \t]*|[🔊📱📞☎📺][ \t]*")
 
 
 def _ortak(metin):
@@ -116,6 +120,7 @@ def _ortak(metin):
     metin = re.sub(r"(<i>\s*)+<i>", "<i>", metin)          # çift açılış
     metin = re.sub(r"</i>(\s*</i>)+", "</i>", metin)       # çift kapanış
     metin = YON_ISARETI.sub(" ", metin)
+    metin = YAYIN_ISARETI.sub("", metin)
     return metin
 
 
@@ -132,6 +137,32 @@ _EK_SESI = {"kun": ("u", "a", False), "san": ("ı", "a", False), "chan": ("ı", 
 _EKLI_HAL = re.compile(
     r"((?:-(?:" + "|".join(_EK_SESI) + r"))|(?<![\w-])(?:Sensei|Senpai|Sempai))(['’])"
     r"(n?[ıiuü]n|[dt][ae]n?|y?l[ae]|y?[ıiuü]|y?[ae])(?![a-zçğıöşü])", re.I)
+
+
+# Gerçek din, mezhep ve halk adları Türkçede büyük harfle yazılır; model cümle içinde küçük yazabiliyordu
+# ("müslümanlar", "tanrı'nın": gerçek test F/G, Kingdom of Heaven).
+_TR_BUYUK = re.compile(r"(?<![\wçğıöşü])(müslüman|hristiyan|hıristiyan|yahudi|musevi|arap(?!saç)|islam|budist|katolik|"
+                       r"protestan|ortodoks|haçlı|yunan|ispanyol|kızılderili|türk(?!ü)|japon|ingiliz|fransız|italyan|kelt|sakson|viking|"
+                       r"(?:pers|iskoç|aztek|inka|rus|alman|moğol|kürt|ermeni|gürcü|arnavut|macar|fars|portekiz|latin|"
+                       r"çin|hint|amerikan?|afrika|avrupa|asya)(?=l[ae]r|l[ıi]|[cç][ae]|[^\wçğıöşü]|$))(?=[a-zçğıöşü'’]|[^\w]|$)")
+
+
+def tr_buyuk_harf(metin):
+    """ "müslümanlar" -> "Müslümanlar", "tanrı'nın" -> "Tanrı'nın" (kesme işareti yalnız özel adda olur)."""
+    metin = _TR_BUYUK.sub(lambda m: ("İ" if m.group(1)[0] == "i" else m.group(1)[0].upper()) + m.group(1)[1:], metin)
+    return re.sub(r"(?<![\wçğıöşü])tanrı(?=['’])", "Tanrı", metin)
+
+
+def kana_latinle(metin):
+    """Metindeki kana öbeklerini okunuşuyla Latin harfe çevirir (ヴォルケン・エ・レーゲン -> "Voruken e Reegen");
+    model Latin harfli çıktıda kaynağın kanasını aynen bırakınca satır silinmesin diye: ses yine okunur."""
+    if re.search(r"[一-龥々]", metin):
+        return metin                     # kanjili metin okunamaz: yalnız kanalı kalanı harf harf yazmak anlamsız olur
+    def cevir(m):
+        latin = kana_latin(m.group(0))
+        return latin if latin else m.group(0)
+    sonuc = re.sub(r"[ぁ-ゖァ-ヺー][ぁ-ゖァ-ヺー・]*", cevir, metin)
+    return re.sub(r"(^|\n)([a-z])", lambda m: m.group(1) + m.group(2).upper(), sonuc)
 
 
 def tr_ek_uyumu(metin):
@@ -165,7 +196,9 @@ def tr_ek_uyumu(metin):
 # it means friend.", "It's called TheFacebook.com.") yalnızca künyenin durduğu yerde, dosyanın başında ve sonunda.
 REKLAM = re.compile(
     r"https?://|\bwww\.\w|opensubtitles|subscene|addic7ed|podnapisi|advertise your product|support us and become"
-    r"|^\s*(?:çeviri|çeviren|çevirmen|altyazı|altyazi|senkron|redaksiyon)\s*:|字幕\s*[:：]|翻訳\s*[:：]", re.I | re.M)
+    r"|^\s*(?:çeviri|çeviren|çevirmen|altyazı|altyazi|senkron|redaksiyon)\s*:|字幕\s*[:：]|翻訳\s*[:：]"
+    # Çince fansub künyesi (Japonca altyazıya karışmış: 诸神字幕组, 翻译:, 校对:, 时间轴)
+    r"|字幕[组組]|翻[译譯]\s*[:：]|校[对對]\s*[:：]|时间轴|時間軸|仅供交流|僅供交流|压制\s*[:：]|壓制\s*[:：]", re.I | re.M)
 KENAR_REKLAM = re.compile(
     r"\b[\w-]+\.(?:com|net|org|tv|io|info|xyz)\b|\b(?:yify|YIFY|yts|YTS)\b"
     r"|^(?:<i>|\W)*(?i:subtitles?|subs|subtitled|captions?|captioning|sync(?:ed|hronized)?|corrected|translated|translation|"
@@ -182,7 +215,53 @@ def reklam_mi(metin, kenarda=True):
 def kaynak_hazirla(metin):
     """Modele gitmeden önce: kodları ayıklar, üstte gösterme bilgisini saklar."""
     ustte = bool(USTTE.search(metin))
-    return _bosluk(_ortak(metin)), ustte
+    # Sondaki ➡ cümlenin sonraki altyazıda sürdüğünü söyler: Japonca altyazının sürdürme çizgisine (—) çevrilir ki
+    # bölünmüş cümle tanınsın (cumle.SURDURME); öteki yayın işaretleri _ortak'ta atılır.
+    # Cümle bitmişse ("ルフィ～！➡": konuşan sürüyor, cümle değil) işaret yalnız atılır.
+    metin = re.sub(r"(?<![。！？!?…])[ \t]*[➡⇒][ \t]*$", "—", metin.rstrip())
+    return _bosluk(japonca_duzelt(_ortak(metin))), ustte
+
+
+_JP_HARF = re.compile(r"[ぁ-ゖァ-ヺ一-龥ｦ-ﾟ]")
+_YARIM_KANA = re.compile(r"[｡-ﾟ]+")
+# Satır başındaki yarım genişlikli konuşmacı etiketi ((ワポル), [ｽﾋﾟｰｶ](ワポル), ≪(水夫)): tam genişlikliye çevrilip
+# satırın başına alınır; yoksa etiket tanınmıyor, çeviriye "(Wapol)" ya da "Wapol:" diye giriyordu (One Piece, TV kaydı).
+_YARIM_ETIKET = re.compile(r"^((?:\[[^\[\]]{1,12}\]|[≪《])*)\(([^()（）]{1,24})\)")
+
+
+def japonca_duzelt(metin):
+    """Japonca altyazının yayın biçimini tek biçime indirir:
+    - yarım genişlikli katakana (ﾓﾙｶﾞﾝｽﾞ) tam genişlikli olur;
+    - satır başındaki yarım parantezli etiket (ワポル) tam parantezli olur ve öndeki işaretlerden önce gelir;
+    - 《…》 (iç ses) ve satır başındaki ≪ (ekran dışı ses) italik olur: çeviride düşünce ve ekran dışı ses hep aynı
+      biçimde (italik) yazılır; 《》 tırnağa çevriliyor ya da düşüyordu."""
+    if not _JP_HARF.search(metin):
+        return metin
+    metin = _YARIM_KANA.sub(lambda m: unicodedata.normalize("NFKC", m.group(0)), metin)
+    satirlar = []
+    for satir in metin.split("\n"):
+        m = _YARIM_ETIKET.match(satir)
+        if m and _JP_HARF.search(m.group(2)) and not re.search(r"[音声]$", m.group(2)):
+            satir = f"（{m.group(2)}）{m.group(1)}{satir[m.end():]}"
+        on = re.match(r"(（[^（）]{1,24}）)?(\s*)≪", satir)
+        if on:
+            ic = satir[on.end():].replace("≫", "").strip()
+            satir = f"{on.group(1) or ''}<i>{ic}</i>" if ic else (on.group(1) or "")
+        satirlar.append(satir)
+    metin = "\n".join(satirlar)
+    if "《" in metin or "》" in metin:
+        # Birden çok satıra ya da iki altyazıya bölünmüş düşünce: her satır kendi içinde açılıp kapanır
+        duzelen = []
+        for satir in metin.replace("《", "<i>").replace("》", "</i>").split("\n"):
+            ac, kapa = satir.count("<i>"), satir.count("</i>")
+            if ac > kapa:
+                satir += "</i>"
+            elif kapa > ac:
+                e = re.match(r"（[^（）]{1,24}）", satir)
+                satir = (e.group(0) + "<i>" + satir[e.end():]) if e else "<i>" + satir
+            duzelen.append(satir)
+        satirlar = duzelen
+    return re.sub(r"<i>\s*</i>", "", "\n".join(satirlar))
 
 
 def _italik_onar(metin):

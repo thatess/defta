@@ -1861,6 +1861,32 @@ class CeviriIsiTestleri(unittest.TestCase):
         s._kodi_kopyasini_sil(self.bilgi, {"kaynak_dosya": "os-1.kaynak.srt"})
         self.assertTrue(os.path.exists(os.path.join(klasor, "Ornek.S01E05.en.srt")))
 
+    def test_sozlugu_goster_ve_duzelt(self):
+        from d2 import eylemler
+        from defta.sozluk import Sozluk
+        yol = self.durum.sozluk_yolu("ad:ornek", "tr")
+        s = Sozluk(yol)
+        s.baslik = "Ornek"
+        s.girdi_ekle("Strider", "epithet", "Yolgezer", sayi=8)
+        s.girdi_ekle("Mr", "title", "Bay", kalip="Bay {ad}", sayi=20)
+        s.girdi_ekle("Look", "common", "")
+        s.kaydet()
+        import xbmc
+        # yapım 0 -> girdi 1 (Strider; Mr daha sık) -> "Karşılığı değiştir" -> geri -> geri
+        with mock.patch.object(eylemler, "_durum", return_value=self.durum), \
+                mock.patch.object(eylemler.kodi, "secim", side_effect=[0, 1, 0, -1, -1]) as secim:
+            xbmc.klavye_cevaplari[:] = ["Adımsız"]
+            eylemler.sozluk_duzelt()
+        listelenen = secim.call_args_list[1][0][1]
+        self.assertEqual(len(listelenen), 2)                            # sıradan sözcük listelenmez
+        self.assertTrue(listelenen[0].startswith("Mr → Bay"))
+        g = Sozluk(yol).girdiler["Strider"]
+        self.assertEqual((g["hedef"], g["karar"]), ("Adımsız", "elle"))
+        with mock.patch.object(eylemler, "_durum", return_value=self.durum), \
+                mock.patch.object(eylemler.kodi, "secim", side_effect=[0, 1, 2, -1, -1]):
+            eylemler.sozluk_duzelt()                                     # 2: sözlükten çıkar
+        self.assertEqual(Sozluk(yol).girdiler["Strider"]["hedef"], "")
+
     def test_film_sozlugu_serinindir(self):
         # Aynı serinin filmleri tek sözlüğü paylaşır; filmin eski kendi sözlüğü seri adına taşınır; dizi değişmez.
         def yol(yapim, baslik):

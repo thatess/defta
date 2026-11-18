@@ -100,7 +100,8 @@ def dosya_cevir(kaynak_yol, hedef_yol, goreli, ayar, model, sistem, gunluk,
 
     modlar, k = ayar["modlar"], ayar["cikti"]
     latin = ayar["ceviri"]["cikti_alfabesi"] == "latin"
-    ek_uyumu = hedef_kodu(ayar) == "tr" and modlar["anime_ekleri"] != "ceviri"
+    turkce = hedef_kodu(ayar) == "tr"
+    ek_uyumu = turkce and modlar["anime_ekleri"] != "ceviri"
     cikti, ciftler, yazilanlar = [], [], []      # yazilanlar: [son kaynak satırının indeksi, Satir, metin]
     for i, s in enumerate(satirlar):
         if cevrilecek is not None and i not in cevrilecek:
@@ -115,6 +116,8 @@ def dosya_cevir(kaynak_yol, hedef_yol, goreli, ayar, model, sistem, gunluk,
         metin = temizlik.son_temizlik(ceviriler.get(i, s.metin), modlar, latin)
         if ek_uyumu:
             metin = temizlik.tr_ek_uyumu(metin)
+        if turkce:
+            metin = temizlik.tr_buyuk_harf(metin)
         # İki kişinin konuştuğu altyazı: tireler silinmiş olsa da her konuşma kendi satırında kalır;
         # satır kaydırma ikisini tek akan metne karıştırmamalı.
         iki_kisi = sum(1 for r in s.metin.split("\n") if TIRELI.match(r)) >= 2

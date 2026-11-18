@@ -24,7 +24,7 @@ def ardisik_mi(once, sonra):
     return -ARDISIK_BOSLUK <= sonra.bas - once.bit <= ARDISIK_BOSLUK
 
 
-KLISE = {"tr": re.compile(r"kahretsin|kahrolası|lanet olası|lanet olsun|seni aptal|seni pislik|"
+KLISE = {"tr": re.compile(r"(?<!allah )kahretsin|kahrolası|lanet olası|lanet olsun|seni aptal|seni pislik|"
                          r"(?<![\wçğıöşü])lanet(?=\s+(?!et|ed|oku|ol)[\wçğıöşü])")}
 
 # Bip'li pekiştiricinin nitelik gibi çevrilmesi ("[bleep] raw" -> "bok gibi çiğ"): bip bir sözcüğün önündeyse ve
@@ -34,15 +34,14 @@ NITELIK_KUFUR = {"tr": re.compile(r"bok gibi")}
 # Cümlenin ortasına, İngilizce sözcüğün yerine düşmüş küfür kalıbı ("ortalığı amına koyayım savaş alanına çeviriyorsun").
 ARAYA_KUFUR = {"tr": re.compile(r"[\wçğıöşü]\s+(amına koyayım|amk)\s+[\wçğıöşü]|[\wçğıöşü],\s*(lan),\s*[\wçğıöşü]")}
 
+# Japonca kaynağa çok ağır gelen küfür (kural: Japonca küfür İngilizce karşılığından hafiftir). "やられたな" ->
+# "Ağzıma sıçtı" (Death Note, gerçek test I).
+JP_AGIR = {"tr": re.compile(r"siktir|(?<![\wçğıöşü])sik(?:er|ti|iyim|eyim)|sıç|amına|(?<![\wçğıöşü])amk(?![\wçğıöşü])|orospu|"
+                           r"(?<![\wçğıöşü])piç|yarra|götveren")}
+JAPONCA = re.compile(r"[ぁ-ゖァ-ヺ]")
+
 # Hedef dilde yazılmamış tepki sesi (İngilizce ya da Japonca okunuşuyla kalmış): satırın tamamı ya da başı.
 YABANCI_SES = {"tr": re.compile(r"(?<![\wçğıöşü])(u+gh+|a+r+gh+|u+wa+h*|n+g+h+|hmph|oops|ouch|ga+h|e+w+|whoa+|yikes|phew)(?![\wçğıöşü])")}
-
-
-# Bip sesiyle örtülmüş küfür (kaynakta) ve hedef dilde küfür izi: kaynakta örtülü küfür varken çeviride hiç küfür
-# yoksa model onu düşürmüştür, bir kez daha sorulur.
-ORTULU_KUFUR = re.compile(r"[\[(]\s*bleep(?:ed|ing)?\s*[\])]|\b[fs]\*{2,}|\*{4,}", re.I)
-KUFUR_IZI = {"tr": re.compile(r"sik|bok|amına|piç|pislik|göt|(?<![\wçğıöşü])lan(?![\wçğıöşü])|orospu|şerefsiz|sıç|"
-                              r"anasını|kahpe|yavşak|puşt|ibne|hıyar|dangalak|salak|gerizekalı")}
 
 
 def _bip_pekistirici(kaynak):
@@ -66,8 +65,8 @@ class Denetimler:
         if m:
             neden = f'"{m.group(0)}" is a dubbing cliché: use what a person would really say, at the same strength'
             if _bip_pekistirici(kaynak):
-                neden += (f'; the bleeped word is an intensifier: drop "{m.group(0)}" entirely and put the anger in a '
-                          "curse word at the very end of the sentence or in a stronger word")
+                neden += (f'; the bleeped word is an intensifier: drop "{m.group(0)}" entirely and let the tone or a '
+                          "stronger word carry the anger")
             nedenler.append(neden)
         araya = ARAYA_KUFUR.get(kod)
         m = araya.search(kucuk) if araya else None
@@ -77,8 +76,8 @@ class Denetimler:
         nitelik = NITELIK_KUFUR.get(kod)
         if nitelik and _bip_pekistirici(kaynak) and nitelik.search(kucuk):
             nedenler.append("the bleeped word in the source is an intensifier in front of a word: it carries the "
-                            "speaker's anger, not a quality of the thing; put the force in a curse word, the tone or a "
-                            "stronger word and translate the rest in full")
+                            "speaker's anger, not a quality of the thing; let the tone or a stronger word carry the "
+                            "force and translate the rest in full")
         return nedenler
 
     def _supheler(self, idler, kabul):
@@ -93,21 +92,18 @@ class Denetimler:
             kucuk = temizlik.tr_kucuk(ceviri)
             for neden in self._kalip_supheleri(kaynak, kucuk, kod):
                 ekle(i, neden)
+            agir = JP_AGIR.get(kod)
+            m = agir.search(kucuk) if agir and JAPONCA.search(kaynak) else None
+            if m:
+                ekle(i, f'"{m.group(0)}" is far too strong for a Japanese source: Japanese curses are milder than their '
+                        "English glosses; use the milder word of that kind, or none if the source has none")
             ses = YABANCI_SES.get(kod)
             m = ses.search(kucuk) if ses else None
             if m:
                 ekle(i, f'"{m.group(0)}" is not how {dil_adi(self.ayar)} speakers write this sound: write the sound '
                         f"in its {dil_adi(self.ayar)} spelling")
-            kufur = KUFUR_IZI.get(kod)
-            if (kufur and ORTULU_KUFUR.search(kaynak) and ORTULU_KUFUR.sub("", temizlik.ETIKET.sub("", kaynak)).strip(" .,!?-–—\n")
-                    and ceviri.strip() and not kufur.search(kucuk)):
-                if _bip_pekistirici(kaynak):
-                    ekle(i, "the source has a bleeped intensifier in front of a word and the translation lost its "
-                            "force: put the anger in a curse word at the very end of the sentence or in a stronger "
-                            "word, never as a quality of the thing (not 'like shit'), and translate the rest in full")
-                else:
-                    ekle(i, "the source has a bleeped swear word and the translation has none: render it as the "
-                            f"{dil_adi(self.ayar)} swear word of that kind at that strength; never drop it")
+            # Bip'li küfür yayında duyulmaz: çeviride küfür aranmaz (yazıyla açılması istenmiyor; açılınca "lan" ve
+            # "köpek boku" gibi yayından ağır çeviriler çıkıyordu, gerçek test F, 18.11.2026).
             if temizlik.latin_disi(kaynak):
                 continue
             # eksik içerik şüphesi: çeviri kaynağa göre çok kısa. Çince, Japonca, Korece çeviride bakılmaz: orada bir

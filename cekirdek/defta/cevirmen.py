@@ -45,6 +45,9 @@ SORUN = {
 ETIKET_GIBI = re.compile(r"(?:(?<=^)|(?<=\n)|(?<=[-–—] )|(?<=[.!?…] ))(?:<i>)?[A-ZÇĞİÖŞÜÂÎÛ][\w'’.-]*(?: [\w'’.-]+){0,2}"
                          r"(?: \d+)?:(?=\s)", re.M)
 
+# Türkçe ad tamlamasının son sözcüğündeki tamlama eki ("akıncı-sı", "Dağ-ı"): çoğulda düşer ("akıncı-ları").
+TAMLAMA_EKI = re.compile(r"(?<=\w\w[aeıioöuü])s[ıiuü]$|(?<=\w\w[^aeıioöuü\W])[ıiuü]$")
+
 class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
     def __init__(self, ayar, model, sistem, gunluk, sozluk=None):
         self.ayar, self.model, self.sistem, self.gunluk = ayar, model, sistem, gunluk
@@ -118,6 +121,7 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                         self.jp_adlar.add(m.group(1))
                 elif KATAKANA.fullmatch(ad.strip()) and ad.strip() in self.sozluk.karakter_adlari():
                     self.jp_adlar.add(ad.strip())
+            turkce = hedef_kodu(self.ayar) == "tr"
             for kaynak, hedef in self.sozluk.terimler.items():
                 if hedef[:1].isupper():      # karşılığı küçük harfli terim ("ワン公" -> "it") kişi adı değildir
                     self.jp_adlar.update(KATAKANA.findall(kaynak))
@@ -132,10 +136,28 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                 # anlamda geçtiğini script bilemez, karşılığı dayatırsa sıradan kullanımı bozar.
                 if len(hedef) < 3 or (kucuk_harfli and len(kaynak) < 4) or kaynak in self.sozluk.siradanlar:
                     continue
-                kok = self.kucuk(hedef[:-1] if len(hedef) > 4 else hedef)
+                # Kök: ekler eklenince değişebilecek son harf atılır. Türkçede yalnızca yumuşayan p, ç, t, k değişir
+                # (kitap / kitabı); öteki harf kalır: "Vardy" -> "Vardiler" yazımı da yakalanır ("Vardy'ler").
+                kisalt = (len(hedef) > 2 and hedef[-1:].lower() in "pçtk") if turkce else len(hedef) > 4   # güç / gücü
+                kok = self.kucuk(hedef[:-1] if kisalt else hedef)
+                if turkce and re.fullmatch(r"[^\W\d_]{3,}(?:l[ıiuü]|[cç][ae])", hedef.strip()):
+                    # "Chinese -> Çinli": sıfat olarak "Çin ordusu", dil olarak "Çince" de doğrudur; ad kökü aranır
+                    # (gerçek test X, Arrival: doğru satır "terim kaçtı" diye yeniden soruluyordu)
+                    kok = self.kucuk(hedef.strip()[:-2])
+                tamlama = TAMLAMA_EKI.search(self.kucuk(hedef.strip())) if turkce and " " in hedef.strip() else None
+                if tamlama:
+                    # "deniz akıncısı" çoğulda "deniz akıncıları", "Yüzük Taşıyıcısı" "Yüzük Taşıyıcıları" olur: tamlama
+                    # eki çoğul ekinden önce düşer. Kök eksiz aranır; yoksa doğru çeviri "terim kaçtı" diye
+                    # yeniden soruluyordu (Odyssey'de 6 satır).
+                    kok = self.kucuk(hedef.strip())[:tamlama.start()]
+                    if kok[-1:] in "bcdğ":           # yumuşamış ünsüz çoğulda sertleşir: sahibi / sahipleri
+                        kok = kok[:-1]
                 if kaynak.isascii():
                     cogul = r"(?:e?s)?" if kaynak[-1:].isalpha() else ""
-                    self.terimler.append((re.compile(r"(?<!\w)" + re.escape(kaynak) + cogul + r"(?!\w)",
+                    govde = re.escape(kaynak)
+                    if re.search(r"[^aeiouAEIOU]y$", kaynak):        # Vardy / Vardies
+                        govde, cogul = re.escape(kaynak[:-1]), r"(?:y|ies)"
+                    self.terimler.append((re.compile(r"(?<!\w)" + govde + cogul + r"(?!\w)",
                                                      re.I if kucuk_harfli else 0), kok, (kaynak, hedef)))
                 else:
                     self.terimler.append((tuple(_terim_bicimleri(kaynak)), kok, (kaynak, hedef)))
@@ -556,7 +578,10 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
             return "romaji" if i in self.romanize else "latin"
         if ceviri.count("<i>") != ceviri.count("</i>"):
             return "italik"
-        tire_k = sum(1 for s in kaynak.split("\n") if TIRELI.match(s))
+        # Tire sayısı modele giden metinden sayılır: not olarak silinen konuşmacı payı ("- [laughs]") orada yoktur;
+        # özgün metinden sayılınca doğru çeviri "tire tutmuyor" diye yeniden soruluyordu.
+        tire_kaynak = self.giden[i] if i in self.giden and i not in self.birlesik else kaynak
+        tire_k = sum(1 for s in tire_kaynak.split("\n") if TIRELI.match(s))
         tire_c = sum(1 for s in ceviri.split("\n") if TIRELI.match(s))
         if tire_k >= 2 and tire_c != tire_k:
             return "tire"
@@ -787,8 +812,8 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                 kabul[i] = self._kaynak(i)
                 self.gunluk.hata(self.etiket, f"satır {i + 1}: boş çeviri, orijinal bırakıldı")
             elif neden == "latin":
-                self.gunluk.hata(self.etiket, f"satır {i + 1}: Latin dışı harfler silindi ({temizlik.latin_disi(metin)})")
-                kabul[i] = temizlik.latin_disi_sil(metin)
+                self.gunluk.hata(self.etiket, f"satır {i + 1}: Latin dışı harfler okunuşla yazıldı ya da silindi ({temizlik.latin_disi(metin)})")
+                kabul[i] = temizlik.latin_disi_sil(temizlik.kana_latinle(metin))
             elif neden == "terim":
                 terim = self.kacan_terim.get(i)
                 self.gunluk.uyari(self.etiket, f"satır {i + 1}: sözlük terimi çeviride görünmüyor"
@@ -811,4 +836,11 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
             i = yanitsiz[0]
             self.gunluk.hata(self.etiket, f"satır {i + 1}: çevrilemedi, orijinal bırakıldı")
             kabul[i] = self._kaynak(i)
+        # Bir satırı kontrolü geçmeyen partide de öteki satırlar şüphe kontrolünden geçer: geçmiyordu, "sıçtım" gibi
+        # Japonca kaynağa ağır küfür ve klişe kaçıyordu (gerçek test K). Bölünüp yeniden sorulan satırlar kendi
+        # turunda zaten bakıldı; orijinali bırakılan satıra bakılmaz.
+        bolunen = set(yanitsiz) if len(yanitsiz) > 1 else set()
+        kontrol = [i for i in idler if i in kabul and i not in bolunen and kabul[i] != self._kaynak(i)]
+        if kontrol:
+            self._sorgula(kontrol, kabul)
         return kabul

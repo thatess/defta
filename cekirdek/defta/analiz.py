@@ -167,6 +167,8 @@ def dizi_analiz(dosyalar, ayar, model, sozluk, gunluk):
     kanitlar = ({dosya: hitap.kanit_topla(satirlar, unvan_sozcukleri(ayar)) for dosya, satirlar, _ in dosyalar}
                 if kanit_acik else {})
     oy = max(1, int(ayar["hitap"]["oy"])) if hitap_acik else 1
+    if oy > 2 and sozluk.kurulmus() and sozluk.hitap:
+        oy -= 1                          # hitap tablosu önceki bölümlerden belli: ilk karar kalır, bir oy az
     # Kapatılan iş için istek hiç gitmez.
     iliski_isleri = isler(s["analiz_token"]) if s["karakterler"] or hitap_acik else []
     sahne_isleri = isler(s["sahne_token"]) if s["sahne_ozeti"] or s["kurgu_tespiti"] else []

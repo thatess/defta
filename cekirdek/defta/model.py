@@ -124,6 +124,7 @@ class Kapi:
 
 
 class Model:
+    ILK_BEKLEME = 2.0          # yeniden denemeden önce ilk bekleme (sn); her denemede ikiye katlanır, en çok 60
     def __init__(self, ayar, anahtar):
         m = ayar["model"]
         self.m = m
@@ -177,7 +178,12 @@ class Model:
         with self._kilit:
             baslayan, sureler = self._tur_sureleri.get(tur, (0, ()))
             sureler = sorted(sureler)
-        return len(sureler) >= max(4, baslayan / 2) and gecen > max(8.0, 2 * sureler[len(sureler) // 2])
+            hepsi = sorted(self.sureler)
+        if len(sureler) >= max(4, baslayan / 2):
+            return gecen > max(8.0, 2 * sureler[len(sureler) // 2])
+        # Bu türden yeterli örnek yok (kaldığı yerden devam eden dosyanın son birkaç isteği: gerçek test X'te Arrival'ın
+        # tek isteği 190 sn bekledi, kopyası hiç gitmedi): bütün isteklerin süresine bakılır, daha geniş payla.
+        return len(hepsi) >= 8 and gecen > max(45.0, 3 * hepsi[len(hepsi) // 2])
 
     def iste(self, sistem, kullanici, dusunme=None):
         """Yanıt, benzer isteklerin olağan süresini aşarsa isteğin bir kopyası gönderilir; önce dönen kullanılır."""
@@ -238,7 +244,7 @@ class Model:
         veri = json.dumps(self._govde(sistem, kullanici, dusunme)).encode("utf-8")
         basliklar = {"Content-Type": "application/json",
                      "Authorization": "Bearer " + self.anahtar}
-        bekleme, cevap, asim = 2.0, None, 0
+        bekleme, cevap, asim = self.ILK_BEKLEME, None, 0
         vazgec = getattr(Model.yerel, "vazgec", None)
 
         def bekle(sure, neden, tur):
@@ -274,8 +280,10 @@ class Model:
                     self.kapi.hiz_siniri()
                 # Geçici olanlar: zaman aşımı, çakışma, hız sınırı ve bütün sunucu hataları (520-524 Cloudflare dahil).
                 if (e.code in (408, 409, 429) or e.code >= 500) and tur < DENEME - 1:
+                    # Sunucunun önerdiği süre kısa olabilir ("13ms" sonra dene): dakikalık token sınırı dolmuşken yedi
+                    # deneme bir saniyede tükeniyor, çalışma duruyordu (gerçek test X). Artan bekleme tabandır.
                     ra = e.headers.get("Retry-After", "")
-                    sure = float(ra) if ra.replace(".", "", 1).isdigit() else bekleme
+                    sure = max(float(ra), bekleme) if ra.replace(".", "", 1).isdigit() else bekleme
                     bekle(min(sure, 60), "hız sınırı (HTTP 429)" if e.code == 429 else f"sunucu hatası (HTTP {e.code})", tur)
                     bekleme = min(bekleme * 2, 60)
                     continue

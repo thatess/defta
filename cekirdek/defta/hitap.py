@@ -3,7 +3,7 @@
 Kimin kime resmi ya da samimi konuştuğunu çoğu satırda yalnızca model çıkarabilir. Ama kaynağın kendisi
 söylüyorsa script okur; aynı dosya her zaman aynı kanıtı verir:
   - unvanla seslenme ("Yes, Captain.", "Master Tolen, ..."): konuşan o kişiye resmidir
-  - Japoncada kibar biçim (です/ます) resmi, düz biçim ve お前 / 君 / くん / ちゃん samimidir
+  - Japoncada kibar biçim (です/ます) resmi, düz biçim ve お前 / あんた / くん / ちゃん samimidir
 Kanıt iki işe yarar: modele gider (tabloyu sıfırdan değil bunlara dayanarak kurar) ve aynı çift için en az iki
 satırda, hep aynı yönde görülmüşse tabloya doğrudan script'in kararı olarak girer (model değiştiremez).
 """
@@ -17,8 +17,11 @@ ETIKET_LATIN = re.compile(r"^\s*(?:<i>)?\s*([A-Z][A-Z .'’-]{1,22}):\s+")
 ETIKET_JP = re.compile(r"^\s*（([^（）]{1,12})）")
 SAYGI_SOZU = (r"sir|ma'am|madam|my lord|my lady|milord|milady|your majesty|your grace|your highness|"
               r"your honou?r|your excellency")
-JP_KIBAR = re.compile(r"(?:です|ます|ません|ました|でした|でしょう|ましょう|ください|ございます)[かねよわな]*[。！？!?…〜ー～]*\s*$", re.M)
-JP_DUZ = re.compile(r"お前|おまえ|貴様|きさま|てめえ|あんた|(?:だ|だな|だぞ|だろ|だよ|ぞ|しろ|くれ|するな|のか)[。！？!?…]*\s*$", re.M)
+# "でしょう？" (değil mi?) ve "〜ましょう" (haydi) arkadaşlar arasında da söylenir: kibarlık kanıtı sayılmaz.
+# "のよ / のね / わよ / かしら" düz konuşan kadın karakterin sonlarıdır ("ですのよ" gibi kibar biçim önce yakalanır).
+JP_KIBAR = re.compile(r"(?:です|ます|ません|ました|でした|ください|ございます)[かねよわな]*[。！？!?…〜ー～]*\s*$", re.M)
+JP_DUZ = re.compile(r"お前|おまえ|貴様|きさま|てめえ|あんた|(?:だ|だな|だぞ|だろ|だよ|ぞ|しろ|くれ|するな|のか|のよ|のね|わよ|わね|かしら)"
+                    r"[。！？!?…]*\s*$", re.M)
 JP_SESLENME = re.compile(r"([ァ-ヺー]{2,})(さん|様|さま|先生|先輩|隊長|団長|くん|君|ちゃん)?(?=[　 、。！？!?…]|$)")
 ARA = 6000          # ms: bundan uzun sessizlik karşılıklı konuşmayı böler
 

@@ -907,3 +907,87 @@ msgstr ""
 msgctxt "#30709"
 msgid "{sayi} dosya · {mb} MB"
 msgstr ""
+
+msgctxt "#30710"
+msgid "Sözlük"
+msgstr ""
+
+msgctxt "#30711"
+msgid "Sözlüğü göster ve düzelt"
+msgstr ""
+
+msgctxt "#30712"
+msgid "Hangi yapımın sözlüğü?"
+msgstr ""
+
+msgctxt "#30713"
+msgid "Henüz sözlük yok: ilk çeviriden sonra burada görünür."
+msgstr ""
+
+msgctxt "#30714"
+msgid "{baslik} · {sayi} karar"
+msgstr ""
+
+msgctxt "#30715"
+msgid "Karşılığı değiştir"
+msgstr ""
+
+msgctxt "#30716"
+msgid "Kaynaktaki gibi kalsın"
+msgstr ""
+
+msgctxt "#30717"
+msgid "Sözlükten çıkar (her yerde bağlama göre çevrilir)"
+msgstr ""
+
+msgctxt "#30718"
+msgid "Yeni karşılık"
+msgstr ""
+
+msgctxt "#30719"
+msgid "Adla birlikte yazılışı (ad yerine {ad} yazın)"
+msgstr ""
+
+msgctxt "#30720"
+msgid "Sözlük kaydedildi"
+msgstr ""
+
+msgctxt "#30721"
+msgid "Değişiklik bundan sonraki çevirilerde geçerli"
+msgstr ""
+
+msgctxt "#30722"
+msgid "ad"
+msgstr ""
+
+msgctxt "#30723"
+msgid "tanım"
+msgstr ""
+
+msgctxt "#30724"
+msgid "kod adı"
+msgstr ""
+
+msgctxt "#30725"
+msgid "lakap"
+msgstr ""
+
+msgctxt "#30726"
+msgid "unvan"
+msgstr ""
+
+msgctxt "#30727"
+msgid "halk"
+msgstr ""
+
+msgctxt "#30728"
+msgid "terim"
+msgstr ""
+
+msgctxt "#30729"
+msgid "uydurma dil"
+msgstr ""
+
+msgctxt "#30730"
+msgid "ses"
+msgstr ""

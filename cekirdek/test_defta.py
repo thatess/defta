@@ -999,6 +999,17 @@ class KapatilanAyarTestleri(unittest.TestCase):
             self.assertFalse(ucuncu.wait(0.5))
         self.assertEqual(len(cagri), 2)
 
+    def test_ornegi_az_turde_butun_isteklerin_suresine_bakilir(self):
+        """Kaldığı yerden devam eden dosyanın son istekleri: kendi türünden yeterli örnek yok, bütün isteklerin süresine
+        bakılır; takılan isteğin kopyası gider (gerçek test X, Arrival 190 sn bekledi)."""
+        m = self._model([30, 0.01])
+        m.sureler[:] = [5.0] * 10                                    # olağan süre 5 sn: sınır 45 sn
+        asil, olcek = m._gecikti_mi, 1000
+        m._gecikti_mi = lambda tur, gecen: asil(tur, gecen * olcek)
+        self.assertEqual(m.iste("yeni", "k"), "yanit 0.01")
+        self.assertEqual(m.yeniden_gonderilen, 1)
+        self.assertFalse(asil((hash("yeni"), None), 30))             # 45 sn'den önce kopya yok
+
     def test_az_ornekle_kopya_gonderilmez(self):
         m = self._model([0.01] * 3)
         for _ in range(3):
@@ -1289,6 +1300,14 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(hedef_belirle("Hobbit", {"t": "people", "e": "hobbit"}, False), ("people", "hobbit"))   # halk adı küçük harf (18.11.2026)
         self.assertEqual(hedef_belirle("Dúnedain", {"t": "people", "e": "Dúnedain"}, True), ("people", "dúnedain"))   # halk adı küçük harf (18.11.2026)
         self.assertEqual(hedef_belirle("Vardy", {"t": "people", "tr": "vardy"}, False), ("people", "vardy"))
+        # Mitoloji adı altyazıdaki gibi: harf çevirisi (Kirke, Isparta) yazılmaz, gündelik başka sözcük (Truva) yazılır
+        mit = {"t": "name", "real": True, "myth": True}
+        self.assertEqual(hedef_belirle("Circe", {**mit, "e": "Kirke"}, True), ("name", "Circe"))
+        self.assertEqual(hedef_belirle("Sparta", {**mit, "e": "Isparta"}, True), ("name", "Sparta"))
+        self.assertEqual(hedef_belirle("Menelaus", {**mit, "e": "Menelaos"}, True), ("name", "Menelaus"))
+        self.assertEqual(hedef_belirle("Troy", {**mit, "e": "Truva"}, True), ("name", "Truva"))
+        self.assertEqual(hedef_belirle("Hercules", {**mit, "e": "Herkül"}, True), ("name", "Herkül"))
+        self.assertEqual(hedef_belirle("Munich", {"t": "name", "real": True, "e": "Münih"}, True), ("name", "Münih"))  # mitoloji değil
         # kanji terimin "l"si İngilizce çevirisidir: çıktıya girmez; katakana uydurma terimin yazımı kalır
         self.assertEqual(hedef_belirle("爆弾犬", {"t": "term", "l": "bomb dog"}, True), ("term", ""))
         self.assertEqual(hedef_belirle("ミスリル", {"t": "term", "l": "mithril"}, True), ("term", "mithril"))
@@ -1530,6 +1549,11 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(dict(kanit[("レン", "ソウマ")]), {"resmi": 2})              # です/ます
         self.assertEqual(dict(kanit[("ソウマ", "レン")]), {"samimi": 2})             # くん, お前
         self.assertNotIn(("MARA", "ILSA"), kanit)                                  # İngilizcede samimiyeti script bilemez
+        # "でしょう？" ve "〜ましょう" arkadaş arasında da söylenir: kibarlık kanıtı değil; "のよ" düz kadın konuşmasıdır
+        robin = self._satirlar(["（ロビン）\n世界情勢は 大荒れでしょう？", "（チョッパー）\nそうだな",
+                                "（ロビン）\n早速 いきましょう", "（チョッパー）\nおう",
+                                "（ロビン）\nルフィのお兄さんなのよ", "（チョッパー）\nへえ"])
+        self.assertEqual(dict(hitap.kanit_topla(robin, [])[0].get(("ロビン", "チョッパー"), {})), {"samimi": 1})
         self.assertIn('ILSA -> MARA: formal in 3 lines: addresses them as "Captain"', hitap.kanit_metni(kanit, neden))
         karakterler = [{"name": "Mara"}, {"name": "Ilsa"}, {"name": "Ren", "source": "レン"}, {"name": "Soma", "source": "ソウマ"}]
         kesin = {(h["from"], h["to"]): h["form"] for h in hitap.kesin_ciftler([kanit], karakterler)}
@@ -1578,6 +1602,21 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(s3.hitap, {"Ilsa -> Mara": "samimi", "Mara -> Ilsa": "samimi"})
         from defta.analiz import iliski_istemi
         self.assertNotIn('"evidence"', iliski_istemi(kapali, None))
+
+    def test_of_ile_gelen_yer_adi_unvani_tamlamaya_cevirir(self):
+        self.sozluk.unvanlar = ["Princess"]
+        satirlar = self._satirlar(["The Princess Sibylla of Jerusalem and her husband!"])
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                self.gidenler.append(json.loads(kullanici))
+                return json.dumps({"lines": [{"id": 1, "text": "Kudüs Prensesi Sibylla ve kocası!"}]}, ensure_ascii=False)
+        ayar = ayar_birlestir({"model": {"es_zamanli_istek": 1}, "kontrol": {"supheli_satir_kontrolu": False}})
+        m = M()
+        sonuc = Cevirmen(ayar, m, "S", self.gunluk, self.sozluk.gorunum(ayar)).cevir(satirlar, "u.srt")
+        self.assertEqual((sonuc[0], len(m.gidenler)), ("Kudüs Prensesi Sibylla ve kocası!", 1))
 
     def test_unvan_tablosu_dile_gore(self):
         ozel = ayar_birlestir({"unvanlar": {"tr": {"Lord": "Efendi", "Mr": "{ad} Bey"}, "en": {"隊長": "Captain"}}})
@@ -1802,7 +1841,7 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertIn("- Twilight (keep exactly as is) [Loid's spy code name] | plain word: dusk\n", istem)
         self.assertIn("- Wardens of Greyfold -> Greyfold Muhafızları [the order (guards) of Greyfold]\n", istem)
         self.assertIn("- Hope (keep exactly as is) [the captain's ship] | plain word: hope\n", istem)
-        self.assertIn("- Names written exactly as in the source: Odysseus\n", istem)
+        self.assertIn("- Names and terms written exactly as in the source: Odysseus\n", istem)
         self.assertIn("A note in [ ] says what the entry refers to", istem)
         self.assertIn('is ALSO an everyday word', istem)
         # Ayar kapalı: not modelden istenmez, sözlükteki eski notlar da çeviriye ulaşmaz.
@@ -1819,7 +1858,7 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertNotIn("A note in [ ]", istem)
         self.assertNotIn("plain word", istem)
         self.assertIn("- Twilight (keep exactly as is)\n", istem)
-        self.assertIn("- Names written exactly as in the source: Hope, Odysseus\n", istem)
+        self.assertIn("- Names and terms written exactly as in the source: Hope, Odysseus\n", istem)
         self.assertIn("anlam", self.sozluk.girdiler["Twilight"])                 # asıl sözlük değişmez
 
     def test_terim_sozlugu_kurulur(self):
@@ -1843,7 +1882,7 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(self.sozluk.dil, {"o.srt": "en"})
         istem = istem_olustur(self.ayar, self.sozluk)
         self.assertIn("- Operation Lantern (keep exactly as is)", istem)
-        self.assertIn("- Names written exactly as in the source: Odysseus, Saltkeep", istem)
+        self.assertIn("- Names and terms written exactly as in the source: Odysseus, Saltkeep", istem)
         # sonraki bölümde aynı adlar yeniden sorulmaz; kayıt dosyadan da okunur
         model = SahteModel(terim=terim)
         dizi_analiz([("o2.srt", satirlar, "")], self.ayar, model, Sozluk(self.sozluk.yol), self.gunluk)
@@ -2106,27 +2145,107 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertIn("cliché", model.gidenler[1]["fix"][0]["problem"])
         self.assertEqual(sonuc[0], "Hay aksi, gevşiyorsun.")
 
-    def test_bipli_pekistirici_yaniti_kalip_hatasi_getirirse_kullanilmaz(self):
+    def test_not_olarak_silinen_pay_tire_sayisina_girmez(self):
+        satirlar = self._satirlar(["- [laughs]\n- Wow."])
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                self.gidenler.append(json.loads(kullanici))
+                return json.dumps({"lines": [{"id": 1, "text": "- Vay be."}]}, ensure_ascii=False)
+        m = M()
+        self.assertEqual(Cevirmen(self.ayar, m, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")[0], "- Vay be.")
+        self.assertEqual(len(m.gidenler), 1)                           # "tire tutmuyor" diye yeniden sorulmaz
+
+    def test_bir_satiri_gecmeyen_partide_otekiler_supheden_gecer(self):
+        satirlar = self._satirlar(["Hello there.", "Damn it!"])
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                if "fix" in veri and any("cliché" in f["problem"] for f in veri["fix"]):
+                    return json.dumps({"lines": [{"id": 2, "text": "Hay aksi!"}]}, ensure_ascii=False)
+                return json.dumps({"lines": [{"id": x["id"], "text": "" if x["id"] == 1 else "Kahretsin!"}
+                                             for x in veri["lines"] if not x.get("skip")]}, ensure_ascii=False)
+        m = M()
+        sonuc = Cevirmen(self.ayar, m, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
+        self.assertEqual(sonuc[1], "Hay aksi!")
+
+    def test_bipli_pekistirici_nitelik_olursa_sorulur_kufursuz_ceviri_kabul(self):
+        """Bip'li küfür yayında duyulmaz: küfürsüz çeviri kabul edilir (küfür aranmaz); pekiştiriciyi nitelik gibi
+        çeviren ("bok gibi çiğ") yanıt yeniden sorulur."""
         satirlar = self._satirlar(["It's [bleep] raw."])
 
-        def model_(ikinci):
+        def model_(ilk, ikinci):
             class M:
                 gidenler = []
 
                 def iste(self, sistem, kullanici, dusunme=None):
                     veri = json.loads(kullanici)
                     self.gidenler.append(veri)
-                    return json.dumps({"lines": [{"id": 1, "text": ikinci if "fix" in veri else "Bildiğin çiğ."}]},
+                    return json.dumps({"lines": [{"id": 1, "text": ikinci if "fix" in veri else ilk}]},
                                       ensure_ascii=False)
             return M()
 
-        m = model_("Bok gibi çiğ.")
+        m = model_("Bildiğin çiğ.", "x")
+        self.assertEqual(Cevirmen(self.ayar, m, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")[0], "Bildiğin çiğ.")
+        self.assertEqual(len(m.gidenler), 1)
+        m = model_("Bok gibi çiğ.", "Resmen çiğ bu.")
         sonuc = Cevirmen(self.ayar, m, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
         self.assertIn("intensifier", m.gidenler[1]["fix"][0]["problem"])
-        self.assertEqual(sonuc[0], "Bildiğin çiğ.")                    # nitelik gibi çeviren yanıt alınmaz
-        m = model_("Çiğ lan bu.")
-        self.assertEqual(Cevirmen(self.ayar, m, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")[0],
-                         "Çiğ lan bu.")
+        self.assertEqual(sonuc[0], "Resmen çiğ bu.")
+
+    def test_her_altyaziya_buyuk_harfle_baslayan_dosyada_cumle_birlesir(self):
+        from defta import cumle
+        satirlar = self._satirlar(["It's no secret", "That over the years,", "Things got hard."] * 30)
+        for n, s in enumerate(satirlar):
+            s.bas, s.bit = n * 2000, n * 2000 + 1900
+        self.assertTrue(cumle.buyuk_harf_duzeni(satirlar))
+        self.assertIn([0, 1, 2], cumle.cumle_gruplari(satirlar, set(range(len(satirlar)))))
+        self.assertFalse(cumle.buyuk_harf_duzeni(satirlar[:30]))           # az örnek: şiir dizeleri olabilir
+
+    def test_gercek_din_ve_halk_adi_ciktida_buyuk_harfle(self):
+        self.assertEqual(temizlik.tr_buyuk_harf("müslümanlar ve hristiyan altını, arapsaçı"),
+                         "Müslümanlar ve Hristiyan altını, arapsaçı")
+        self.assertEqual(temizlik.tr_buyuk_harf("tanrı'nın huzurunda, eski tanrılar"), "Tanrı'nın huzurunda, eski tanrılar")
+        self.assertEqual(temizlik.tr_buyuk_harf("islami bir araba"), "İslami bir araba")
+
+    def test_ciktida_kalan_kana_okunusla_yazilir(self):
+        self.assertEqual(temizlik.kana_latinle("アウフリーデ\nメーア・エ・ヴォルケン"), "Aufuriide\nMeea e voruken")
+        self.assertEqual(temizlik.kana_latinle("Hadi!"), "Hadi!")
+
+    def test_japonca_kaynakta_agir_kufur_sorulur(self):
+        satirlar = self._satirlar(["やられたな"])
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                return json.dumps({"lines": [{"id": 1, "text": "Beni fena faka bastırdı." if "fix" in veri
+                                              else "Ağzıma sıçtı."}]}, ensure_ascii=False)
+        m = M()
+        sonuc = Cevirmen(self.ayar, m, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
+        self.assertIn("too strong for a Japanese source", m.gidenler[1]["fix"][0]["problem"])
+        self.assertEqual(sonuc[0], "Beni fena faka bastırdı.")
+
+    def test_japonca_yayin_bicimi_duzelir(self):
+        """Yarım genişlikli etiket ve kana tanınır; 《》 iç ses ve ≪ ekran dışı ses italik olur."""
+        from defta.kaynak import not_ve_konusmaci_ayir
+        hazir = lambda m: temizlik.kaynak_hazirla(m)[0]
+        self.assertEqual(not_ve_konusmaci_ayir(hazir("(ワポル)おお…｡"))[0::2], ("おお…。", ["ワポル"]))
+        self.assertEqual(not_ve_konusmaci_ayir(hazir("[ｽﾋﾟｰｶ](ﾓﾙｶﾞﾝｽﾞ)おう"))[2], ["モルガンズ"])
+        self.assertEqual(not_ve_konusmaci_ayir(hazir("≪(水夫)次は これか？"))[0::2], ("<i>次は これか？</i>", ["水夫"]))
+        self.assertEqual(hazir("《世界政府の闇…\nあんなものを見ちまった以上…》"),
+                         "<i>世界政府の闇…</i>\n<i>あんなものを見ちまった以上…</i>")
+        self.assertEqual(hazir("あんなものを見ちまった以上…》"), "<i>あんなものを見ちまった以上…</i>")
+        self.assertEqual(hazir("(Wapol) hi"), "(Wapol) hi")                  # Latin harfli parantez dokunulmaz
+        self.assertEqual(hazir("(おなかの鳴る音)"), "(おなかの鳴る音)")          # ses notu etiket değildir
 
     def test_cok_kisa_ceviri_suphesi_dogu_asya_yazisinda_sorulmaz(self):
         """Kaynağa göre çok kısa çeviri eksik içerik şüphesiyle sorulur; ama Çince, Japonca, Korece çeviri eksiksizken
@@ -2542,6 +2661,33 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(c._satir_kontrol(2, {2: "O köpek nerede?"}), "terim")
         self.assertIsNone(c._satir_kontrol(2, {2: "O köpekçiğim nerede?"}))
 
+    def test_tamlama_terimi_cogulda_da_gecer(self):
+        """"deniz akıncısı" çoğulda "deniz akıncıları" olur: tamlama eki düşer, terim yine geçmiş sayılır."""
+        satirlar = self._satirlar(["The people from the sea.", "Who are the people from the sea?"])
+        self.sozluk.girdi_yaz("people from the sea", tur="descriptive", hedef="deniz akıncısı", karar="model", sayi=2)
+        c = Cevirmen(self.ayar, None, "S", self.gunluk, self.sozluk)
+        c._hazirla(satirlar, "s.srt")
+        self.assertIsNone(c._satir_kontrol(0, {0: "Deniz akıncısı."}))
+        self.assertIsNone(c._satir_kontrol(1, {1: "Bu deniz akıncıları kim?"}))
+        self.assertEqual(c._satir_kontrol(1, {1: "Bu korsanlar kim?"}), "terim")
+        satirlar = self._satirlar(["Espers like me!", "An esper must beware."])
+        self.sozluk.girdi_yaz("esper", tur="term", hedef="psişik güç sahibi", karar="model", sayi=2)
+        c = Cevirmen(self.ayar, None, "S", self.gunluk, self.sozluk)
+        c._hazirla(satirlar, "s.srt")
+        self.assertIsNone(c._satir_kontrol(0, {0: "Benim gibi psişik güç sahipleri!"}))   # sahibi / sahipleri
+        satirlar = self._satirlar(["Your power is mine.", "Their power?"])
+        self.sozluk.girdi_yaz("power", tur="term", hedef="güç", karar="model", sayi=2)
+        c = Cevirmen(self.ayar, None, "S", self.gunluk, self.sozluk)
+        c._hazirla(satirlar, "s.srt")
+        self.assertIsNone(c._satir_kontrol(1, {1: "Peki ya onların gücü?"}))               # güç / gücü
+        # -y ile biten halk adı: kaynakta çoğulu "-ies", çeviride yazımı kalır ("vardy'ler", "Vardiler" değil)
+        satirlar = self._satirlar(["The Vardies did it.", "A Vardy is here."])
+        self.sozluk.girdi_yaz("Vardy", tur="people", hedef="vardy", karar="model", sayi=2)
+        c = Cevirmen(self.ayar, None, "S", self.gunluk, self.sozluk)
+        c._hazirla(satirlar, "s.srt")
+        self.assertIsNone(c._satir_kontrol(0, {0: "Vardy'ler yaptı."}))
+        self.assertEqual(c._satir_kontrol(0, {0: "Vardiler yaptı."}), "terim")
+
     def test_turkce_kucuk_harf_kurali_baska_hedef_dile_tasmaz(self):
         """Ekli sözcüğün karşılığı yalnız Türkçede küçük harfe çevrilir (Almancada ad büyük harfle yazılır; "I" başka
         dilde "ı" olmaz); oylamada "I" / "i" farkı ayrı cevap sayılmaz."""
@@ -2692,7 +2838,7 @@ Use Crimson Lotus Strike, Kenji-senpai.
         c["l"] = "mithril"
         karsiliklari_uygula(oneriler)
         self.assertTrue(c.get("belirsiz"))
-        c = {"i": 1, "t": "term", "l": "mithril"}                                             # tek cevap yetmez
+        c = {"i": 1, "t": "term", "l": "mithril", "tr": "mithril"}                            # tek cevap yetmez
         karsiliklari_uygula(_karsiliklari_tamamla([[c]], [[{"yazim": "ミスリル", "ornek": []}]], sor("mithril"), 1, 1)[1])
         self.assertTrue(c.get("belirsiz"))
 
@@ -2771,7 +2917,11 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertTrue(_karsilik_sorulacak({"t": "term", "tr": "kral otu"}, "kingsfoil"))
         self.assertTrue(_karsilik_sorulacak({"t": "epithet", "tr": "Yolgezer"}, "Strider"))
         self.assertFalse(_karsilik_sorulacak({"t": "people", "tr": "Dúnedain"}, "Dúnedain"))   # kaynağın yazımı kalır
-        self.assertFalse(_karsilik_sorulacak({"t": "term"}, "mithril"))
+        # küçük harfli Latin terim sorulur (sıradan söz olabilir: wormhole); uydurmaysa karşılık yazımın kendisidir
+        self.assertTrue(_karsilik_sorulacak({"t": "term"}, "mithril"))
+        self.assertTrue(_karsilik_sorulacak({"t": "term"}, "black hole"))
+        self.assertTrue(_karsilik_sorulacak({"t": "term"}, "Murphy's Law"))
+        self.assertFalse(_karsilik_sorulacak({"t": "term"}, "Mithril"))
         self.assertFalse(_karsilik_sorulacak({"t": "term", "l": "Stella", "tr": "yıldız"}, "星(ステラ)"))
         self.assertFalse(_karsilik_sorulacak({"t": "name", "l": "Anya"}, "アーニャ"))
         # ekli sözcüğe ton ipucu gider
@@ -2798,6 +2948,24 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(_yazimlari_tamamla(kararlar, partiler, sor, 3, 1, "SPY"), 3)
         self.assertEqual([c["l"] for c in kararlar[0]], ["Stella", "Haru", "Twilight", "Loid"])
         self.assertEqual(giden[0], ["星(ステラ)", "ハル", "黄昏(たそがれ)"])          # resmî yazımlı ad sorulmaz
+        # kurgusal adın "e"si yazımın sorulmasını engellemez (ブリタニア -> "Britannia"); gerçek adınki engeller
+        kararlar = [[{"i": 1, "t": "name", "l": "Buritania", "e": "Britanya"},
+                     {"i": 2, "t": "name", "l": "Amerika", "e": "Amerika", "real": True}]]
+        partiler = [[{"yazim": "ブリタニア", "ornek": []}, {"yazim": "アメリカ", "ornek": []}]]
+        giden.clear()
+        yanit = iter([{"items": [{"i": 1, "l": "Britannia"}]}] * 3)
+        self.assertEqual(_yazimlari_tamamla(kararlar, partiler, sor, 3, 1, "Code Geass"), 1)
+        self.assertEqual(kararlar[0][0]["l"], "Britannia")
+        self.assertEqual(giden[0], ["ブリタニア"])
+
+    def test_halk_adinin_koku_sifat_ve_dil_bicimini_kabul_eder(self):
+        satirlar = self._satirlar(["The Chinese army is moving.", "He speaks Chinese."])
+        self.sozluk.girdi_ekle("Chinese", "people", "Çinli")
+        c = Cevirmen(self.ayar, None, "S", self.gunluk, self.sozluk)
+        c._hazirla(satirlar, "s.srt")
+        self.assertIsNone(c._satir_kontrol(0, {0: "Çin ordusu ilerliyor."}))
+        self.assertIsNone(c._satir_kontrol(1, {1: "Çince konuşuyor."}))
+        self.assertEqual(c._satir_kontrol(0, {0: "Ordu ilerliyor."}), "terim")
 
     def test_kisa_terim_uzun_yazimin_icinde_aranmaz(self):
         satirlar = self._satirlar(["悪の親玉 モジャモジャ伯爵", "モジャジャジャジャ", "モジャ！"])
@@ -3038,7 +3206,9 @@ class KaymaTestleri(unittest.TestCase):
         from defta.terim import ortusenleri_esitle
         sozluk = Sozluk(os.path.join(self.tmp.name, "s.json"))
         sozluk.elle_ekle(degismez=["Varn"])
-        sozluk.elle_ekle({"Grey Warden": "Boz Muhafız", "Grey Warden Varn": "Gri Bekçi Varn", "Grey Warden Hall": "Boz Salon"})
+        for yazim, hedef in {"Grey Warden": "Boz Muhafız", "Grey Warden Varn": "Gri Bekçi Varn",
+                             "Grey Warden Hall": "Boz Salon"}.items():
+            sozluk.girdi_ekle(yazim, "epithet", hedef)          # elle verilen karar geçişlerden korunur
         ortusenleri_esitle(sozluk)
         self.assertEqual(sozluk.terimler["Grey Warden Varn"], "Boz Muhafız Varn")
         self.assertEqual(sozluk.terimler["Grey Warden Hall"], "Boz Salon")        # "Hall" ad değil: dokunulmaz
@@ -3615,8 +3785,10 @@ class ModelBeklemeTestleri(unittest.TestCase):
         threading.Thread(target=sunucu.serve_forever, daemon=True).start()
         self.addCleanup(sunucu.shutdown)
         from defta.model import Model
-        return Model(ayar_birlestir({"model": {"api_adresi": f"http://127.0.0.1:{sunucu.server_address[1]}/v1",
-                                               "es_zamanli_istek": 4}}), "x")
+        model = Model(ayar_birlestir({"model": {"api_adresi": f"http://127.0.0.1:{sunucu.server_address[1]}/v1",
+                                                "es_zamanli_istek": 4}}), "x")
+        model.ILK_BEKLEME = 0.05            # testte beklemeler kısa
+        return model
 
     def _iste(self, model, sure=20):
         from defta.model import ModelHatasi
@@ -3654,6 +3826,23 @@ class ModelBeklemeTestleri(unittest.TestCase):
         self.assertIn("429", metin)
         self.assertEqual(sayac["n"] - 6, 14)                   # istek + tek kopya, her biri 7 deneme; fazlası gitmez
         self.assertTrue(mesajlar and "hız sınırı (HTTP 429)" in mesajlar[0])
+
+    def test_kisa_retry_after_artan_beklemenin_altina_inmez(self):
+        """Dakikalık token sınırında sunucu "13 ms sonra dene" diyor; yedi deneme bir saniyede tükenip çalışma
+        duruyordu (gerçek test X). Bekleme artan beklemeden kısa olmaz."""
+        sayac = {"n": 0, "zaman": []}
+        tamam = {"choices": [{"message": {"content": "{}"}}], "usage": {}}
+
+        def yanitla():
+            sayac["n"] += 1
+            sayac["zaman"].append(time.time())
+            return (429, {"error": {"code": "rate_limit_exceeded"}}, {"Retry-After": "0"}) if sayac["n"] <= 3 \
+                else (200, tamam, {})
+        model = self._sunucu(yanitla)
+        model.ILK_BEKLEME = 0.2
+        tur, metin = self._iste(model, 10)
+        self.assertEqual((tur, sayac["n"]), ("yanit", 4))
+        self.assertGreaterEqual(sayac["zaman"][3] - sayac["zaman"][0], 0.2 + 0.4 + 0.8 - 0.05)
 
     def test_gecici_sunucu_hatasi_yeniden_denenir(self):
         """Cloudflare'in 520'si gibi her 5xx geçicidir: çalışma durmaz, istek yeniden gider."""
@@ -4041,13 +4230,6 @@ class Karar106Testleri(unittest.TestCase):
         self.assertEqual(not_ve_konusmaci_ayir("- [bleep]\n- why is the plate not ready?")[0],
                          "- [bleep]\n- why is the plate not ready?")
 
-    def test_ortulu_kufur_izi(self):
-        from defta.denetim import KUFUR_IZI, ORTULU_KUFUR
-        self.assertTrue(ORTULU_KUFUR.search("This is not a [bleep] joke."))
-        self.assertTrue(KUFUR_IZI["tr"].search("bu şaka değil lan."))
-        self.assertFalse(KUFUR_IZI["tr"].search("bu şaka değil."))
-        self.assertFalse(KUFUR_IZI["tr"].search("planlı bir iş"))         # "lan" yalnız tek sözcük olarak
-
     def test_unvanin_tek_basina_yazimi_kaliptan_harf_alir(self):
         import tempfile
         from defta.sozluk import Sozluk
@@ -4069,6 +4251,236 @@ class Karar106Testleri(unittest.TestCase):
         self.assertEqual(ad_ekli_lakaplari_esitle(sz), ["ロイドマン"])
         self.assertEqual(sz.girdiler["ロイドマン"]["hedef"], "Loidman")
         self.assertEqual(sz.girdiler["ロイドパパ"]["hedef"], "Loid Baba")
+
+    def test_gercek_yer_adinin_turkce_harfli_yazimi_alinmaz(self):
+        from defta.terim import hedef_belirle
+        self.assertEqual(hedef_belirle("新宿", {"t": "name", "l": "Shinjuku", "e": "Şinjuku", "real": True}, True)[1],
+                         "Shinjuku")
+        self.assertEqual(hedef_belirle("日本", {"t": "name", "l": "Nihon", "e": "Japonya", "real": True}, True)[1],
+                         "Japonya")                                          # başka sözcük olan yerleşik biçim kalır
+        self.assertEqual(hedef_belirle("Moscow", {"t": "name", "e": "Moskova", "real": True}, True)[1], "Moskova")
+
+    def test_katakana_terim_onu_iceren_girdinin_okunusunu_alir(self):
+        import tempfile
+        from defta.sozluk import Sozluk
+        from defta.terim import katakana_parcalarini_esitle
+        sz = Sozluk(os.path.join(tempfile.mkdtemp(), "s.json"))
+        sz.girdi_ekle("ヒノカミ", "term", "Ateş Tanrısı")
+        sz.girdi_ekle("ヒノカミ神楽", "term", "Hinokami Kagura")
+        sz.girdi_ekle("チャクラ", "term", "çakra")
+        self.assertEqual(katakana_parcalarini_esitle(sz), ["ヒノカミ"])
+        self.assertEqual((sz.girdiler["ヒノカミ"]["hedef"], sz.girdiler["チャクラ"]["hedef"]), ("Hinokami", "çakra"))
+
+    def test_cince_fansub_kunyesi_reklamdir(self):
+        self.assertTrue(temizlik.reklam_mi("本字幕由诸神字幕组(kamigami.org)制作，仅供交流学习"))
+        self.assertTrue(temizlik.reklam_mi("日听:风风 翻译:Pulsar 校对:小可"))
+        self.assertFalse(temizlik.reklam_mi("字幕を見ながら話す"))
+
+    def test_katakana_uydurma_terim_cevrilmez(self):
+        from defta.terim import _karsilik_sorulacak, hedef_belirle
+        self.assertFalse(_karsilik_sorulacak({"t": "term", "l": "Geass"}, "ギアス"))
+        self.assertEqual(hedef_belirle("ギアス", {"t": "term", "l": "Geass"}, True)[1], "Geass")
+        self.assertTrue(_karsilik_sorulacak({"t": "term", "l": "Chakura"}, "チャクラ"))        # harf harf okunuş
+        self.assertTrue(_karsilik_sorulacak({"t": "term", "l": "Toss", "w": "toss"}, "トス"))  # sıradan sözcük
+
+    def test_tv_altyazisi_ass_okunuslari_atilir_satirlari_birlesir(self):
+        from defta import bicim
+        olay = "Dialogue: 0,0:00:{0:02d}.00,0:00:{1:02d}.00,Default,,0000,0000,0000,,{{\\pos({2},{3}){4}}}{5}"
+        satirlar = ["[Script Info]", "[V4+ Styles]", "Format: Name, Alignment", "Style: Default,2", "[Events]",
+                    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+        for n in range(0, 50, 2):
+            satirlar += [olay.format(n, n + 1, 272, 353, "\\fscx50\\fscy50", "さんた"),
+                         olay.format(n, n + 1, 172, 407, "\\fscx50", "（三太）おめぇの年だろ。"),
+                         olay.format(n, n + 1, 312, 497, "", "（翔馬）２０歳です。")]
+        sonuc = bicim.ayristir("\n".join(satirlar), ".ass", ayar_birlestir({}))
+        self.assertEqual(len(sonuc), 25)
+        self.assertEqual(sonuc[0].metin, "（三太）おめぇの年だろ。\n（翔馬）２０歳です。")
+        self.assertFalse(sonuc[0].ekran)
+
+    def test_tek_oyun_cevirisi_karsilik_sordurur(self):
+        from defta.terim import _cogunluk, _karsilik_sorulacak, _cevrilir
+        # "His Grace": üç oyda da kalıp "Majesteleri NAME", "e" tek oyda -> karşılığı sorulur
+        oylar = [{"items": [{"i": 1, "t": "title", "p": "Majesteleri NAME"}]},
+                 {"items": [{"i": 1, "t": "title", "p": "Majesteleri NAME"}]},
+                 {"items": [{"i": 1, "t": "title", "e": "Majesteleri", "p": "Majesteleri NAME"}]}]
+        c = _cogunluk(oylar, {1: "His Grace"})[0]
+        self.assertNotIn("e", c)
+        self.assertTrue(_karsilik_sorulacak(c, "His Grace"))
+        # "Citadel": tek oyun "e"si
+        oylar = [{"items": [{"i": 1, "t": "name"}]}, {"items": [{"i": 1, "t": "descriptive", "e": "Hisar"}]},
+                 {"items": [{"i": 1, "t": "descriptive"}]}]
+        self.assertTrue(_karsilik_sorulacak(_cogunluk(oylar, {1: "Citadel"})[0], "Citadel"))
+        # kaynakla aynı kalıp ("Lord NAME", "Ser NAME") çeviri değildir
+        oylar = [{"items": [{"i": 1, "t": "title", "p": "Ser NAME"}]}] * 3
+        self.assertFalse(_cevrilir(_cogunluk(oylar, {1: "Ser"})[0], "Ser"))
+        # özel ad gibi kalan halk adı sorulmaz, yerden kurulan halk adı sorulur
+        oylar = [{"items": [{"i": 1, "t": "people"}]}] * 3
+        self.assertFalse(_karsilik_sorulacak(_cogunluk(oylar, {1: "Dúnedain"})[0], "Dúnedain"))
+        self.assertTrue(_karsilik_sorulacak(_cogunluk(oylar, {1: "Valyrian"})[0], "Valyrian"))
+
+    def test_latin_adin_turevi_adin_yerlesik_bicimiyle_kurulur(self):
+        from defta.terim import _karsiliklari_tamamla
+        from defta.temizlik import tr_buyuk_harf
+        gidenler = []
+
+        def sor(yuk):
+            gidenler.append(yuk)
+            return {"items": [{"i": 1, "tr": "Truvalı" if len(gidenler) % 3 else "Troyalı"}]}
+        kararlar = [[{"i": 1, "t": "name", "e": "Truva", "myth": True}, {"i": 2, "t": "people", "tr": "Truvalı"}]]
+        partiler = [[{"yazim": "Troy", "ornek": ["Princes of Troy,"], "sayi": 9},
+                     {"yazim": "Trojan", "ornek": ["With the Trojans."], "sayi": 5}]]
+        _, oneriler, _ = _karsiliklari_tamamla(kararlar, partiler, sor, 3, 1, baslik="Troy", dil="Turkish")
+        self.assertEqual(gidenler[0]["items"][0].get("names"), {"Troy": "Truva"})
+        self.assertIn("Truvalı", json.dumps(oneriler, ensure_ascii=False))
+        self.assertNotIn("Troyalı", json.dumps(oneriler, ensure_ascii=False))
+        # halk adı büyük harf; "personel", "türkü" dokunulmaz
+        self.assertEqual(tr_buyuk_harf("persler ve personel türkü söyledi"), "Persler ve personel türkü söyledi")
+        self.assertEqual(tr_buyuk_harf("amerika yerlisi ve amerikan ordusu, rustik almanak"),
+                         "Amerika yerlisi ve Amerikan ordusu, rustik almanak")
+
+    def test_kaliptaki_baska_harfli_ad_cikarilir(self):
+        from defta.terim import _kaliptan_adi_cikar
+        self.assertEqual(_kaliptan_adi_cikar("Marki Baltho {ad}", "Barto"), "Marki {ad}")
+        self.assertEqual(_kaliptan_adi_cikar("Prenses Anya {ad}", "Anya"), "Prenses {ad}")
+        self.assertEqual(_kaliptan_adi_cikar("Kaptan {ad}", "Kapton"), "Kaptan {ad}")
+
+    def test_bilim_kurgu_testi_duzeltmeleri(self):
+        from defta.terim import _yazimi_yenile, halk_harfi, hedef_belirle
+        # karşılıktaki harf harf okunuş, ad yazım isteğinde düzelince yenilenir
+        self.assertEqual(_yazimi_yenile("Gandamu pilotu", {"Gandamu": "Gundam"}), "Gundam pilotu")
+        self.assertEqual(_yazimi_yenile("Gandamuxx", {"Gandamu": "Gundam"}), "Gandamuxx")
+        # kurgusal halk adında kesmeli yer adı korunur
+        self.assertEqual(halk_harfi("Tabr Sietch'inden Fedaykin"), "Tabr Sietch'inden fedaykin")
+        self.assertEqual(halk_harfi("Fremen"), "fremen")
+        # büyük harfli kaynak terim (the Matrix) küçültülmez; küçük harfli olan küçülür
+        self.assertEqual(hedef_belirle("Matrix", {"t": "term"}, True)[1], "Matrix")
+        self.assertEqual(hedef_belirle("mithril", {"t": "term"}, True)[1], "mithril")
+
+    def test_karsilik_istegi_hedef_dili_bildirir(self):
+        from defta.terim import _karsiliklari_tamamla
+        gidenler = []
+
+        def sor(yuk):
+            gidenler.append(yuk)
+            return {"items": [{"i": 1, "tr": "Prenses"}]}
+        kararlar = [[{"i": 1, "t": "title", "tr": "Prenses"}]]
+        partiler = [[{"yazim": "Принцесса", "ornek": ["Принцесса!"], "sayi": 2}]]
+        _karsiliklari_tamamla(kararlar, partiler, sor, 1, 1, baslik="Star Wars", dil="Turkish")
+        self.assertTrue(gidenler)
+        self.assertEqual(gidenler[0].get("target_language"), "Turkish")
+
+    def test_film_dizi_terim_kurallari(self):
+        import tempfile
+        from defta.sozluk import Sozluk
+        from defta.terim import _karsilik_sorulacak, _latin_adaylar, baslik_terimi, kisaltma_adlari
+        # eserin adındaki uydurma sözcük kalır; sıradan anlamı olan çevrilir
+        self.assertEqual(baslik_terimi("witchers", {"t": "people"}, "The Witcher"), "Witcher")
+        self.assertEqual(baslik_terimi("gladiator", {"t": "people", "w": "gladiator"}, "Gladiator"), "")
+        self.assertEqual(baslik_terimi("witchers", {"t": "people"}, "The Witcher", "mutant canavar avcısı"), "Witcher")
+        self.assertEqual(baslik_terimi("dragon", {"t": "people"}, "House of the Dragon", "ejderha"), "")
+        self.assertEqual(baslik_terimi("dragon", {"t": "people", "e": "ejderha"}, "House of the Dragon",
+                                       "uçan sürüngen"), "")
+        self.assertEqual(baslik_terimi("Samurai", {"t": "people"}, "The Last Samurai", "samuray"), "")
+        # adın kısaltması addır
+        sz = Sozluk(os.path.join(tempfile.mkdtemp(), "s.json"))
+        sz.girdi_ekle("Catelyn", "name", "Catelyn")
+        sz.girdi_ekle("Cat", "epithet", "Kedi")
+        sz.girdi_ekle("Imp", "epithet", "Cüce")
+        self.assertEqual(kisaltma_adlari(sz), ["Cat"])
+        self.assertEqual(sz.girdiler["Cat"]["hedef"], "Cat")
+        # iyelik unvan olmaz; tireli Arapça edat adın parçası; "of" ile biten parça kalmaz
+        sayim, _, unvanlar, _, onler = _latin_adaylar(["Trust me, Your Grace.", "Your Grace, again.",
+                                                      "Hail Lisan al-Gaib!", "The Hand of God came."], 1, set())
+        self.assertNotIn("Your", onler)
+        self.assertIn("Lisan al-Gaib", sayim)
+        self.assertNotIn("Hand of", sayim)
+        # "Your Grace" unvan + ad diye bölünmez ("Your -> Majesteleri" terimi olmaz)
+        from defta.terim import _adla_gecen_unvanlar
+        sz.girdi_ekle("Your Grace", "title", "Majesteleri", kalip="Majesteleri {ad}")
+        sz.girdi_ekle("Warden Hale", "title", "Muhafız", kalip="Muhafız {ad}")
+        sz.girdi_ekle("Grand Maester", "title", "Büyük Üstat", kalip="Büyük Üstat {ad}")
+        sz.girdi_ekle("High Counsellor", "title", "", kalip="Başdanışman {ad}")
+        sz.girdi_ekle("Ambassador Xandem", "title", "", kalip="Büyükelçi Xandem {ad}")
+        sz.girdi_ekle("Brother Day", "title", "", kalip="Kardeş Gün {ad}")
+        _adla_gecen_unvanlar(sz, {}, set(), "Ask the maesters. Warden Hale came.")
+        self.assertNotIn("Your", sz.girdiler)
+        self.assertIn("Warden", sz.girdiler)
+        self.assertNotIn("Grand", sz.girdiler)
+        for bas in ("High", "Ambassador", "Brother"):             # niteleyici / kalıbı ikinci sözcüğü taşıyan
+            self.assertNotIn(bas, sz.girdiler)
+        # dil adı ve gerçek halk adı büyük harf
+        from defta.terim import hedef_belirle
+        self.assertEqual(hedef_belirle("Farsi", {"t": "people", "k": "farsça"}, True)[1], "Farsça")
+        self.assertEqual(hedef_belirle("Portuguese", {"t": "people", "k": "Portekizce"}, True)[1], "")  # halk mı dil mi
+        self.assertEqual(hedef_belirle("Japanese", {"t": "descriptive", "k": "Japonca"}, True)[1], "")
+        self.assertEqual(hedef_belirle("Portuguese", {"t": "people", "k": "Portekizli"}, True)[1], "Portekizli")
+        self.assertEqual(hedef_belirle("Scottish", {"t": "people", "k": "iskoç"}, True)[1], "İskoç")
+        self.assertEqual(hedef_belirle("Scottish", {"t": "people", "k": "İskoçlar"}, True)[1], "İskoç")
+        self.assertEqual(hedef_belirle("Welsh", {"t": "people", "k": "gallerliler"}, True)[1], "Gallerli")
+        self.assertEqual(hedef_belirle("Aborigines", {"t": "people", "k": "Aborjinler", "real": True}, True)[1], "Aborjinler")
+        # iyelikli çok sözcüklü terim küçültülmez
+        self.assertEqual(hedef_belirle("Murphy's Law", {"t": "term"}, True)[1], "Murphy's Law")
+        # bağlaçla kurulan ad tanımı sorulur ("Rivyalı Geralt")
+        self.assertTrue(_karsilik_sorulacak({"t": "descriptive"}, "Geralt of Rivia"))
+
+    def test_animenin_taninan_terimi_ozgun_sesiyle_kalir(self):
+        from defta.terim import _karsilik_sorulacak, hedef_belirle
+        bankai = {"t": "term", "l": "Bankai", "o": True}
+        self.assertEqual(hedef_belirle("卍解", bankai, True, True, "tr", True), ("term", "Bankai"))
+        self.assertEqual(hedef_belirle("月牙天衝", {"t": "term", "l": "Getsuga Tenshou", "o": True}, True, True, "tr", True),
+                         ("term", "Getsuga Tensho"))                         # uzun ünlü ikilenmez
+        self.assertEqual(hedef_belirle("死神", {"t": "people", "l": "Shinigami", "o": True}, True, True, "tr", True),
+                         ("people", "Shinigami"))                            # halk adı gibi küçültülmez
+        self.assertFalse(_karsilik_sorulacak(bankai, "卍解"))                  # karşılık istenmez
+        # okunuşu hiraganayla verilmiş kanji terim: model "o" demese de okunuşuyla kalır
+        self.assertEqual(hedef_belirle("獄門疆(ごくもんきょう)", {"t": "term", "k": "Hapishane Diyarı"}, True, True, "tr",
+                                       True), ("term", "Gokumonkyo"))
+        self.assertEqual(hedef_belirle("獄門疆(ごくもんきょう)", {"t": "term", "k": "Hapishane Diyarı"}, True, True, "tr",
+                                       False), ("term", "Hapishane Diyarı"))   # anime ekleri çevriliyorsa kural yok
+        # yalnız katakana yabancı kökenli sözcüktür: harf harf okunuşu yazılmaz, karşılık isteğinin işi
+        self.assertEqual(hedef_belirle("チャクラ", {"t": "term", "l": "Chakura", "o": True, "k": "çakra"}, True, True, "tr",
+                                       True), ("term", "çakra"))
+        # anime ekleri çevriliyorsa (ozgun kapalı) ya da model "o" demediyse karşılık isteğinin işi
+        self.assertEqual(hedef_belirle("卍解", bankai, True, True, "tr", False), ("term", ""))
+        self.assertEqual(hedef_belirle("国王", {"t": "title", "l": "Kokuo", "k": "Kral"}, True, True, "tr", True),
+                         ("title", "Kral"))
+
+    def test_gercek_halk_ve_din_buyuk_harfle(self):
+        from defta.terim import hedef_belirle
+        self.assertEqual(hedef_belirle("Muslim", {"t": "people", "k": "müslüman", "real": True}, True)[1], "Müslüman")
+        self.assertEqual(hedef_belirle("Islam", {"t": "term", "k": "islam", "real": True}, True)[1], "İslam")
+        self.assertEqual(hedef_belirle("Hobbit", {"t": "people", "k": "Hobbit"}, True)[1], "hobbit")   # kurgusal küçük
+
+    def test_iyelikli_hitap_unvani_terim_olmaz(self):
+        from defta.terim import unvan_govdesi
+        self.assertEqual(unvan_govdesi("Our Lord"), "Lord")
+        self.assertEqual(unvan_govdesi("my Lady"), "Lady")
+        self.assertEqual(unvan_govdesi("Lordship"), "Lordship")
+
+    def test_okunusu_ingilizce_siradan_sozcuk_cevrilir(self):
+        from defta.terim import _karsilik_sorulacak, hedef_belirle, okunus_adi_mi
+        kategori = {"t": "term", "l": "Category", "w": "category", "k": "kategori"}
+        self.assertEqual(hedef_belirle("警戒強度(カテゴリー)", kategori, True)[1], "kategori")
+        self.assertTrue(_karsilik_sorulacak(kategori, "警戒強度(カテゴリー)"))
+        self.assertEqual(hedef_belirle("星(ステラ)", {"t": "term", "l": "Stella", "w": "star"}, True)[1], "Stella")
+        self.assertTrue(okunus_adi_mi("滅却師(クインシー)", "Quincy"))          # qu = ku, c = s
+
+    def test_tek_ad_parcasi_tam_adla_ayni_yazilir(self):
+        import tempfile
+        from defta.sozluk import Sozluk
+        from defta.terim import tam_ad_parcalarini_esitle
+        sz = Sozluk(os.path.join(tempfile.mkdtemp(), "s.json"))
+        sz.girdi_ekle("ロイド・フォージャー", "name", "Loid Forger")
+        sz.girdi_ekle("ヨル・フォージャー", "name", "Yor Forger")
+        sz.girdi_ekle("フォージャー", "name", "Foja")            # oylar harf harf okunuşa gitmiş
+        sz.girdi_ekle("ロイド", "name", "Loid")
+        sz.girdi_ekle("ヨル", "name", "Yoru")
+        sz.girdiler["ヨル"]["karar"] = "elle"                      # elle karar kalır
+        sz.girdi_ekle("エース・サボ・ルフィ", "name", "Ace, Sabo, Luffy")   # ad listesi: tam ad değil
+        sz.girdi_ekle("サボ", "name", "Sabo")
+        self.assertEqual(tam_ad_parcalarini_esitle(sz), ["フォージャー"])
+        self.assertEqual(sz.girdiler["フォージャー"]["hedef"], "Forger")
+        self.assertEqual(sz.girdiler["ヨル"]["hedef"], "Yoru")
 
     def test_japonca_tam_ad_duyuldugu_sirayla(self):
         import tempfile
@@ -4098,6 +4510,59 @@ class Karar106Testleri(unittest.TestCase):
         self.assertEqual(sorted(japon_ad_sirasi(sz)), ["森重恭平(もりしげきょうへい)", "神室真司"])
         self.assertEqual(sz.girdiler["森重恭平(もりしげきょうへい)"]["hedef"], "Morishige Kyohei")
         self.assertEqual(sz.girdiler["神室真司"]["hedef"], "Kamuro Shinji")
+
+    def test_turemis_ad_disari_sayilmaz(self):
+        from defta.terim import _adlara_uyan
+        adlar = {"Troy": "Truva", "Sparta": "Sparta"}
+        self.assertEqual(_adlara_uyan(["Truva Savaşı", "Troya Savaşı"], "Trojan War", adlar), ["Truva Savaşı"])
+        self.assertEqual(_adlara_uyan(["Sparta Savaşı", "Büyük Savaş"], "Great War", adlar), ["Büyük Savaş"])
+
+    def test_elle_karar_tutarlilik_gecislerinden_korunur(self):
+        import tempfile
+        from defta.sozluk import Sozluk
+        from defta.terim import cogullari_esitle, japon_ad_sirasi
+        sz = Sozluk(os.path.join(tempfile.mkdtemp(), "s.json"))
+        sz.girdi_ekle("dwarf", "people", "cüce")
+        sz.girdi_ekle("dwarves", "people", "cüceler", karar="elle")
+        sz.girdi_ekle("神室", "name", "Kamuro")
+        sz.girdi_ekle("真司", "name", "Shinji")
+        sz.girdi_ekle("神室真司", "name", "Shinji Kamuro", karar="elle")
+        cogullari_esitle(sz)
+        self.assertEqual(japon_ad_sirasi(sz), [])
+        self.assertEqual((sz.girdiler["dwarves"]["hedef"], sz.girdiler["神室真司"]["hedef"]), ("cüceler", "Shinji Kamuro"))
+
+    def test_kurulmus_sozluk(self):
+        import tempfile
+        from defta.sozluk import Sozluk
+        sz = Sozluk(os.path.join(tempfile.mkdtemp(), "s.json"))
+        for n in range(25):
+            sz.girdi_ekle(f"Ad{n}", "name", f"Ad{n}")
+        self.assertFalse(sz.kurulmus())                 # hiç dosya incelenmedi
+        sz.analiz_edilen.append("S01E01.srt")
+        self.assertTrue(sz.kurulmus())
+
+    def test_kaydet_diskteki_elle_karari_korur(self):
+        import tempfile
+        from defta.sozluk import Sozluk
+        yol = os.path.join(tempfile.mkdtemp(), "s.json")
+        a = Sozluk(yol)
+        a.girdi_ekle("Strider", "epithet", "Yolgezer")
+        a.kaydet()
+        b = Sozluk(yol)                                   # süren çeviri sözlüğü açık tutuyor
+        duzelten = Sozluk(yol)
+        duzelten.girdi_yaz("Strider", hedef="Adımsız", karar="elle")
+        duzelten.kaydet()
+        b.girdi_ekle("Bree", "name", "Bree")
+        b.kaydet()                                        # elle düzeltmeyi ezmez
+        c = Sozluk(yol)
+        self.assertEqual((c.girdiler["Strider"]["hedef"], c.girdiler["Strider"]["karar"]), ("Adımsız", "elle"))
+        self.assertIn("Bree", c.girdiler)
+
+    def test_japon_tv_isaretleri_atilir(self):
+        from defta.temizlik import kaynak_hazirla
+        self.assertEqual(kaynak_hazirla("（ロビン）なぜなら…。➡")[0], "（ロビン）なぜなら…。")
+        self.assertEqual(kaynak_hazirla("🔊（通信兵）ルルシア王国は\n世界会議後に➡")[0], "（通信兵）ルルシア王国は\n世界会議後に—")
+        self.assertEqual(kaynak_hazirla("この船に\n乗ってしまったからにゃあ➡\nいや")[0], "この船に\n乗ってしまったからにゃあ\nいや")
 
     def test_seri_adi(self):
         from defta.sozluk import seri_adi

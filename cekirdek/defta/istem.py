@@ -13,20 +13,20 @@ def dile_gore(metin, kod):
     return _DILE_OZGU.sub(lambda m: m.group(1) if kod == "tr" else (m.group(2) or ""), metin)
 
 
+KURGU_DILLERI = ("Invented/fictional languages (Klingon, Dothraki, Na'vi, High Valyrian, made-up spell incantations, "
+                 'and the invented creole or slang of a story world, such as the Belters\' "beltalowda" or "kopeng")')
+
 KURGU = {
     "orijinal": (
-        "Invented/fictional languages (Klingon, Dothraki, Na'vi, High Valyrian, made-up spell "
-        "incantations) are NEVER translated. Copy those words letter for letter. Translate only "
+        KURGU_DILLERI + " are NEVER translated. Copy those words letter for letter. Translate only "
         "the real-language text around them; a grammatical suffix may be attached with an "
         "apostrophe if the sentence needs it[[tr| (\"Alohomora'yı söyle\")]]."),
     "orijinal_ceviri": (
-        "Invented/fictional languages (Klingon, Dothraki, Na'vi, High Valyrian, made-up spell "
-        "incantations): keep the original words letter for letter, then add the translation in "
+        KURGU_DILLERI + ": keep the original words letter for letter, then add the translation in "
         "parentheses on a new line, ONLY if the meaning is given in that same line or the glossary. "
         "Never invent a meaning; if unknown, keep the original alone."),
     "ceviri": (
-        "Invented/fictional languages (Klingon, Dothraki, Na'vi, High Valyrian, made-up spell "
-        "incantations): replace with the translation ONLY if the meaning is given in that same "
+        KURGU_DILLERI + ": replace with the translation ONLY if the meaning is given in that same "
         "line or the glossary. Never invent a meaning; if unknown, keep the original words "
         "letter for letter."),
 }
@@ -45,7 +45,9 @@ ANIME = {
     "orijinal": (
         "Japanese honorifics stay attached to the name exactly as they are: [[tr|Ahmet-senpai, ]]"
         "Hinata-san, Naruto-kun, Sakura-chan, Kakashi-sensei. Named techniques, attacks, jutsu and "
-        "spells stay in their romanized original: \"Gomu Gomu no Pistol\", \"Cho Odama Rasengan\". "
+        "spells stay in their romanized original: \"Gomu Gomu no Pistol\", \"Cho Odama Rasengan\"; so does an "
+        "incantation spoken in a language other than Japanese, such as German (\"Licht Regen\"). A character's recurring "
+        "sentence-ending tic (だってばよ) is kept as it sounds every time it occurs (\"..., dattebayo!\"). "
         "The titles Sensei and Senpai also stay as they are when used alone[[tr| (\"Sensei'ye söyle\")]]. "
         "From Japanese, romanize them the same way: \"うちはさん\" -> \"Uchiha-san\", "
         "\"サクラちゃん\" -> \"Sakura-chan\", \"ヒナタ様\" -> \"Hinata-sama\", \"カカシ先輩\" -> "
@@ -62,9 +64,9 @@ ANIME = {
 }
 
 NOT_ALANI = 'A "note" field is such a description already removed from the text: use it for tone only and never write it.'
-SES_KURALI = ('A sound a character makes, written as it is heard (a laugh, a groan, "Hmph", "えへへ"), and words a character '
-              'thinks or says aside in parentheses are not descriptions: write the sound as it sounds and the words as '
-              'speech, never in square brackets. ')
+SES_KURALI = ('A sound a character makes (a laugh, a groan, a sigh, "えへへ") and words a character thinks or says aside in '
+              'parentheses are not descriptions: write the sound as a sound and the words as speech, never in square '
+              'brackets. ')
 
 
 def unvan_bolumu(kayit, dil):
@@ -122,11 +124,19 @@ DIL_KURALLARI = {
     "tr": """# Turkish
 - Everyday spoken Turkish, warm and casual, the way people really talk; never like a written report or a dubbed film. Turkish is verb-final, but in speech the verb often moves ("Gördüm onu dün"): use that where a native speaker would.
 - Keep the register of each speaker: casual characters speak casually, formal ones formally. Children speak like children.
-- Swearing must sound like real spoken Turkish at the SAME strength as the source: mild -> "Hay aksi", "Off ya", "Hadi be"; in between ("damn it", "crap", "screw this") -> "Hay anasını", "Vay anasını", "Hay sıçayım", "Boş ver ya"; strong ("fuck", "shit" as a curse) -> "Siktir", "Hassiktir", "Siktir git", "Ne bok yiyorsun?", "amına koyayım"; insults -> "Piç", "Pislik", "Orospu çocuğu", "Şerefsiz herif". Never soften, censor or mask it, and never add swearing the source does not have. Crude words keep the crudeness of the source, also from a child: a child using a crude adult word says "bok" or "sıçmak" in Turkish too, and a child's own toilet word stays one ("kaka", "çiş", "osuruk"); never replace either with a polite paraphrase ("tuvalete gitmek"). When a later line reacts to the wording ("Don't say that at the table!"), your translation must contain the word it reacts to. Avoid dubbing clichés ("Kahretsin", "Kahrolası", "Lanet olası", "Lanet olsun", "lanet" in front of a noun, "Seni aptal!", "Seni pislik!"). An intensifier such as "fucking" strengthens the whole sentence in natural Turkish; do not translate it word for word ("You knew the whole fucking time." -> "Başından beri biliyordun lan."). Most intensifiers need only "lan" (after the verb or at the end of the sentence, never between commas in the middle), a stronger verb or the tone itself; keep "amına koyayım" for real fury and never add it to sentence after sentence. In front of a noun it still carries the speaker's anger and is never a quality of the thing: "Get me a fucking chair." asks for a chair, not for a bad one ("Bir sandalye getir lan bana.", never "Bok gibi bir sandalye getir."). Never drop a curse phrase into the middle of a clause where the English word stood ("Bu amına koyayım berbat" is wrong): it comes at the very end of the sentence, or a stronger word carries the force ("Rezalet bu", "Berbat lan bu"). A bleeped or masked swear word ("(bleep)", "[bleep]", "f***") is written out in full: work out from the sentence which kind of swear it is and give the Turkish one of that kind at the same strength (about a person -> "pislik", "göt herif"; about a thing or a mess -> "bok", "boktan"; as an exclamation -> "Siktir", "Hassiktir"). Never drop it, and never make it harsher than the sentence shows. A speaker's part that is only a bleep ("- [bleep]" in a two-speaker line) is that speaker's curse said on its own: write it as one ("- Siktir!") and keep the dash. A bleeped intensifier in front of a word ("[bleep] late", "a [bleep] mess") follows the intensifier rule above: it carries the speaker's anger ("Geç kaldın lan."), it is not a quality of the thing ("bok gibi geç" is wrong), and the rest of the sentence is translated in full. The same holds in front of an adjective, a noun or a state: "[bleep] cold" -> "Buz gibi lan bu!" or "Resmen buz gibi!", never "Bok gibi soğuk"; "I'm not your [bleep] servant." -> "Senin uşağın değilim lan.", never "Senin bok uşağın değilim"; "the [bleep] oven" -> "fırın" with the anger in "lan" or the tone, never "lanet fırın". "Bok gibi" is only for a real comparison of quality ("It tastes like [bleep]." -> "Bok gibi tadı var.").
+- Swearing must sound like real spoken Turkish at the SAME strength as the source: never stronger, never added where the source has none, and never softened into politeness. When unsure between two strengths, take the milder.
+  - Strength: mild -> "Hay aksi", "Off ya", "Tüh", "Hadi be"; in between ("damn it", "crap", "screw this") -> "Hay anasını", "Vay anasını", "Boş ver ya"; strong ("fuck", "shit" as a curse) -> "Siktir", "Hassiktir", "Siktir git", "Ne bok yiyorsun?", "amına koyayım". Insults: mild -> "Salak", "Aptal"; in between -> "Pislik", "Şerefsiz", "Alçak"; strong -> "Piç", "Orospu çocuğu", "Şerefsiz herif".
+  - Japanese curses and insults are milder than their usual English glosses. くそ, ちくしょう, しまった as an exclamation are mild or in between; choose by the moment and vary them: a small mishap "Hay aksi!", "Tüh!", frustration "Of be!", "Hay anasını!", real anger or grief "Allah kahretsin!"; くそ野郎, てめえ, この野郎, 貴様 as an insult are in between ("Pislik!", "Şerefsiz!", "Alçak!"). A Japanese source never gets "orospu çocuğu", "siktir", "amına" or "sıçmak"; a child keeps a child's words ("Kötü adam!", "Pislik!").
+  - Crude words of an English source keep their crudeness, also from a child: a child using a crude adult word says "bok" in Turkish too, and a child's own toilet word stays one ("kaka", "çiş", "osuruk"); never replace either with a polite paraphrase ("tuvalete gitmek"). When a later line reacts to the wording ("Don't say that at the table!"), your translation must contain the word it reacts to.
+  - Avoid dubbing clichés ("Kahretsin" on its own, "Kahrolası", "Lanet olası", "Lanet olsun", "lanet" in front of a noun, "Seni aptal!", "Seni pislik!").
+  - Intensifiers: "fucking" strengthens the whole sentence; do not translate it word for word ("You knew the whole fucking time." -> "Başından beri biliyordun lan."). An intensifier needs a stronger verb, a stronger word or the tone itself ("Rezalet bu", "Berbat ötesi"), or "lan" after the verb or at the end of the sentence (never between commas in the middle); "lan" at most once in several lines, never in two lines in a row. Keep "amına koyayım" for real fury and never add it to sentence after sentence. In front of a noun it still carries the speaker's anger and is never a quality of the thing: "Get me a fucking chair." asks for a chair, not for a bad one ("Bir sandalye getir bana!", never "Bok gibi bir sandalye getir."). Never drop a curse phrase into the middle of a clause where the English word stood ("Bu amına koyayım berbat" is wrong): it comes at the very end of the sentence, or a stronger word carries the force.
+  - Bleeped or masked swear words ("(bleep)", "[bleep]", "f***") were censored in the broadcast: never write out a swear word in their place. Translate the rest of the sentence in full and let the tone or a stronger word carry the anger ("[bleep] late" -> "Yine geç kaldın!", "It's absolute [bleep]." -> "Rezalet resmen.", "Out the [bleep] door!" -> "Defol git!"), never "lan" and never a quality of the thing ("bok gibi", "lanet fırın"). Where the bleep stands for a word the sentence cannot do without (an insult or a noun: "My brother's an [bleep].", "It's dog [bleep]."), put a mild word of that kind in its place so the sentence stays whole ("Ağabeyim tam bir salak.", "Rezalet bu."). A speaker's part that is only a bleep ("- [bleep]" in a two-speaker line) is a mild exclamation ("- Hay aksi!") and keeps the dash. "Bok gibi" is only for a real comparison of quality in an unbleeped source ("It tastes like shit." -> "Bok gibi tadı var.").
 - Reaction sounds are written the way Turkish speakers write them. A soft sound of noticing or mild questioning ("hm?", "oh?", "ん？", "お？") is "Hı?" or "Hm?"; "Ha?" is only for real disbelief or a rude "what?" ("は？", "huh?!"). Surprise is "Aa!" or "Oo!", pain or effort "Ah!", "Of!", "Ih!", a scream "Aaa!". Never leave an English or romanized spelling ("Ugh", "Argh", "Uwaa", "Nggh", "Hmph", "Oops", "Ouch").
 - Spelling: the conjunction "de/da" and the question particle "mı/mi/mu/mü" are separate words ("Ben de geldim", "Geldin mi?"); the suffix -de/-da is attached ("evde"). "ki" as a conjunction is separate, as a suffix attached ("evdeki"). "bir şey", "her şey" are two words; "hiçbir", "birçok", "herkes" one.
 - Proper names, honorifics and code names take suffixes with an apostrophe and vowel harmony: "Harry'yi", "Naruto-kun'a", "Senpai'nin", "Batman'in". Common nouns never take an apostrophe ("ablama", "devin"). A common noun that names one unique thing of the story (the Sword, the Ark) is written like a proper name in every line: capitalised, suffix after an apostrophe, no consonant softening ("Kılıç'ı", "Kılıç'ın", never "Kılıcı").
-- Races and peoples are lowercase common nouns ("devler", "cinler", "vampirler"). Family words used as names are lowercase common nouns too ("Mother" -> "anne", "anneme"; never "Anne'ye"). Nationalities and languages are capitalised ("İtalyan", "Japonca").
+- The invented races, creatures and kinds of being of a story are lowercase common nouns ("devler", "cinler", "vampirler"). Real peoples, nationalities, religions and their followers, and languages are capitalised ("Arap", "Yahudi", "Müslüman", "Hristiyan", "İslam", "İtalyan", "Japonca"). God as the one God is "Tanrı", capitalised ("Tanrı'nın"), and "the Lord" meaning God is "Tanrı" as well: one word in every line, never "Rab" in one line and "Tanrı" in the next.
+- Family words used as names are lowercase common nouns ("Mother" -> "anne", "anneme"; never "Anne'ye"), and one person keeps one word in every line: "Grandpa" is "dede", "Grandma" is "nine", with the possessive the sentence needs ("Grandpa says..." from a grandchild -> "Dedem diyor ki...", to a grandchild -> "Deden..."), never "büyükbaba" in one line and "dede" in another.
+- "My lord" / "my lady" said to a noble is "lordum" / "leydim"; "Sire", "Your Majesty" and 陛下 said to a monarch are "Majesteleri"; "Your Highness" and 殿下 said to a prince or princess are "Prensim" / "Prensesim" (or "Ekselansları" in a formal announcement); "Your Excellency" and 閣下 said to a governor, minister or general are "Ekselansları". Keep the same form throughout.
 - Use natural constructions, including causatives ("Let's have Dad fix it!" -> "Babama tamir ettirelim!").""",
 }
 
@@ -186,10 +196,10 @@ def istem_olustur(ayar, sozluk=None, basvuru=False):
     kurgu = D(KURGU[m["kurgu_dili"]]) + (" " + KURGU_ANLAMI[m["kurgu_anlami"]] if m["kurgu_dili"] == "orijinal" else "")
     bolumler.append(D(f"""# Protected content (highest priority)
 1. Text inside ⟦ ⟧ is protected. Copy it exactly, character for character, with the ⟦ ⟧ marks. Never translate, alter, reorder or drop it. A grammatical suffix may follow the closing mark[[tr|: "⟦Alohomora⟧'yı söyle"{ek_ornegi}]].
-2. {kurgu} Real foreign languages are not invented languages: a Russian, Spanish or French phrase is translated like any other line[[tr| ("Na zdorovje!" -> "Şerefe!")]].
+2. {kurgu} Real foreign languages are not invented languages: a Russian, Spanish or French phrase is translated like any other line[[tr| ("Na zdorovje!" -> "Şerefe!")]]{" (a named technique or spell is the exception: rule 3)" if ekler else ""}.
 3. {ANIME[m["anime_ekleri"]].format(dil=dil)}
-4. Invented personal and place names stay as they are.{" A name written in another script is written in Latin letters the way it SOUNDS (the viewers hear the original audio), never as an English translation or localised name." if latin else ""} Real-world and mythological names use their established {dil} form ([[tr|"Rome" -> "Roma", "Athens" -> "Atina"||"Rome", "Athens"]]). Nicknames and epithets are translated ([[tr|"Erik the Red" -> "Kızıl Erik"||"Erik the Red"]]); terms with an established official {dil} translation use it ([[tr|"the Sorting Hat" -> "Seçmen Şapka", "Diagon Alley" -> "Diagon Yolu"||"the Sorting Hat", "Diagon Alley"]]).
-5. Code names (a secret name given by an organisation) and names of operations and projects are NOT translated: "Nighthawk", "Black Widow", "Operation Overlord"; only a rank beside them is ([[tr|"Agent Nighthawk" -> "Ajan Nighthawk"||in "Agent Nighthawk" only "Agent"]]). A title or common word used AS a character's name is a name: a character everyone calls "the Professor" is [[tr|"Profesör", capitalised||translated and capitalised]], distinct from an ordinary "a professor".
+4. Invented personal names stay as they are. An invented place, ship or building name stays as it is too, unless the work has a published {dil} translation that renders it[[tr| ("Rivendell" -> "Ayrıkvadi", "the Black Pearl" -> "Kara İnci")]]: then that form is used, whole, never half translated.{" A name written in another script is written in Latin letters the way it SOUNDS (the viewers hear the original audio), never as an English translation or localised name." if latin else ""} Real-world and mythological names use their established {dil} form ([[tr|"Rome" -> "Roma", "Athens" -> "Atina"||"Rome", "Athens"]]); a god, character, creature or place of an ancient epic or myth keeps the source spelling unless the {dil} form is in everyday use, even where an encyclopedia respells it ([[tr|"Zeus" stays, "Troy" -> "Truva", but "Telemachus" stays "Telemachus"||"Telemachus" stays as written]]). The glossary decides wherever it lists the name. Nicknames and epithets are translated ([[tr|"Erik the Red" -> "Kızıl Erik"||"Erik the Red"]]); terms with an established official {dil} translation use it ([[tr|"the Sorting Hat" -> "Seçmen Şapka", "Diagon Alley" -> "Diagon Yolu"||"the Sorting Hat", "Diagon Alley"]]).
+5. Code names (a secret name given by an organisation) stay exactly as they are heard: "Nighthawk", "Black Widow"; only a rank beside them is translated ([[tr|"Agent Nighthawk" -> "Ajan Nighthawk"||in "Agent Nighthawk" only "Agent"]]). In the name of an operation, project or mission only the generic word is translated, in the word order natural in {dil}, and the name stays ([[tr|"Operation Overlord" -> "Overlord Operasyonu"||"Operation Overlord": only "Operation"]]). A title or common word used AS a character's name is a name: a character everyone calls "the Professor" is [[tr|"Profesör", capitalised||translated and capitalised]], distinct from an ordinary "a professor"[[tr| (family words such as "Mom" or "Grandpa" are the exception: see "Family words" below)]].
 6. Render every name and term the same way every time."""))
 
     anlam = [f"""- Translate what the speaker MEANS in this scene, not the words. Read each line as part of the exchange around it: who is speaking, to whom, and what they are answering. Use {alanlar} when given. Never add, drop or invent facts.
@@ -221,7 +231,7 @@ def istem_olustur(ayar, sozluk=None, basvuru=False):
 
     if latin:
         bolumler.append(f"""# Alphabet
-The output contains Latin letters only (including the letters of {dil}) and plain Western punctuation. Anything kept from another script (Japanese, Korean, Chinese, Cyrillic, Arabic...) is romanized; for Japanese use plain Hepburn without macrons (ou, oo, uu).""")
+The output contains Latin letters only (including the letters of {dil}) and plain Western punctuation. Anything kept from another script (Japanese, Korean, Chinese, Cyrillic, Arabic...) is romanized; for Japanese use plain Hepburn without macrons and without doubling a long o or u (Tokyo, Ryunosuke, Getsuga Tensho), unless the glossary spells a name otherwise.""")
 
     if terimler or adlar:
         girdiler = "\n".join(
@@ -229,10 +239,10 @@ The output contains Latin letters only (including the letters of {dil}) and plai
              + sozluk_notu(kaynak, anlamlar, siradanlar) for kaynak, hedef in terimler.items()]
             # sıradan anlamı da olan ad kendi satırında durur; ötekiler tek satırda sayılır
             + [f"- {a} (keep exactly as is)" + sozluk_notu(a, anlamlar, siradanlar) for a in adlar if a in siradanlar]
-            + (["- Names written exactly as in the source: " + ", ".join(a for a in adlar if a not in siradanlar)]
+            + (["- Names and terms written exactly as in the source: " + ", ".join(a for a in adlar if a not in siradanlar)]
                if any(a not in siradanlar for a in adlar) else []))
         gecen = list(terimler) + adlar
-        bolumler.append(f"""# Glossary (mandatory: these names and terms are always rendered this way; inflect naturally; apply an entry only where the source uses that term in that sense, not to ordinary words that merely resemble it){NOT_KURALI if any(k in anlamlar for k in gecen) else ""}{D(SIRADAN_KURALI) if any(k in siradanlar for k in gecen) else ""}
+        bolumler.append(f"""# Glossary (mandatory: these names and terms are always rendered this way; inflect naturally; apply an entry only where the source uses that term in that sense, not to ordinary words that merely resemble it; a word derived from a listed name, such as its adjective or the name of its people, is built on the glossary form){NOT_KURALI if any(k in anlamlar for k in gecen) else ""}{D(SIRADAN_KURALI) if any(k in siradanlar for k in gecen) else ""}
 {girdiler}""")
 
     if unvanlar:
@@ -246,8 +256,8 @@ The output contains Latin letters only (including the letters of {dil}) and plai
                         + ", ".join(f"{k} = {v}" for k, v in sesler.items())
                         + ". Any other mimetic word for a sound, a noise or a feeling that a character utters on its "
                         "own is written the same way, as it sounds, in Latin letters (ドキドキ -> Doki doki, シーン -> "
-                        "Shiin); a cry of surprise, pain or fear is a reaction sound and follows the reaction-sound "
-                        "rule. Inside a sentence, translate it like any other word.")
+                        f"Shiin); a cry of surprise, pain or fear is a reaction sound, written the way {dil} speakers "
+                        "write it. Inside a sentence, translate it like any other word.")
 
     # Girdi alanları: (koşul, açıklama). Koşulu sağlanmayan alan isteklere de konmaz, burada da anlatılmaz.
     kosullar = [

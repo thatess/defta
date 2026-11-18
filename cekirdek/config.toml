@@ -46,7 +46,7 @@ kurgu_anlami = "cevir"         # cevir / sil: kaynak uydurma sözün anlamını 
 anime_ekleri = "orijinal"      # orijinal / orijinal_ceviri / ceviri: Japonca hitap ekleri (-san, -kun, Sensei) ve teknik adları
 sarki = "orijinal"             # orijinal / orijinal_ceviri / ceviri: ♪ işaretli şarkı sözleri (yalnız ilk ve son dizesi ♪'li
                                # şarkının tamamı); Latin dışı alfabedeki sözler okunuşuyla, Latin harfle yazılır
-ses_sozcukleri = "orijinal"    # orijinal / cevir: altyazının tamamı olan hayvan sesi ya da seslenme (Japonca: ボフ -> Bofu)
+ses_sozcukleri = "orijinal"    # orijinal / cevir: tek başına söylenen hayvan sesi ya da yansıma sesi Latin harfle (ボフ -> Bofu, ガーン -> Gaan)
 ekran_yazisi = "cevir"         # cevir / birak / sil: tabela, yazı, başlık. Kesin ayrımı yalnızca ASS verir (sil, ASS dışında çevirir)
 # Notlar ve etiketler. Silinen not modele bağlam olarak yine gider, çeviriye yazılmaz.
 koseli_not = "sil"             # sil / cevir: köşeli parantezli ses notu: [müzik], [kapı çarpar]
@@ -98,7 +98,7 @@ sahne_token = 4500             # sahne istekleri için dosya bu büyüklükte pa
 
 [kontrol]
 # Çeviriden sonra script'in denetimleri: sorunlu satır yalnızca nedeniyle birlikte yeniden sorulur.
-supheli_satir_kontrolu = true  # dublaj klişesi, kaynağa göre çok kısa çeviri, soru olarak yinelenen zamir
+supheli_satir_kontrolu = true  # dublaj klişesi, yabancı yazılmış tepki sesi, düşen ya da yanlış yere konan bip'li küfür, kısa çeviri, yinelenen zamir
 kayma_kontrolu = true          # çeviri komşu altyazıya kaymışsa (komşuda aynı çeviri, adın komşuya geçmesi)
 tekrar_eden_sahne = true       # geri dönüşte, alıntıda ya da yankıda yinelenen satır her geçişinde aynı çevrilir
 deneme_sayisi = 3              # bir parça en çok kaç kez sorulsun
