@@ -819,7 +819,7 @@ def _karsilik_sorulacak(c, yazim):
     kingsfoil), özel ad gibi kalan (Dúnedain, Vardy, mithril) yazımıyla kalır."""
     if c.get("kaynak") or c.get("unvanli_ad"):  # kaynaktaki gibi kalan ad; unvan + kalan ad
         return False
-    if c.get("anlamli_ad"):                     # anlamlı sözcüklerden kurulan çok sözcüklü ad (Bag End, Middle-earth)
+    if c.get("anlamli_ad") or c.get("siradan_terim"):   # çok sözcüklü anlamlı ad (Bag End); keşfin seçtiği sıradan söz
         return True
     if c.get("t") == "codename":
         return bool(kod_adi_adi(kod_adi_latin(yazim, c.get("l")) if temizlik.latin_disi(yazim) else yazim))
@@ -2108,7 +2108,7 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
     _harf = [k for k in kaynak_metni if k.isalpha()]
     latin_disi_kaynak = sum(not k.isascii() for k in _harf) > 0.3 * max(1, len(_harf))
 
-    def kararlari_kur(oylar_, partiler_):
+    def kararlari_kur(oylar_, partiler_, kesiften=False):
         """Sınıflandırma oylarından karar; ardından aynı anda yazım isteği ve karşılık isteği ("l" ve "k" alanları).
         (kararlar, karşılığı sorulan, yazımı sorulan)."""
         kararlar_ = _karara_bagla(oylar_, partiler_)
@@ -2148,6 +2148,17 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
                             and c.get("real") is not True and c.get("t") in ("name", "epithet", "descriptive", "title")):
                         c["unvanli_ad"] = tablo[m.group(1)].format(ad=m.group(2))
                         c.pop("anlamli_ad", None)
+        if kesiften:
+            # Keşfin "her seferinde aynı çevrilmeli" diye seçtiği, kaynakta en az üç kez geçen söz sınıflandırmada
+            # sıradan sözcük çıksa da karşılığı bir kez sorulur ve sözlüğe girer. Yoksa her parça kendi karşılığını
+            # seçiyor: 殺し屋 bir sahnede "suikastçı", ötekinde "katil" (Kodi 1.0.11, SPY x FAMILY S01E02). Keşif oylarının
+            # çoğunluğu aranmaz: aynı sözü bir koşuda üç oy, ötekinde tek oy seçiyor (gerçek test 44). Karşılık gelmezse
+            # girdi sıradan sözcük olarak kalır (isle).
+            for parti, kar in zip(partiler_, kararlar_):
+                for c in kar:
+                    a = parti[c["i"] - 1] if isinstance(c.get("i"), int) and 1 <= c["i"] <= len(parti) else None
+                    if a and c.get("t") == "common" and a["sayi"] >= 3:
+                        c.update(t="term", siradan_terim=True, ceviri_oyu=True)
         eski_l = [(c, c["l"].strip()) for kar in kararlar_ for c in kar
                   if c.get("t") in YAZIMLI and isinstance(c.get("l"), str) and len(c["l"].strip()) >= 3]
         with ThreadPoolExecutor(max_workers=2) as h:
@@ -2205,7 +2216,7 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
         with ThreadPoolExecutor(max_workers=max(1, isci)) as havuz:
             gelecek = [[havuz.submit(siniflandir, p) for _ in range(oy)] for p in kesif_partileri]
             oylar_ = [[g.result() for g in grup] for grup in gelecek]
-        return kararlari_kur(oylar_, kesif_partileri)
+        return kararlari_kur(oylar_, kesif_partileri, kesiften=True)
 
     with ThreadPoolExecutor(max_workers=2) as zincir:         # iki zincir aynı anda: süreyi uzun olanı belirler
         ana, kes = zincir.submit(kararlari_kur, oylar, partiler), zincir.submit(kesif_zinciri)
@@ -2273,7 +2284,10 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
         cevaplar = {c.get("i"): c for c in kararlar_}
         for n, a in enumerate(parti, 1):
             if n in cevaplar:
-                isle(a["yazim"], set(), a["sayi"], a["ornek"], cevaplar[n], "keşif")
+                c = cevaplar[n]
+                if c.get("siradan_terim") and not (isinstance(c.get("k"), str) and c["k"].strip()):
+                    c = {"t": "common"}             # karşılığı gelmedi: sıradan sözcük olarak kalır
+                isle(a["yazim"], set(), a["sayi"], a["ornek"], c, "keşif")
     # Ses kararları: ses ise girdi "sound" olur (terim değildir; yazımı girdinin "hedef"idir),
     # değilse girdiye "ses": false yazılır ki bir daha sorulmasın.
     ses_oylari = [y for y in ses_oylari if y.get("items")]

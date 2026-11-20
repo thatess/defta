@@ -2862,6 +2862,21 @@ Use Crimson Lotus Strike, Kenji-senpai.
         dizi_analiz([("x.srt", satirlar, "")], self.ayar, SahteModel(terim=terim, kesif=["halfling"]), latin, self.gunluk)
         self.assertNotIn("halfling", latin.girdiler)
 
+    def test_kesfin_sectigi_siradan_soz_tek_karsilikla_sozluge_girer(self):
+        """Keşfin seçtiği, en az üç kez geçen söz sınıflandırmada sıradan sözcük çıksa da karşılığı sorulur ve terim
+        olarak girer (殺し屋: bir sahnede "suikastçı", ötekinde "katil" olmasın). İki kez geçen ya da karşılığı
+        gelmeyen söz girmez."""
+        uc = self._satirlar(["An assassin came.", "The assassin left.", "No assassin here.", "A tailor.", "The tailor."])
+        terim = {"assassin": {"t": "common", "k": "suikastçı"}, "tailor": {"t": "common", "k": "terzi"}}
+        model = SahteModel(terim=terim, kesif=["assassin", "tailor"])
+        dizi_analiz([("x.srt", uc, "")], self.ayar, model, self.sozluk, self.gunluk)
+        self.assertEqual(self.sozluk.terimler, {"assassin": "suikastçı"})
+        self.assertEqual(self.sozluk.girdiler["assassin"]["tur"], "term")
+        bos = Sozluk(os.path.join(self.tmp.name, "bos.json"))
+        dizi_analiz([("x.srt", uc, "")], self.ayar, SahteModel(kesif=["assassin"]), bos, self.gunluk)
+        self.assertEqual(bos.terimler, {})
+        self.assertNotEqual(bos.girdiler.get("assassin", {}).get("tur"), "term")
+
     def test_ingilizce_hedefte_ingilizce_yazim_karsiliktir(self):
         """Latin dışı kaynakta İngilizce yazımla ("l") aynı cevap Türkçe hedefte karşılık sayılmaz; hedef dil
         İngilizceyse karşılığın kendisidir: elenirse kanjili terim İngilizce hedefte sözlüğe hiç giremez."""
