@@ -1717,6 +1717,11 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(h("アーニャ", {"t": "name", "l": "Anya"}, False), ("name", "Anya"))
         self.assertEqual(h("東国(オスタニア)", {"t": "descriptive", "l": "Ostania", "tr": "Doğu Ülkesi"}, True),
                          ("descriptive", "Ostania"))                                                      # okunuşu verilmiş: ad odur
+        # okunuş alıntı sözcükse ve "l" harf harf okunuşsa, aynı sesi veren karşılık sözcüğün yazımıdır (20.11.2026)
+        self.assertEqual(h("超能力者(エスパー)", {"t": "people", "l": "Esupā", "tr": "esper"}, True), ("people", "esper"))
+        self.assertEqual(h("超能力者(エスパー)", {"t": "people", "l": "Esupā", "tr": "telepat"}, True), ("people", "esupa"))
+        self.assertEqual(h("超能力者(エスパー)", {"t": "people", "l": "Esper", "tr": "telepat"}, True), ("people", "esper"))
+        self.assertEqual(h("東国(オスタニア)", {"t": "name", "l": "Osutania", "tr": "Ostania"}, True), ("name", "Osutania"))
         self.assertEqual(h("婆(ババア)", {"t": "epithet", "l": "Baba", "k": "kocakarı"}, True),
                          ("epithet", "kocakarı"))                                                         # lakapta okunuş karşılık olmaz
         self.assertEqual(h("アーニャ", {"t": "name"}, False), ("name", ""))            # Latin yazımı yoksa girmez
@@ -2862,6 +2867,45 @@ Use Crimson Lotus Strike, Kenji-senpai.
         dizi_analiz([("x.srt", satirlar, "")], self.ayar, SahteModel(terim=terim, kesif=["halfling"]), latin, self.gunluk)
         self.assertNotIn("halfling", latin.girdiler)
 
+    def test_okunuslu_iki_soz_ayni_adi_almaz(self):
+        """Okunuşu katakanayla verilmiş iki ayrı söz aynı Latin adı almışsa okunuşuna uymayan, kendi oylarındaki
+        uyan yazımı alır (西国(ウェスタリス): üç oyun ikisi komşusunun adını yazdı). Çakışma yoksa ve başka oy yoksa
+        dokunulmaz; çakışmayan ad değişmez."""
+        from defta.terim import _ayni_ada_dusenleri_ayir, _cogunluk
+        parti = [{"yazim": "西国(ウェスタリス)"}, {"yazim": "東国(オスタニア)"}, {"yazim": "兵長(リヴァイ)"}]
+        oy = lambda bati, kral="Levi": {"items": [{"i": 1, "t": "name", "l": bati}, {"i": 2, "t": "name", "l": "Ostania"},
+                                                     {"i": 3, "t": "name", "l": kral}]}
+        grup = [oy("Ostania"), oy("Ostania"), oy("Westalis", "Rivai")]
+        karar = _cogunluk(grup, {n: a["yazim"] for n, a in enumerate(parti, 1)})
+        self.assertEqual([c["l"] for c in karar], ["Ostania", "Ostania", "Levi"])
+        _ayni_ada_dusenleri_ayir([karar], [grup], [parti], self.sozluk)
+        self.assertEqual([c["l"] for c in karar], ["Westalis", "Ostania", "Levi"])
+        hepsi = [oy("Ostania"), oy("Ostania"), oy("Ostania")]
+        karar = _cogunluk(hepsi, {n: a["yazim"] for n, a in enumerate(parti, 1)})
+        _ayni_ada_dusenleri_ayir([karar], [hepsi], [parti], self.sozluk)
+        self.assertEqual([c["l"] for c in karar], ["Ostania", "Ostania", "Levi"])      # uyan başka oy yok: dokunulmaz
+        # öteki söz sözlükte zaten varsa da çakışma sayılır
+        self.sozluk.girdi_ekle("東国(オスタニア)", "name", "Ostania")
+        tek = [{"yazim": "西国(ウェスタリス)"}]
+        tek_oy = lambda l: {"items": [{"i": 1, "t": "name", "l": l}]}
+        grup = [tek_oy("Ostania"), tek_oy("Ostania"), tek_oy("Westalis")]
+        karar = _cogunluk(grup, {1: tek[0]["yazim"]})
+        _ayni_ada_dusenleri_ayir([karar], [grup], [tek], self.sozluk)
+        self.assertEqual(karar[0]["l"], "Westalis")
+
+    def test_okunusu_alinti_sozcuk_oylardan_secilir(self):
+        """Çoğunluk harf harf okunuşu yazsa da oyların yarısı sözcüğün kendi yazımını bir alanda verdiyse o seçilir;
+        çeviri olan karşılık sayılmaz, tek oy yetmez."""
+        from defta.terim import _cogunluk, hedef_belirle
+        y = {1: "超能力者(エスパー)"}
+        oy = lambda l, tr: {"items": [{"i": 1, "t": "people", "l": l, "tr": tr}]}
+        k = _cogunluk([oy("Esper", "medyum"), oy("Esupā", "esper"), oy("Esupā", "medyum")], y)[0]
+        self.assertEqual(hedef_belirle(y[1], k, True), ("people", "esper"))
+        k = _cogunluk([oy("Esupā", "medyum"), oy("Esupā", "esper"), oy("Esupā", "medyum")], y)[0]
+        self.assertEqual(hedef_belirle(y[1], k, True), ("people", "esupa"))
+        k = _cogunluk([oy("Sutera", "yıldız"), oy("Sutera", "yıldız"), oy("Stella", "yıldız")], {1: "星(ステラ)"})[0]
+        self.assertEqual(k["l"], "Sutera")
+
     def test_kesfin_sectigi_siradan_soz_tek_karsilikla_sozluge_girer(self):
         """Keşfin seçtiği, en az üç kez geçen söz sınıflandırmada sıradan sözcük çıksa da karşılığı sorulur ve terim
         olarak girer (殺し屋: bir sahnede "suikastçı", ötekinde "katil" olmasın). İki kez geçen ya da karşılığı
@@ -2875,6 +2919,10 @@ Use Crimson Lotus Strike, Kenji-senpai.
         bos = Sozluk(os.path.join(self.tmp.name, "bos.json"))
         dizi_analiz([("x.srt", uc, "")], self.ayar, SahteModel(kesif=["assassin"]), bos, self.gunluk)
         self.assertEqual(bos.terimler, {})
+        ayni = Sozluk(os.path.join(self.tmp.name, "ayni.json"))        # karşılık yazımın kendisi: sıradan kalır
+        dizi_analiz([("x.srt", uc, "")], self.ayar, SahteModel(terim={"assassin": {"t": "common", "k": "assassin"}},
+                                                               kesif=["assassin"]), ayni, self.gunluk)
+        self.assertEqual(ayni.terimler, {})
         self.assertNotEqual(bos.girdiler.get("assassin", {}).get("tur"), "term")
 
     def test_ingilizce_hedefte_ingilizce_yazim_karsiliktir(self):

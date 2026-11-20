@@ -650,6 +650,14 @@ def _hedef_ham(yazim, cevap, taninan, latin_zorunlu=True, hedef_kodu="tr"):
     # okunuş yalnızca söyleniştir, karşılık olmaz: 婆(ババア) "Baba" diye yazılmaz, aşağıdaki kuralla çevrilir.
     if (okunus_adi_mi(yazim, latin, bool(isinstance(cevap.get("w"), str) and cevap["w"].strip()))
             and (tur not in ("epithet", "title") or odunc_okunus_mu(yazim, latin)) and not siradan_odunc(cevap, latin)):
+        # Okunuş Avrupa dilinden alınma bir sözcükse model bazen "l"ye katakananın harf harf okunuşunu ("Esupā"),
+        # sözcüğün kendi yazımını ise karşılık alanına yazıyor ("esper"): sözlüğe "esupa" giriyordu (Kodi 1.0.12,
+        # SPY x FAMILY S01E03 超能力者(エスパー)). Karşılık aynı sesi veren tek sözcükse ve harf harf okunuş değilse
+        # sözcüğün yazımı odur; çeviri (sesi tutmayan karşılık) buradan geçmez.
+        asil = temiz("tr")
+        if (tur in ("people", "term") and asil and _mekanik_mi(yazim, latin) and re.fullmatch(r"[A-Za-z]+", asil)
+                and okunus_adi_mi(yazim, asil) and not _mekanik_mi(yazim, asil)):
+            return tur, asil
         return tur, latin
     if tur == "codename":                       # kod adı çevrilmez, duyulduğu gibi kalır; yalnız "Operation" gibi
         if yabanci and aynen:                   # okunuşu tutmayan yazım çeviridir: okunuş yazılır (Twilight -> Tasogare)
@@ -803,6 +811,43 @@ EK_OY = 2       # karşılık isteğinin cevapları birleşmediyse aynı soru ka
 def _karara_bagla(gruplar, partiler):
     """Her partinin oylarından karar: tür ve her alan için çoğunluğun dediği."""
     return [_cogunluk(grup, {n: a["yazim"] for n, a in enumerate(parti, 1)}) for grup, parti in zip(gruplar, partiler)]
+
+
+def _ayni_ada_dusenleri_ayir(kararlar, gruplar, partiler, sozluk):
+    """Okunuşu katakanayla verilmiş iki ayrı söz aynı Latin adı almışsa biri yanlıştır: model 西国(ウェスタリス) için de
+    komşusunun adını ("Ostania") yazıyor, üç oyun ikisi böyle olunca iki ülke tek ad alıyordu (gerçek test 46).
+    Okunuşuna daha iyi uyan adı korur; öteki, kendi oylarından okunuşuna daha iyi uyan başka bir yazım varsa onu alır
+    ("Westalis"). Öyle bir oy yoksa dokunulmaz. Yalnız çakışmada çalışır: sesi yazımından uzak adlar (ジョージ ->
+    George) çakışma olmadıkça etkilenmez."""
+    def okunus(yazim):
+        m = OKUNUS_KATAKANA.search(yazim)
+        return (temizlik.kana_latin(re.sub(r"[^ァ-ヺー]", "", m.group(0))) or "") if m else ""
+    sahipler = {}       # ad anahtarı -> [(uyum, okunuş, karar ya da None)]
+    for y, g in sozluk.girdiler.items():
+        o = okunus(y)
+        if o and g.get("hedef") and g.get("tur") in ("name", "descriptive", "codename"):
+            sahipler.setdefault(_oy_anahtari(g["hedef"]), []).append((_iskelet_yakinligi(o, g["hedef"]), o, None, []))
+    for grup, parti, kar in zip(gruplar, partiler, kararlar):
+        for c in kar:
+            if not (isinstance(c.get("i"), int) and 1 <= c["i"] <= len(parti) and isinstance(c.get("l"), str) and c["l"].strip()):
+                continue
+            o = okunus(parti[c["i"] - 1]["yazim"])
+            if not o or c.get("t") not in ("name", "descriptive", "codename"):
+                continue
+            oylar = [v["l"].strip().translate(MAKRONSUZ) for yanit in grup if isinstance(yanit, dict)
+                     for v in yanit.get("items") or [] if isinstance(v, dict) and v.get("i") == c["i"]
+                     and isinstance(v.get("l"), str) and v["l"].strip()]
+            sahipler.setdefault(_oy_anahtari(c["l"]), []).append((_iskelet_yakinligi(o, c["l"]), o, c, oylar))
+    for anahtar, liste in sahipler.items():
+        if len({_oy_anahtari(o) for _, o, _, _ in liste}) < 2:
+            continue
+        en_iyi = max(u for u, _, _, _ in liste)
+        for uyum, o, c, oylar in liste:
+            if c is None or uyum >= en_iyi:
+                continue
+            baska = [d for d in oylar if _oy_anahtari(d) != anahtar and _iskelet_yakinligi(o, d) > uyum]
+            if baska:
+                c["l"] = max(baska, key=lambda d: (_iskelet_yakinligi(o, d), baska.count(d)))
 
 
 def karsilik_istemi(ayar):
@@ -1405,6 +1450,17 @@ def _cogunluk(yanitlar, yazimlar=None):
             uyan = [w for w in sozcukler if okunus and _iskelet_yakinligi(okunus, w) >= 0.7]
             if uyan:
                 secilen["l"] = Counter(uyan).most_common(1)[0][0].capitalize()
+        if (tur in ("people", "term") and yazimlar and i in yazimlar and OKUNUS_KATAKANA.search(yazimlar[i])
+                and secilen.get("l") and _mekanik_mi(yazimlar[i], secilen["l"].translate(MAKRONSUZ))):
+            # Okunuş alıntı sözcük (超能力者(エスパー)), çoğunluk harf harf okunuşu yazdı ("Esupā"): oyların en az yarısı
+            # sözcüğün kendi yazımını "l" ya da karşılık alanında verdiyse ("Esper", "esper") yazım odur. Sesi tutmayan
+            # karşılık ("medyum") çeviridir, sayılmaz (gerçek test 46-47).
+            asil = [next((d for d in (c.get("l"), c.get("tr")) if isinstance(d, str) and re.fullmatch(r"[A-Za-z]+", d.strip())
+                          and okunus_adi_mi(yazimlar[i], d.strip()) and not _mekanik_mi(yazimlar[i], d.strip())), None)
+                    for c in liste]
+            asil = [d.strip().lower() for d in asil if d]
+            if asil and len(asil) * 2 >= len(liste):
+                secilen["l"] = Counter(asil).most_common(1)[0][0]
         if tur == "codename" and yazimlar and i in yazimlar:
             _kod_adi_duyuldugu_gibi(secilen, yazimlar[i], liste)
         if (tur == "name" and yazimlar and i in yazimlar and not temizlik.latin_disi(yazimlar[i])
@@ -2112,6 +2168,7 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
         """Sınıflandırma oylarından karar; ardından aynı anda yazım isteği ve karşılık isteği ("l" ve "k" alanları).
         (kararlar, karşılığı sorulan, yazımı sorulan)."""
         kararlar_ = _karara_bagla(oylar_, partiler_)
+        _ayni_ada_dusenleri_ayir(kararlar_, oylar_, partiler_, sozluk)
         _bilesik_adlari_esitle(kararlar_, partiler_, sozluk)
         # Özgün sesiyle kalan terim, onu içeren terimin karşılığında da öyle kalır (死神 Shinigami -> 死神代行 "vekil
         # Shinigami"; "vekil ölüm tanrısı" yazılıyordu).
@@ -2285,8 +2342,11 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
         for n, a in enumerate(parti, 1):
             if n in cevaplar:
                 c = cevaplar[n]
-                if c.get("siradan_terim") and not (isinstance(c.get("k"), str) and c["k"].strip()):
-                    c = {"t": "common"}             # karşılığı gelmedi: sıradan sözcük olarak kalır
+                if c.get("siradan_terim") and (not (isinstance(c.get("k"), str) and c["k"].strip())
+                                               or temizlik.tr_kucuk(c["k"].strip()) == temizlik.tr_kucuk(a["yazim"].strip())):
+                    # karşılığı gelmedi ya da yazımın kendisi geldi ("ale" -> "ale", gerçek test 47): sıradan sözcük
+                    # olarak kalır, çevirmen bağlama göre çevirir
+                    c = {"t": "common"}
                 isle(a["yazim"], set(), a["sayi"], a["ornek"], c, "keşif")
     # Ses kararları: ses ise girdi "sound" olur (terim değildir; yazımı girdinin "hedef"idir),
     # değilse girdiye "ses": false yazılır ki bir daha sorulmasın.
