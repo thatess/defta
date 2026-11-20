@@ -8,6 +8,7 @@ Dört iş aynı anda yürür; her biri kendi ayarıyla kapatılabilir ([sozluk] 
 import json
 import os
 import re
+from difflib import SequenceMatcher
 from concurrent.futures import ThreadPoolExecutor
 
 from . import hitap, terim
@@ -161,8 +162,15 @@ def adlari_sozluge_uydur(sozluk, karakterler, hitaplar, sahne):
             continue
         girdi = sozluk.girdiler.get(k.get("source") or "") or sozluk.girdiler.get(k["name"]) or {}
         hedef = girdi.get("hedef") if girdi.get("tur") in ("name", "codename") else ""
-        if hedef and hedef != k["name"] and " " not in k["name"].strip():
-            esle[k["name"].strip()] = hedef
+        ad = k["name"].strip()
+        if hedef and " " in hedef and " " not in ad:
+            # Kaynak tam ad ("ヨル・ブライア" -> "Yor Briar"), karakter adı kısa ("Yor"): kısa ad kısa kalır, yalnız
+            # yazımı sözlüğe uyar. Tam ad yazılınca konuşmacı etiketi ("ヨル") hitap tablosuna bağlanamıyordu.
+            puan, hedef = max((SequenceMatcher(None, ad.lower(), s.lower()).ratio(), s) for s in hedef.split())
+            if puan < 0.6:
+                continue
+        if hedef and hedef != ad and " " not in ad:
+            esle[ad] = hedef
     if not esle:
         return karakterler, hitaplar, sahne
     desen = re.compile(r"(?<![\w'’])(" + "|".join(re.escape(a) for a in sorted(esle, key=len, reverse=True)) + r")(?![\w])")

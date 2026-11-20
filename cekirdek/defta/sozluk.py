@@ -497,8 +497,10 @@ class Sozluk:
             okunus = temizlik.kana_latin(parca)
             if not okunus:
                 continue
-            puanlar = sorted(((SequenceMatcher(None, _ses(okunus), _ses(ad)).ratio(), ad) for ad in self.karakterler),
-                             reverse=True)
+            # Karakter tam adla kayıtlıysa ("Yor Briar") etiketteki tek ad ("ヨル") adın sözcükleriyle ölçülür;
+            # iki karakterin ortak soyadı iki adaya eşit puan verir, eşleşme olmaz.
+            puanlar = sorted(((max(SequenceMatcher(None, _ses(okunus), _ses(s)).ratio() for s in [ad] + ad.split()), ad)
+                              for ad in self.karakterler), reverse=True)
             if puanlar[0][0] >= 0.72 and (len(puanlar) == 1 or puanlar[0][0] - puanlar[1][0] >= 0.1):
                 self.adlar[parca] = puanlar[0][1]
                 return puanlar[0][1]

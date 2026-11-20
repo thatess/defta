@@ -10,7 +10,7 @@ from . import temizlik
 from .ayar import dil_adi, hedef_kodu
 from .cumle import BIRLESTI
 from .hitap import SEN, SIZ
-from .kaynak import _yalin
+from .kaynak import KANA_SOZCUK, _yalin, ciglik_mi
 from .model import Iptal, Ret, json_coz
 
 SECIM_ISTEMI = """A film subtitle repeats some of its lines (a flashback, a repeated scene, a line quoted or echoed later). Each such line was translated into {dil} in more than one way. For every item with "candidates", choose the candidate that renders "source" most accurately and naturally ("before" and "after", when given, are its neighbouring source lines), so that the line reads the same every time. Choose only among the candidates.
@@ -164,7 +164,8 @@ class Denetimler:
                 ekle(i, f'"{m.group(0).strip()}" is a stray letter, not a word: a word is broken or misspelt; write it correctly')
             ses = YABANCI_SES.get(kod)
             m = ses.search(kucuk) if ses else None
-            if m:
+            # Kaynakta çığlık ya da inleme varsa okunuşu bilerek yazılmıştır (うわあ -> "Uwaa"): yabancı ses sayılmaz.
+            if m and not any(ciglik_mi(s) for s in KANA_SOZCUK.findall(kaynak)):
                 ekle(i, f'"{m.group(0)}" is not how {dil_adi(self.ayar)} speakers write this sound: write the sound '
                         f"in its {dil_adi(self.ayar)} spelling")
             # Bip'li küfür yayında duyulmaz: çeviride küfür aranmaz (yazıyla açılması istenmiyor; açılınca "lan" ve

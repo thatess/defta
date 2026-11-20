@@ -345,6 +345,16 @@ KANA_SOZCUK = re.compile(r"[ぁ-ゖァ-ヺー]+")
 _SES_ARASI = re.compile(r"[\s…‥・、。，,.!?！？~～〜―—\-「」『』]*")
 # Yalnızca ünlü, h sesi, n ve yarı ünlüden oluşan sözcük ünlemdir (はい, ええ, ハア, フフ, うわっ): ses sözcüğü sayılmaz.
 _UNLEM = set("あいうえおぁぃぅぇぉはひふへほんわやゆよゃゅょっーアイウエオァィゥェォハヒフヘホンワヤユヨャュョッ")
+# Çığlık, inleme, homurtu (acı, korku, çaba): anlamı olmayan ses; duyulduğu gibi yazılır (kullanıcı kararı, 20.11.2026).
+# Ses mi sözcük mü diye modele sorulmaz: ぐあ için oylar koşudan koşuya değişiyordu (SPY x FAMILY S01E02). Anlam taşıyan
+# kısa ünlemler (えっ, あっ, はい, うん) bu kalıba girmez, çevrilmeye devam eder.
+_CIGLIK = re.compile(r"(?:ぐ[あわはふえお]|が[あは]|[ぎき]ゃ|う[わお]|ぬ[おあ]|どわ|おわ)[あぁえぇおぉー]*|ひ[いえぃぇ][いぃえぇー]*|ぐぬ[ぬー]*|う[ぐげ]ー*")
+
+
+def ciglik_mi(soz):
+    """Kana sözcük bir çığlık ya da inleme mi (ぐあ, うわあ, ヒイ, ギャア): katakana da hiragana gibi bakılır."""
+    hira = "".join(chr(ord(k) - 0x60) if "ァ" <= k <= "ヶ" else k for k in soz or "")
+    return bool(_CIGLIK.fullmatch(hira.rstrip("っー")))
 
 
 def ses_satiri(metin):
@@ -366,7 +376,7 @@ def ses_satiri(metin):
     if not sozcukler or len(set(sozcukler)) != 1 or len(konusanlar) > 1:
         return None
     soz, yari = sozcukler[0], len(sozcukler[0]) // 2
-    if len(soz) < 2 or set(soz) <= _UNLEM:
+    if len(soz) < 2 or (set(soz) <= _UNLEM and not ciglik_mi(soz)):
         return None
     yinelenen = len(sozcukler) > 1 or (yari >= 2 and len(soz) % 2 == 0 and soz[:yari] == soz[yari:])
     return soz, (konusanlar.pop() if konusanlar else None), yinelenen

@@ -1772,6 +1772,35 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertNotIn(5, c.sabit)                                                   # "どうも" çevrilir
         self.assertIn("ボフ = Bofu", istem_olustur(ayar, self.sozluk))
 
+    CIGLIK_SATIRLARI = ["（湊）カイトはどこだ", "（組織員）ぐあっ", "（葵）はい", "（組織員）うわあ！", "（湊）カイト、逃げろ",
+                        "- 危ない\n- ぐあっ", "（葵）えっ", "（湊）具合はどうだ"]
+
+    def test_ciglik_sorulmadan_duyuldugu_gibi_yazilir(self):
+        """Kullanıcı kararı (20.11.2026): çığlık ve inleme duyulduğu gibi kalır. Ses mi sözcük mü diye modele sorulmaz:
+        ぐあ için oylar koşudan koşuya değişiyordu (Kodi 1.0.10, SPY x FAMILY S01E02). Anlamlı ünlemler çevrilir."""
+        from defta.kaynak import ciglik_mi
+        for soz in ("ぐあ", "ぐわあ", "うわあ", "ヒイ", "ヒエエエ", "ぎゃあ", "キャア", "うおお", "ぐふ", "ぐぬぬ"):
+            self.assertTrue(ciglik_mi(soz), soz)
+        for soz in ("はい", "ええ", "うん", "えっ", "あっ", "はあ", "ああ", "ぐあい", "うわさ", "ママ", "ワクワク", "がはは"):
+            self.assertFalse(ciglik_mi(soz), soz)
+        model = SahteModel(terim={"カイト": {"t": "name", "l": "Kaito"}})
+        model.sesler = set()                               # model sorulsa "ses değil" diyecek
+        istekler = []
+        asil = model.iste
+        model.iste = lambda sistem, kullanici, dusunme=None: (istekler.append(sistem[:38]), asil(sistem, kullanici, dusunme))[1]
+        dizi_analiz([("k.srt", self._satirlar(self.CIGLIK_SATIRLARI), "")], self.ayar, model, self.sozluk, self.gunluk)
+        self.assertFalse(any(s.startswith("You are given words from the subtitles") for s in istekler))   # oylama yok
+        self.assertEqual(self.sozluk.sesler(self.ayar), {"ぐあ": "Gua", "うわあ": "Uwaa"})
+        c = Cevirmen(self.ayar, None, "", None, sozluk=self.sozluk)
+        c._hazirla(self._satirlar(self.CIGLIK_SATIRLARI), "k.srt")
+        self.assertEqual((c.sabit.get(1), c.sabit.get(3)), ("Gua", "Uwaa!"))
+        self.assertNotIn(2, c.sabit)                       # "はい" çevrilir
+        self.assertNotIn(6, c.sabit)                       # "えっ" çevrilir
+        istem = istem_olustur(self.ayar, self.sozluk)
+        self.assertIn("ぐあ = Gua", istem)
+        self.assertIn("scream, groan or grunt", istem)
+        self.assertNotIn('"Uwaa"', istem)
+
     def test_ses_sozcugu_cevir_modunda_modele_kalir(self):
         ayar, model, ses_istegi = self._ses_kur(ses_sozcukleri="cevir")
         self.assertEqual(ses_istegi, 0)                                                # kapalı: istek de yok
@@ -2008,6 +2037,44 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(karakterler[0], {"name": "Loid", "source": "ロイド", "note": "Loid: a spy"})
         self.assertEqual(hitaplar[0]["from"], "Loid")
         self.assertEqual(sahne["a"][0]["summary"], "Loid adopts Anya; Lloydson is not him.")
+
+    def test_kisa_karakter_adi_tam_ada_cevrilmez(self):
+        """Kodi 1.0.10, SPY x FAMILY S01E02 (sıfırdan sözlük): kaynak tam ad ("ヨル・ブライア" -> "Yor Briar") olunca
+        hitap tablosu tam adla yazılıyor, etiketteki "ヨル" tabloya bağlanamıyor, "says_to" 19 satırdan 1'e düşüyordu."""
+        from defta.analiz import adlari_sozluge_uydur
+        self.sozluk.girdi_yaz("ヨル・ブライア", tur="name", hedef="Yor Briar")
+        self.sozluk.girdi_yaz("ロイド・フォージャー", tur="name", hedef="Loid Forger")
+        self.sozluk.girdi_yaz("カミラ", tur="name", hedef="Camilla")
+        karakterler, hitaplar, _ = adlari_sozluge_uydur(
+            self.sozluk, [{"name": "Yor", "source": "ヨル・ブライア", "note": "Yor: clerk"},
+                          {"name": "Lloyd", "source": "ロイド・フォージャー", "note": "Lloyd: a spy"},
+                          {"name": "Camilla", "source": "カミラ"}],
+            [{"from": "Yor", "to": "Lloyd", "form": "formal"}, {"from": "Camilla", "to": "Yor", "form": "formal"}], {})
+        self.assertEqual([k["name"] for k in karakterler], ["Yor", "Loid", "Camilla"])
+        self.assertEqual(hitaplar, [{"from": "Yor", "to": "Loid", "form": "formal"},
+                                    {"from": "Camilla", "to": "Yor", "form": "formal"}])
+
+    def test_iliski_oylarinda_ad_yazimi_birlesir(self):
+        """Gerçek test 38: iki yanıt "Lloyd", biri "Loid" dedi; karakter listesi "Loid", tablo "Lloyd" oldu, konuşmacı
+        etiketi tabloya bağlanamadı (says_to 18 yerine 7 satır)."""
+        from defta.hitap import oylari_birlestir
+        def yanit(ad):
+            return {"characters": [{"name": ad, "source": "ロイド・フォージャー"}, {"name": "Yor", "source": "ヨル・ブライア"}],
+                    "address": [{"from": ad, "to": "Yor", "form": "informal"}, {"from": "Yor", "to": ad, "form": "formal"}]}
+        sonuc = oylari_birlestir([yanit("Loid"), yanit("Lloyd"), yanit("Lloyd")])
+        self.assertEqual([k["name"] for k in sonuc["characters"]], ["Loid", "Yor"])
+        self.assertEqual([(h["from"], h["to"], h["form"]) for h in sonuc["address"]],
+                         [("Loid", "Yor", "informal"), ("Yor", "Loid", "formal")])
+
+    def test_etiketteki_tek_ad_tam_adli_karaktere_baglanir(self):
+        """Tam adla kurulmuş sözlük (1.0.10 ile kurulanlar) da çalışsın: "ヨル" -> "Yor Briar"; iki karakterin ortak
+        soyadı kimseye bağlanmaz."""
+        self.sozluk.karakterler = {"Yor Briar": "", "Yuri Briar": "", "Loid Forger": "", "Anya Forger": "", "Camilla": ""}
+        self.assertEqual(self.sozluk.latin_ad("ヨル"), "Yor Briar")
+        self.assertEqual(self.sozluk.latin_ad("ロイド"), "Loid Forger")
+        self.assertEqual(self.sozluk.latin_ad("アーニャ"), "Anya Forger")
+        self.assertIsNone(self.sozluk.latin_ad("ブライア"))
+        self.assertIsNone(self.sozluk.latin_ad("フォージャー"))
 
     def test_dengesiz_dagitim_yeniden_bolunur(self):
         satirlar = [srt.Satir(1, 0, 3000, "Then why do you entertain suitors"),
@@ -4421,6 +4488,11 @@ class Karar0134Testleri(unittest.TestCase):
                                    {1: {1: "Ugh, olmaz! Konuşma artık.", 2: "Peki."}, 2: {1: "Of, olmaz! Konuşma artık."}})
         self.assertIn("is not how Turkish", model.gidenler[1]["fix"][0]["problem"])
         self.assertEqual(sonuc[0], "Of, olmaz! Konuşma artık.")
+
+    def test_ciglik_okunusu_yabanci_ses_sayilmaz(self):
+        sonuc, model = self._cevir(["（組織員）危ない うわあ", "（葵）はい"], None, {1: {1: "Dikkat! Uwaa!", 2: "Evet."}})
+        self.assertEqual(len(model.gidenler), 1)           # yeniden sorulmadı
+        self.assertEqual(sonuc[0], "Dikkat! Uwaa!")
 
     def test_yon_isaretleri_temizlenir(self):
         for kaynak, beklenen in (("Sure. >", "Sure."), ("< Is this it?\nYes.", "Is this it?\nYes."),

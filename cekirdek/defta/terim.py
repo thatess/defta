@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from . import temizlik
 from .ayar import VARSAYILAN, acik, dil_adi, hedef_kodu, unvan_sozcukleri, unvan_tablosu
 from .istem import dile_gore
-from .kaynak import EK as EK_LATIN, konusmaci_parcalari, okunus_yazimi, ses_latin, ses_satiri
+from .kaynak import EK as EK_LATIN, ciglik_mi, konusmaci_parcalari, okunus_yazimi, ses_latin, ses_satiri
 from .model import Ret, json_coz
 from .sozluk import UNVAN as HITAP_EKI, _anahtar, _iskelet_yakinligi, ekli_ad_mi, tek_sozcuk_ad
 
@@ -2036,6 +2036,15 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
         if k["ad_degil"] and girdi and girdi.get("tur") not in ("common", "sound") and girdi.get("karar") in ("model", "keşif"):
             sozluk.terimden_cikar(soz)
             sozluk.girdi_yaz(soz, tur="common")
+    # Çığlık ve inleme sorulmaz: script tanır, duyulduğu gibi yazılır (daha önce "ses değil" denmiş olsa da).
+    ciglik_eklenen = 0
+    if ayar["modlar"]["ses_sozcukleri"] == "orijinal":
+        for soz, k in sesler.items():
+            girdi = sozluk.girdiler.get(soz) or {}
+            if ciglik_mi(soz) and ses_latin(soz) and girdi.get("tur") in (None, "common"):
+                sozluk.girdi_sil(soz)
+                sozluk.girdi_yaz(soz, tur="sound", hedef=ses_latin(soz).capitalize(), sayi=k["sayi"], ornek=k["ornek"])
+                ciglik_eklenen += 1
     ses_sorulacak = [soz for soz, k in sesler.items()
                      # bir kez geçen kısa katakana sözcük de sorulur (ガーン): yansıma sesi çoğu kez bir kez geçer;
                      # sıradan sözcük olduğuna (チワワ) model karar verir
@@ -2285,6 +2294,7 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
             sozluk.girdi_yaz(soz, tur="sound", hedef=ses_latin(soz).capitalize(), sayi=sesler[soz]["sayi"],
                              ornek=sesler[soz]["ornek"])
             eklenen["sound"] += 1
+    eklenen["sound"] += ciglik_eklenen
     sozluk.unvanlar = sorted(set(sozluk.unvanlar) | _adla_gecen_unvanlar(sozluk, ciftler, bilinen_unvan, tum_metin))
     okunusla_duzelen = okunuslu_adlari_isle(sozluk, tum_metin)
     if okunusla_duzelen:

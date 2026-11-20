@@ -123,15 +123,23 @@ def oylari_birlestir(yanitlar):
     if len(yanitlar) <= 1:
         return yanitlar[0] if yanitlar else {}
     karakterler = next((y["characters"] for y in yanitlar if isinstance(y.get("characters"), list) and y["characters"]), [])
+    # Yanıtlar aynı kişiyi başka yazabilir ("Lloyd" / "Loid"): çiftler sayılmadan önce her yanıttaki ad, kişinin
+    # kaynaktaki yazımı üzerinden ilk yanıtın adına çevrilir. Yoksa oylar bölünür, tabloya karakter listesinde
+    # olmayan yazım girer ve konuşmacı etiketi tabloya bağlanamaz (gerçek test 38, SPY x FAMILY S01E02).
+    def kaynak_adi(liste):
+        return {str(k.get("source") or "").strip(): str(k.get("name") or "").strip()
+                for k in liste or [] if isinstance(k, dict) and k.get("source") and k.get("name")}
+    asil = kaynak_adi(karakterler)
     oylar = {}
     for y in yanitlar:
+        cevir = {ad: asil[kaynak] for kaynak, ad in kaynak_adi(y.get("characters")).items() if kaynak in asil}
         gorulen = set()
         for h in y.get("address") or []:
             if isinstance(h, dict) and h.get("form") in ("informal", "formal"):
-                cift = (str(h.get("from") or "").strip(), str(h.get("to") or "").strip())
+                cift = tuple(cevir.get(ad, ad) for ad in (str(h.get("from") or "").strip(), str(h.get("to") or "").strip()))
                 if all(cift) and cift not in gorulen:
                     gorulen.add(cift)
-                    oylar.setdefault(cift, []).append(h)
+                    oylar.setdefault(cift, []).append({**h, "from": cift[0], "to": cift[1]})
     hitap = []
     for cift, liste in oylar.items():
         if len(liste) * 2 >= len(yanitlar):
