@@ -1405,6 +1405,9 @@ def japon_ad_sirasi(sozluk):
     return degisen
 
 
+_KOD_ADI_NOTU = re.compile(r"\bcode ?name\b", re.I)
+
+
 def _cogunluk(yanitlar, yazimlar=None):
     """Aynı adaylar için verilmiş birkaç yanıtı tek yanıta indirir: tür ve her alan için çoğunluğun dediği.
     Yerleşik bicim ("e") ancak yanıtların yarısından çoğu bir yerleşik bicim verdiyse alınır."""
@@ -1416,6 +1419,12 @@ def _cogunluk(yanitlar, yazimlar=None):
     sonuc = []
     for i, liste in oylar.items():
         tur = Counter(c.get("t") if isinstance(c.get("t"), str) else None for c in liste).most_common(1)[0][0]
+        # Oyların çoğu kendi notunda "kod adı" diyorsa tür kod adıdır: 黄昏(たそがれ) için üç oyun ikisi "lakap" dedi ama
+        # üçü de notuna "Loid's spy codename" yazdı; lakap anlamıyla çevrildi ("Alacakaranlık"), kod adı duyulduğu
+        # gibi kalır ("Tasogare"; Kodi 1.0.12, SPY x FAMILY S01E02-03).
+        if tur in ("epithet", "name", "descriptive", "term") and sum(
+                1 for c in liste if isinstance(c.get("m"), str) and _KOD_ADI_NOTU.search(c["m"])) * 2 > len(liste):
+            tur = "codename"
         secilen = {"i": i, "t": tur}
         for alan in ("l", "e", "tr", "p", "w"):
             degerler = _degerler(liste, alan, (yazimlar or {}).get(i, ""))

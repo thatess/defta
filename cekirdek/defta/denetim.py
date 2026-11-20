@@ -66,8 +66,9 @@ NITELIK_KUFUR = {"tr": re.compile(r"bok gibi")}
 ARAYA_KUFUR = {"tr": re.compile(r"[\wçğıöşü]\s+(amına koyayım|amk)\s+[\wçğıöşü]|[\wçğıöşü],\s*(lan),\s*[\wçğıöşü]")}
 
 # Japonca kaynağa çok ağır gelen küfür (kural: Japonca küfür İngilizce karşılığından hafiftir). "やられたな" ->
-# "Ağzıma sıçtı" (Death Note, gerçek test I).
-JP_AGIR = {"tr": re.compile(r"siktir|(?<![\wçğıöşü])sik(?:er|ti|iyim|eyim)|sıç|amına|(?<![\wçğıöşü])amk(?![\wçğıöşü])|orospu|"
+# "Ağzıma sıçtı" (Death Note, gerçek test I). "sıçramak" ve "sıçan" küfür değildir: "kan sıçrarsa belli olur" doğru
+# çeviriydi, yeniden sorulunca anlamı kayboldu (Kodi 1.0.12, SPY x FAMILY S01E03 256).
+JP_AGIR = {"tr": re.compile(r"siktir|(?<![\wçğıöşü])sik(?:er|ti|iyim|eyim)|(?<![\wçğıöşü])sıç(?!ra|an)|amına|(?<![\wçğıöşü])amk(?![\wçğıöşü])|orospu|"
                            r"(?<![\wçğıöşü])piç|yarra|götveren")}
 JAPONCA = re.compile(r"[ぁ-ゖァ-ヺ]")
 

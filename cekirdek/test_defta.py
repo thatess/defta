@@ -2404,6 +2404,26 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertIn("too strong for a Japanese source", m.gidenler[1]["fix"][0]["problem"])
         self.assertEqual(sonuc[0], "Beni fena faka bastırdı.")
 
+    def test_sicramak_agir_kufur_sayilmaz(self):
+        """"sıçramak" ve "sıçan" küfür değildir: satır yeniden sorulmaz (doğru çeviri bozuluyordu)."""
+        from defta.denetim import JP_AGIR
+        for temiz in ("üstüne kan sıçrarsa belli olur", "su sıçradı", "bir sıçan gördüm", "yerinden sıçradı"):
+            self.assertIsNone(JP_AGIR["tr"].search(temiz), temiz)
+        for agir in ("ağzıma sıçtı", "içine sıçayım", "sıçtık"):
+            self.assertIsNotNone(JP_AGIR["tr"].search(agir), agir)
+        satirlar = self._satirlar(["返り血が目立つ"])
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                self.gidenler.append(json.loads(kullanici))
+                return json.dumps({"lines": [{"id": 1, "text": "Kan sıçrarsa belli olur."}]}, ensure_ascii=False)
+        m = M()
+        sonuc = Cevirmen(self.ayar, m, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
+        self.assertEqual(sonuc[0], "Kan sıçrarsa belli olur.")
+        self.assertFalse(any("fix" in g for g in m.gidenler))
+
     def test_japonca_yayin_bicimi_duzelir(self):
         """Yarım genişlikli etiket ve kana tanınır; 《》 iç ses ve ≪ ekran dışı ses italik olur."""
         from defta.kaynak import not_ve_konusmaci_ayir
@@ -2892,6 +2912,19 @@ Use Crimson Lotus Strike, Kenji-senpai.
         karar = _cogunluk(grup, {1: tek[0]["yazim"]})
         _ayni_ada_dusenleri_ayir([karar], [grup], [tek], self.sozluk)
         self.assertEqual(karar[0]["l"], "Westalis")
+
+    def test_notu_kod_adi_diyen_soz_kod_adidir(self):
+        """Oyların çoğu notunda "codename" diyorsa tür kod adıdır: anlamıyla çevrilmez, duyulduğu gibi kalır."""
+        from defta.terim import _cogunluk, hedef_belirle
+        y = {1: "黄昏(たそがれ)"}
+        oy = lambda t, m: {"items": [{"i": 1, "t": t, "l": "Tasogare", "r": "たそがれ", "m": m}]}
+        k = _cogunluk([oy("epithet", "Loid's codename as a spy"), oy("epithet", "Loid's spy codename"),
+                       oy("codename", "Loid’s codename as a Westalian spy")], y)[0]
+        self.assertEqual(k["t"], "codename")
+        self.assertEqual(hedef_belirle(y[1], k, True), ("codename", "Tasogare"))
+        k = _cogunluk([oy("epithet", "what people call Loid"), oy("epithet", "Loid's spy codename"),
+                       oy("epithet", "a nickname")], y)[0]
+        self.assertEqual(k["t"], "epithet")                            # tek not yetmez
 
     def test_okunusu_alinti_sozcuk_oylardan_secilir(self):
         """Çoğunluk harf harf okunuşu yazsa da oyların yarısı sözcüğün kendi yazımını bir alanda verdiyse o seçilir;
