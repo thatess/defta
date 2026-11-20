@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import temizlik
 from .ayar import acik, dil_adi, hedef_kodu, unvan_tablosu
-from .cumle import CumleDagitimi, cumle_gruplari, cumle_suruyor_mu, dengele, parcalara_bol
+from .cumle import BIRLESTI, CumleDagitimi, cumle_gruplari, cumle_suruyor_mu, dengele, parcalara_bol
 from .denetim import Denetimler
 from .hitap import SEN, SIZ, HitapDenetimi
 from .kaynak import (EK, JP_AD_EK, JP_EK_DESEN, JP_ETIKET, KATAKANA, OKUNUSLU_AD_EK, TIRELI, UNVAN_EKI, YALNIZ_UNVAN, _ek_latin,
@@ -35,6 +35,8 @@ SORUN = {
     "romaji": "this song line must NOT be translated: write how the original SOUNDS in Latin letters (plain Hepburn), "
               "syllable for syllable, nothing else",
     "eksik": "this id was missing from your answer: translate it",
+    "katakana": "the quoted katakana words are ordinary Japanese words (see \"hiragana\"), not names or sounds, but you "
+                "left them as their reading: translate what they mean; keep only a name or code name as it sounds",
     "okunus": "this song line needs both: its translation in \"text\" and, in \"reading\", how the original SOUNDS in "
               "Latin letters (plain Hepburn), syllable for syllable",
 }
@@ -47,6 +49,28 @@ ETIKET_GIBI = re.compile(r"(?:(?<=^)|(?<=\n)|(?<=[-–—] )|(?<=[.!?…] ))(?:<
 
 # Türkçe ad tamlamasının son sözcüğündeki tamlama eki ("akıncı-sı", "Dağ-ı"): çoğulda düşer ("akıncı-ları").
 TAMLAMA_EKI = re.compile(r"(?<=\w\w[aeıioöuü])s[ıiuü]$|(?<=\w\w[^aeıioöuü\W])[ıiuü]$")
+
+def konusma_tireleri(metin, konusanlar):
+    """Etiketle verilen iki konuşmacılı altyazı ("（ロイド）スパイ失格だ / （アーニャ）ちち"): etiketler silinince modele
+    tiresiz iki satır gidiyordu, model kimin ne dediğini karıştırıyordu ("Casusluktan çakmadın, baba."; SPY x
+    FAMILY 343). Her satırı başka biri söylüyorsa satırlar konuşma tiresiyle gider; tire denetimi de çeviride iki
+    tire arar."""
+    satirlar = metin.split("\n")
+    # İlk satırın etiketi olmayabilir: ikinci satırdaki etiket konuşanın değiştiğini gösterir ("He's remembered.
+    # Gandalf: No."). Etiketsiz sonraki satır ise aynı kişinin sözüdür (tire almaz).
+    if (len(satirlar) >= 2 and len(satirlar) == len(konusanlar) and all(konusanlar[1:])
+            and len(set(konusanlar)) == len(konusanlar)
+            and not any(TIRELI.match(temizlik.ETIKET.sub("", x)) for x in satirlar)):
+        on = [re.match(r"\s*(?:<i>)?", x).group() for x in satirlar]
+        return "\n".join(o + "- " + x[len(o):].lstrip() for o, x in zip(on, satirlar))
+    return metin
+
+
+# Tırnak içinde katakanayla yazılmış birden çok Japonca sözcük: cihazdan gönderilen mesaj, telgraf, çocuk yazısı
+# ("“タソガレ サンジョウ”", "“オニサン コチラ”"). Model bunları ad ya da ses sanıp okunuşla bırakıyordu (gerçek test 21-22,
+# SPY x FAMILY 1. bölüm 276, 279); genel talimat kuralı yetmedi, satıra işaret ve hiragana yazılışı eklenir.
+KATAKANA_MESAJ = re.compile(r"[“「\"『]([ァ-ヺー]+(?:[ 　][ァ-ヺー]+)+)[”」\"』]")
+
 
 class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
     def __init__(self, ayar, model, sistem, gunluk, sozluk=None):
@@ -259,6 +283,7 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                     self.notlar[i] = notlar
                 if konusanlar:
                     self.konusanlar[i] = konusanlar
+                    metin = konusma_tireleri(metin, konusanlar)
                 if not metin:                 # yalnızca nottan oluşan altyazı: gönderilmez, silinir
                     self.sabit[i] = ""
                     continue
@@ -423,6 +448,17 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
         self._ardisik_yinelenen(sonuc)
         if self.ayar["kontrol"]["tekrar_eden_sahne"]:
             self._tekrar_eden_sahne(sonuc)
+            self._ortak_ifadeler(sonuc)
+        if hedef_kodu(self.ayar) == "tr" and self.sozluk is not None:
+            # sözlükteki küçük harfli terim ek alırken kesme almaz ("baba'nın" -> "babanın")
+            kucukler = sorted({g["hedef"] for g in self.sozluk.girdiler.values()
+                               if g.get("tur") not in ("name", "codename", "sound") and g.get("hedef")
+                               and g["hedef"] == temizlik.tr_kucuk(g["hedef"])
+                               and re.fullmatch(r"[a-zçğıöşüâîû]+(?: [a-zçğıöşüâîû]+)*", g["hedef"])}, key=len, reverse=True)
+            if kucukler:
+                for i in list(sonuc):
+                    if isinstance(sonuc[i], str) and sonuc[i] != BIRLESTI and ("'" in sonuc[i] or "’" in sonuc[i]):
+                        sonuc[i] = temizlik.kucuk_terim_kesmesi(sonuc[i], kucukler)
         if self.ayar["ceviri"]["bolunmus_cumle"] != "kapali":
             dengele(satirlar, sonuc, self.cumleye_uygun, self.gunluk, etiket, self.konusanlar)
         for i, (soz, italik) in self.anlamli.items():
@@ -477,6 +513,10 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                     oge["romanize"] = True
                 elif i in self.okunus_iste:
                     oge["reading"] = True
+                katakana = KATAKANA_MESAJ.search(oge["text"])
+                if katakana:
+                    oge["katakana_message"] = True
+                    oge["hiragana"] = "".join(chr(ord(k) - 0x60) if "ァ" <= k <= "ヶ" else k for k in katakana.group(1))
                 if (self.ayar["ceviri"]["bolunmus_cumle"] != "kapali" and i not in self.birlesik
                       and i not in self.uye and not s.ekran
                       and not (i + 1 < len(self.satirlar) and self.satirlar[i + 1].ekran)
@@ -553,6 +593,23 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
             raise ValueError("istenen satırların hiçbiri yanıtta yok")
         return bulunan   # eksik kalan satırlar yalnızca kendileri yeniden istenir
 
+    def _katakana_okunusla(self, sozler, ceviri):
+        """Katakana mesajdaki ad olmayan bir sözcük çeviride okunuşuyla duruyor mu ("サンジョウ" -> "sanjo")? Sözlükteki
+        bir adın yazımıyla aynı okunuş (タソガレ -> Tasogare) sayılmaz."""
+        adlar = {temizlik.tr_kucuk(g.get("hedef") or "") for g in self.sozluk.girdiler.values()} if self.sozluk else set()
+        duz = temizlik.tr_kucuk(re.sub(r"[^\w\s]", " ", ceviri))
+        for soz in re.split(r"[ 　]+", sozler):
+            latin = temizlik.kana_latin(soz)
+            if not latin or len(latin) < 3:
+                continue
+            latin = latin.lower()
+            kisa = re.sub(r"(?<=[ou])[ou]$|(?<=o)u(?=\w)", "", latin)        # サンジョウ: "sanjou" / "sanjo"
+            if latin in adlar or kisa in adlar:
+                continue
+            if re.search(r"(?<!\w)(?:" + re.escape(latin) + "|" + re.escape(kisa) + r")(?!\w)", duz):
+                return True
+        return False
+
     def _satir_kontrol(self, i, sonuc):
         """Sorun varsa kısa açıklama döndürür. Düzeltilebileni yerinde düzeltir."""
         kaynak, ceviri = self.satirlar[i].metin, sonuc[i].replace("\\n", "\n").strip()
@@ -593,6 +650,10 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                 and len(ceviri.split("\n")) == len(konusan)):
             ceviri = sonuc[i] = "\n".join("- " + s.strip() for s in ceviri.split("\n"))
         giden = self._kaynak(i).replace("⟦", "").replace("⟧", "") if i in self.giden else kaynak
+        if i not in self.birlesik and i in self.giden:
+            katakana = KATAKANA_MESAJ.search(self._kaynak(i))
+            if katakana and self._katakana_okunusla(katakana.group(1), ceviri):
+                return "katakana"
         if i in self.romanize:
             # şarkı sözü yalnızca Latin harfleriyle yazılır: terim ve ek aranmaz, ama çevrilmiş olmamalı
             if not romaji_mi(giden, ceviri):

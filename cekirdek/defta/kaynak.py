@@ -104,6 +104,9 @@ def anlami_ayir(metin, parcalar):
 KOSELI_NOT = re.compile(r"\[([^\[\]]{1,60})\]")
 PARANTEZ_SATIR = re.compile(r"^(?:[(（]([^()（）]{1,40})[)）]|（((?:[^()（）]|\([^()（）]*\)){1,40})）)$")
 JP_ETIKET_BAS = re.compile(r"^（([^（）]{1,24})）\s*")
+# Japonca ses/müzik notunun sonu: （ドアが開く音）, （犬のうなり声）, （「SPY WARS」のテーマ）, （せきばらい）. Konuşmacı değildir.
+JP_SES_NOTU = re.compile(r"(?:[音声曲歌]|テーマ|音楽|ＢＧＭ|BGM|拍手|ため息|笑い|すすり泣き|泣き|せきばらい|せき込み|せきこみ|"
+                         r"咳払い|咳)$")
 LATIN_ETIKET_BAS = re.compile(r"^(" + temizlik.TIRE + r"\s*)?([A-ZÇĞİÖŞÜÂÎÛ][A-ZÇĞİÖŞÜÂÎÛ0-9 .'’#&-]{1,24}):\s*")
 
 
@@ -117,6 +120,23 @@ ETIKET_ESIGI = 3
 # ("Look: ..."), o yüzden bir koşul daha var: etiketin hiçbir sözcüğü dosyada küçük harfle geçmez (özel ad hep büyük
 # harfle yazılır; "look", "remember" cümle içinde küçük harfle de geçer).
 ADLI_ETIKET_BAS = re.compile(r"^(?:" + temizlik.TIRE + r"\s*)?([A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*(?: [A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*){0,2}):\s+\S")
+
+
+# Etiket düzeni kesin dosyada bir kez geçen etiket de etikettir ("Maggot: ...", "Arwen: ...", "Female: ...",
+# "Voice of the ring: ...", OCR'lı "Sau Ron: ..."): eşik onları kaçırıyordu, çeviride "Maggot:" yazıyordu (LOTR).
+# Biçim daha sıkı: büyük harfli sözcükler (arada of/the gibi bağlaçlar), sözün başında, ardından söz; sık cümle
+# başları ("Look:", "Remember:") etiket sayılmaz.
+TEKIL_ETIKET_BAS = re.compile(r"^(?:" + temizlik.TIRE + r"\s*)?(?!(?:A|An|The|This|That|My|Your|Our|His|Her|Their|One) )"
+                              r"([A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*(?: (?:of|the|de|du|van|von|da|[A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*)){0,3}"
+                              r"(?:(?<=the)|(?<=of))?(?:(?<= the)(?: [a-zçğıöşü][\w'’-]*)|(?<= of)(?: [a-zçğıöşü][\w'’-]*))?):\s+\S")
+ETIKET_OLMAYAN = {"look", "listen", "remember", "note", "warning", "well", "so", "now", "yes", "no", "okay", "ok", "hey",
+                  "wait", "answer", "question", "rule", "step", "chapter", "part", "reason", "problem", "truth", "fact",
+                  "lesson", "example", "dear", "ps", "p.s", "p.s.", "nb", "item", "first", "second", "third", "finally",
+                  "result", "results", "score", "total", "attention", "caution", "notice", "update", "breaking", "live",
+                  "subject", "re", "to", "from", "date", "time", "place", "location", "translation", "subtitles"}
+
+
+ETIKET_OLMAYAN_ILK = {"A", "An", "The", "This", "That", "My", "Your", "Our", "His", "Her", "Their", "One"}
 
 
 def latin_etiketleri(metinler):
@@ -148,7 +168,22 @@ def latin_etiketleri(metinler):
     # harfle hiç), küçük harf koşulu "Merry:", "Pippin:", "Bilbo:" etiketlerini reddediyor, adlar çeviride kalıyordu.
     if len(etiketler) >= 2:
         etiketler |= {ad for ad, n in bastaki.items() if n >= 2}
+        for metin in metinler:
+            for satir in (temizlik.ETIKET.sub("", x).strip() for x in metin.split("\n")):
+                m = TEKIL_ETIKET_BAS.match(satir) or ADLI_ETIKET_SATIRI.match(satir)
+                if (m and len(m.group(1)) <= 24 and m.group(1).lower().rstrip(".") not in ETIKET_OLMAYAN
+                        and m.group(1).split()[0] not in ETIKET_OLMAYAN_ILK and not temizlik.duyuru_etiketi(m.group(1))):
+                    etiketler.add(m.group(1))
     return etiketler
+
+
+def ara_etiketleri_ayir(satir, adli_etiketler):
+    """Aynı satırda ikinci konuşmacının etiketi ("Are we lost? Merry: No.", "Frodo: Go! Pippin: Hurry!"): cümle
+    sonundan sonra gelen bilinen etiket yeni satır başlatır; satır başı etiketi olarak ayrılır ve tire alır."""
+    if not adli_etiketler:
+        return satir
+    adlar = "|".join(re.escape(a) for a in sorted(adli_etiketler, key=len, reverse=True))
+    return re.sub(r"(?<=[.!?…])\s+(?=(?:" + adlar + r"):\s+\S)", "\n", satir)
 
 
 BIP = re.compile(r"\[\s*bleep(?:ed|ing)?\s*\]", re.I)
@@ -161,6 +196,8 @@ def not_ve_konusmaci_ayir(metin, koseli_ayir=True, parantez_ayir=True, etiket_ay
     ama metinde olmadıkları için çeviriye yazamaz.
     """
     notlar, konusanlar, satirlar = [], [], []
+    if etiket_ayir and adli_etiketler:
+        metin = "\n".join(ara_etiketleri_ayir(x, adli_etiketler) for x in metin.split("\n"))
     ham = metin.split("\n")
     for sira, satir in enumerate(ham):
         ic = temizlik.ETIKET.sub("", satir).strip()
@@ -170,8 +207,12 @@ def not_ve_konusmaci_ayir(metin, koseli_ayir=True, parantez_ayir=True, etiket_ay
         if m and parantez_ayir or (m and etiket_ayir and ic.startswith("（")):
             sonra = any(temizlik.ETIKET.sub("", x).strip() for x in ham[sira + 1:])
             icerik = m.group(1)
-            ses = bool(re.search(r"[音声]$", icerik))          # （ドアが開く音）, （犬のうなり声）: ses notu, konuşmacı değil
-            if ic.startswith("（") and sonra and etiket_ayir and not ses:      # Japonca: kendi satırında konuşmacı adı
+            ses = bool(JP_SES_NOTU.search(icerik))             # （ドアが開く音）, （犬のうなり声）: ses notu, konuşmacı değil
+            # Sonraki satır kendi etiketiyle başlıyorsa （せきばらい） / （黄昏）失敬: konuşan odur, bu satır nottur.
+            sonraki = next((y for y in (temizlik.ETIKET.sub("", x).strip() for x in ham[sira + 1:]) if y), "")
+            m2 = JP_ETIKET_BAS.match(sonraki)
+            sonraki_etiketli = bool(m2 and sonraki[m2.end():].strip())
+            if ic.startswith("（") and sonra and etiket_ayir and not ses and not sonraki_etiketli:   # Japonca: kendi satırında konuşmacı adı
                 konusanlar.append(icerik)
                 continue
             # Not mu konuşma mı: Latin yazıda kısa ve noktalamasız olan; Japoncada boşluk olmadığı için karakter sayısıyla
@@ -193,7 +234,8 @@ def not_ve_konusmaci_ayir(metin, koseli_ayir=True, parantez_ayir=True, etiket_ay
                 if not temizlik.ETIKET.sub("", kalan_satir).strip():
                     if any(temizlik.ETIKET.sub("", x).strip() for x in ham[sira + 1:]):
                         konusanlar.append(m.group(2).strip())      # etiket satırı: ad sonraki satırındır
-                        continue
+                    # ardından söz gelmeyen yalnız etiket ("Gimli:"): altyazıda söz yok, etiket de yazılmaz
+                    continue
                 else:
                     konusan = m.group(2).strip()
                     satir = satir[:on.end()] + (m.group(1) or "") + kalan_satir

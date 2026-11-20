@@ -20,6 +20,7 @@ import copy
 import json
 import os
 import re
+import unicodedata
 from difflib import SequenceMatcher
 
 from . import temizlik
@@ -36,6 +37,11 @@ def _anahtar(metin):
     """Karşılaştırma için: küçük harf, baştaki İngilizce tanımlık ve sondaki noktalama atılır."""
     metin = re.sub(r"^(the|a|an)\s+", "", metin.strip().lower())
     return re.sub(r"[\s.!?,;:]+$", "", metin)
+
+
+def _duz(metin):
+    """Karşılaştırma için: küçük harf, harf işaretleri atılmış ("Udûn" = "Udun")."""
+    return "".join(k for k in unicodedata.normalize("NFKD", metin.lower()) if not unicodedata.combining(k))
 
 
 JP_HITAP_EKLERI = ("さん", "さま", "様", "ちゃん", "くん", "君", "殿", "どの", "氏", "嬢", "たん", "先輩", "せんぱい", "先生", "せんせい")
@@ -406,7 +412,9 @@ class Sozluk:
         anlam: girdinin bu yapımda neyi kastettiği (kısa not); istemde karşılığın yanına yazılır.
         siradan: yazım aynı zamanda sıradan bir sözcükse o anlamı ("dusk"); istemde iki anlam yan yana yazılır.
         """
-        if yazim in self.girdiler or _anahtar(yazim) in {_anahtar(k) for k in self.terimler}:
+        # Olduğu gibi kalan adlar da sayılır: yalnız terimlere bakılınca "Rivendell" varken "rivendell" ayrı girdi oluyordu.
+        if yazim in self.girdiler or _anahtar(yazim) in {_anahtar(k) for k in list(self.terimler) + self.degismez
+                                                         + self.korunacak}:
             return
         adsiz = " ".join(kalip.replace("{ad}", " ").split())
         if hedef and adsiz and adsiz.casefold() == hedef.casefold():
@@ -499,6 +507,29 @@ class Sozluk:
     def karakter_adlari(self):
         """Kaynakta geçen, kişi adı olduğu bilinen yazımlar: karşılığı bir karakter adı olan terimler."""
         return {k for k, v in self.terimler.items() if v in self.karakterler}
+
+    def tutarsizliklar(self):
+        """Sözlüğün kendi içindeki çelişkiler (yalnız bildirilir, düzeltilmez; koşu günlüğüne yazılır):
+        aynı sözün yalnız harf büyüklüğü ya da tanımlığı farklı iki girdisi; Latin harfli kısa terimin karşılığı, onu
+        içeren uzun terimin karşılığında geçmiyor ("Dark Lord" -> "Karanlıklar Efendisi" / "Dark Lord Sauron" ->
+        "Karanlık Lord Sauron")."""
+        sorunlar, anahtarlar = [], {}
+        for yazim, g in self.girdiler.items():
+            if g.get("hedef") and g.get("tur") != "sound":
+                anahtarlar.setdefault(_anahtar(yazim), []).append(yazim)
+        for grup in anahtarlar.values():
+            if len(grup) > 1:
+                sorunlar.append("aynı söz birden çok girdi: " + ", ".join(
+                    f"{y!r} -> {self.girdiler[y]['hedef']!r}" for y in grup))
+        terimler = {k: v for k, v in self.terimler.items() if k.isascii() and v and v != k}
+        for kisa, hedef in terimler.items():
+            govde = _duz(hedef)[:max(4, len(hedef) - 2)]            # ek alabilir: "Dağı" / "Dağı'nın"
+            desen = re.compile(r"(?<![\w'’-])" + re.escape(_anahtar(kisa)) + r"(?![\w'’-])")
+            for uzun, uzun_hedef in terimler.items():
+                if (uzun != kisa and len(_anahtar(kisa)) >= 4 and _anahtar(uzun) != _anahtar(kisa)
+                        and desen.search(_anahtar(uzun)) and govde not in _duz(uzun_hedef)):
+                    sorunlar.append(f"{kisa!r} -> {hedef!r}, ama {uzun!r} -> {uzun_hedef!r}")
+        return sorunlar
 
     def kurulmus(self):
         """Sözlük daha önceki bölümlerle kurulmuş mu (en az bir dosya incelendi, en az 20 karar var)? Kurulmuş

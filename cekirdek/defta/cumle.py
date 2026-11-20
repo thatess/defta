@@ -110,6 +110,7 @@ def yerlestir(atomlar, cezalar, sureler, hiz, en_cok_karakter):
 
 BAGLAC = {"ve", "ama", "fakat", "çünkü", "ki", "veya", "ancak", "yoksa", "sonra", "diye", "hem", "ya"}
 UC_NOKTA_SON = re.compile(r"(?:\.\.\.|…)\s*$")
+TIRNAK_SON = re.compile(r"[\"”’']\s*$")
 UC_NOKTA_BAS = re.compile(r"^[\s\"“'‘]*(?:\.\.\.|…)")
 
 
@@ -120,6 +121,16 @@ def uc_nokta_surer_mi(metin, sonraki):
     if not UC_NOKTA_SON.search(duz) or not son:
         return False
     return bool(UC_NOKTA_BAS.match(son)) or son.lstrip("\"“'‘ ")[:1].islower()
+
+
+ORTUSME_MS = 200          # bu kadardan çok örtüşen iki altyazı aynı anda konuşulan iki sözdür
+_ETIKET_BAS = re.compile(r"^\s*(?:<i>)?\s*(?:（([^（）]{1,24})）|([A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*(?: [A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*){0,2}):\s)")
+
+
+def _etiket(metin):
+    """Altyazının başındaki konuşmacı etiketi (（アーニャ）, "Gandalf:"); yoksa boş."""
+    m = _ETIKET_BAS.match(metin)
+    return (m.group(1) or m.group(2) or "").strip() if m else ""
 
 
 def cumle_suruyor_mu(satirlar, i):
@@ -134,12 +145,26 @@ def cumle_suruyor_mu(satirlar, i):
         return False            # şarkı dizesine cümle akmaz
     if TIRELI.match(sonraki) or "\n-" in sonraki or "\n–" in sonraki:
         return False            # sonraki altyazıda iki kişi konuşuyor: bu cümleyle birleştirilmez
+    # Süreleri örtüşen altyazılar aynı anda konuşan iki kişidir (Anya'nın "いい子にするから—" sözü ile Loid'in aynı anda
+    # geçen iç sesi): tek cümle sayılınca Loid'in sözü kayboluyor, yerine "ne olur..." yazılıyordu (SPY x FAMILY 447).
+    if satirlar[i + 1].bas < satirlar[i].bit - ORTUSME_MS:
+        return False
+    # Sonraki altyazı başka birinin etiketiyle başlıyorsa konuşan değişmiştir
+    on, son = _etiket(satirlar[i].metin), _etiket(sonraki)
+    if son and son != on:
+        return False
     yakin = satirlar[i + 1].bas - satirlar[i].bit <= 1000
     if uc_nokta_surer_mi(metin, sonraki):
         return yakin
     if temizlik.latin_disi(metin):
         # Noktalaması güvenilmez yazılarda (Japonca...) tek kesin işaret: altyazının sonundaki sürdürme çizgisi
         return yakin and bool(SURDURME.search(metin))
+    # Tırnakla biten altyazıyı küçük harfle başlayan altyazı izliyorsa cümle sürüyordur ("…you would have said" /
+    # "\"I need to take your drink, sir\"" / "or \"I'm gonna have to…\"" / "neither of which happened."): kapanan
+    # tırnak cümle sonu sayılınca parçalar ayrı gitti, model içeriği bir altyazı kaydırdı (gerçek test 26, American
+    # Gods 275-277).
+    if TIRNAK_SON.search(metin) and temizlik.ETIKET.sub("", sonraki).strip()[:1].islower():
+        return yakin
     return not cumle_sonu_mu(metin) and yakin
 
 

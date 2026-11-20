@@ -153,6 +153,35 @@ def tr_buyuk_harf(metin):
     return re.sub(r"(?<![\wçğıöşü])tanrı(?=['’])", "Tanrı", metin)
 
 
+_YUMUSA = {"p": "b", "ç": "c", "t": "d", "k": "ğ"}
+
+
+def kucuk_terim_kesmesi(metin, sozcukler):
+    """Türkçede kesme işareti yalnız özel adda olur: sözlükteki küçük harfli terim ("baba", Anya'nın babasına
+    dediği; "elf") ek alırken kesme almaz: "baba'nın" -> "babanın", "Baba'yla" -> "Babayla". Model sözlükte gördüğü
+    sözcüğü ad sanıp kesme koyuyordu (gerçek test SPY x FAMILY, LOTR "bir elf'in"). Çok heceli sözcüğün sonundaki
+    p, ç, t, k ünlüyle başlayan ekte yumuşar ("babacık'ı" -> "babacığı"). Cümle içinde büyük harfle yazılan
+    (ad gibi kullanılan: "Köpekçik'in düşüncesi") dokunulmaz."""
+    for soz in sozcukler:
+        def birlestir(m):
+            kok, ek = m.group(1), m.group(2)
+            # Cümle içinde büyük harfle yazılmışsa model onu ad olarak kullanıyor (köpeğe ad gibi "Köpekçik"): kalır
+            # (cümle başı: satır başı, tire, tırnak, "!", "?" ya da tek nokta; üç nokta cümleyi bitirmez)
+            if kok[0].isupper() and not re.search(r"(?:^|(?<![.…])\.\s+|[!?]\s+|[\n\-–—\"“]\s*)$",
+                                                  m.string[:m.start()]):
+                return m.group(0)
+            son = kok[-1].lower()
+            if (son in _YUMUSA and ek[:1].lower() in "aeıioöuü"
+                    and len(re.findall(r"[aeıioöuüâîû]", kok.lower())) > 1):
+                yumusak = "g" if son == "k" and kok[-2:-1].lower() == "n" else _YUMUSA[son]
+                kok = kok[:-1] + (yumusak.upper() if kok[-1].isupper() else yumusak)
+            return kok + ek
+        buyuk = "İ" if soz[0] == "i" else "I" if soz[0] == "ı" else soz[0].upper()
+        desen = rf"(?<![\wçğıöşü'’])((?:{re.escape(soz[0])}|{re.escape(buyuk)}){re.escape(soz[1:])})['’]([a-zçğıöşü]+)"
+        metin = re.sub(desen, birlestir, metin)
+    return metin
+
+
 def kana_latinle(metin):
     """Metindeki kana öbeklerini okunuşuyla Latin harfe çevirir (ヴォルケン・エ・レーゲン -> "Voruken e Reegen");
     model Latin harfli çıktıda kaynağın kanasını aynen bırakınca satır silinmesin diye: ses yine okunur."""

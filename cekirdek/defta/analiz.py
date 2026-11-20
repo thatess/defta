@@ -7,6 +7,7 @@ Dört iş aynı anda yürür; her biri kendi ayarıyla kapatılabilir ([sozluk] 
 """
 import json
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 from . import hitap, terim
@@ -53,7 +54,7 @@ If a list has nothing to report, return it empty.{_bilinen_iliski(sozluk)}"""
 SAHNE_ISTEMI = 'You prepare subtitles for translation. You do NOT translate the lines. You receive one stretch of a subtitle file ("title_hint" names the work) and report as JSON. Be brief.\n\nReturn ONLY this JSON object:\n{{sema}}\n\n{govde}\n\nIf a list has nothing to report, return it empty.'
 SAHNE_BOLUMLERI = (
     ('"scenes": [{"from": 1, "to": 40, "summary": "..."}]',
-     '# scenes\nSplit these lines into scenes, covering every line in order: a new scene at every change of place or time, every flashback, and every song or narration (roughly one scene per 30-60 lines). "from"/"to" are line ids. "summary" is ONE short English sentence: who is speaking to whom, where, what is happening and what is at stake. Name a group ("the palace guards", "the rival crew") when speakers are unnamed. These summaries are what lets a translator understand short, ambiguous lines, so say what the scene is about, not just that people talk. "breaks", when given, are ids where the subtitles switch between italic text (a narrator or off-screen voice) and normal text (people speaking in the scene): start a new scene there whenever the speaker changes, and name who speaks to whom in each ("the narrator recalls ...", "in the flashback, the old captain tells the boy ...").'),
+     '# scenes\nSplit these lines into scenes, covering every line in order: a new scene at every change of place or time, every flashback, and every song or narration (roughly one scene per 30-60 lines). "from"/"to" are line ids. "summary" is ONE short English sentence: who is speaking to whom, where, what is happening and what is at stake. State only what these lines show: never guess a place, a relationship or an event they do not show (when the place is not clear, leave it out). Name a group ("the palace guards", "the rival crew") when speakers are unnamed. These summaries are what lets a translator understand short, ambiguous lines, so say what the scene is about, not just that people talk. "breaks", when given, are ids where the subtitles switch between italic text (a narrator or off-screen voice) and normal text (people speaking in the scene): start a new scene there whenever the speaker changes, and name who speaks to whom in each ("the narrator recalls ...", "in the flashback, the old captain tells the boy ...").'),
     ('"fictional": [{"id": 12, "text": "..."}]',
      '# fictional\nEvery passage in an INVENTED language (Klingon, Dothraki, High Valyrian, made-up incantations). Real languages, including Latin, Japanese, Russian or French, never count. "id" is the line id and "text" is the exact passage copied character for character from that line; when only part of a line is invented language, give only that part.{roma}'),
 )
@@ -125,6 +126,54 @@ def italik_gecisleri(parca, en_az=3):
         if tur[k] != tur[k - 1] and len(set(tur[k - en_az:k])) == 1 and len(set(tur[k:k + en_az])) == 1:
             gecisler.append(parca[k]["id"])
     return gecisler
+
+
+KISA_SAHNE = 5      # bundan az satırlık "sahne" komşusuna katılır
+
+
+def kisa_sahneleri_birlestir(sahneler):
+    """Birkaç satırlık sahne özetleri parçalı ve çoğu kez yanlıştı ("In the Shire" diyen 2 satırlık sahne yol
+    üstündeyken; LOTR 517-518): KISA_SAHNE'den kısa sahne önceki sahneye (ilkse sonrakine) katılır, özeti o sahnenin."""
+    gecerli = sorted((dict(x) for x in sahneler if isinstance(x, dict) and isinstance(x.get("from"), int)
+                      and isinstance(x.get("to"), int) and x["to"] >= x["from"]), key=lambda x: x["from"])
+
+    def kisa(x):
+        return x["to"] - x["from"] + 1 < KISA_SAHNE
+    sonuc = []
+    for x in gecerli:
+        if sonuc and kisa(x):
+            sonuc[-1]["to"] = max(sonuc[-1]["to"], x["to"])
+        else:
+            sonuc.append(x)
+    if len(sonuc) > 1 and kisa(sonuc[0]):
+        ilk = sonuc.pop(0)
+        sonuc[0]["from"] = ilk["from"]
+    return sonuc
+
+
+def adlari_sozluge_uydur(sozluk, karakterler, hitaplar, sahne):
+    """Karakter, hitap ve sahne özetlerindeki adlar sözlükteki yazımla yazılır: özet ve hitap "Lloyd" derken sözlük
+    "Loid" diyordu (SPY x FAMILY), model aynı kişi için iki ad görüyordu. Eşleme karakterin kaynaktaki yazımından
+    ("ロイド") sözlüğün ad karşılığına gider."""
+    esle = {}
+    for k in karakterler:
+        if not isinstance(k, dict) or not isinstance(k.get("name"), str):
+            continue
+        girdi = sozluk.girdiler.get(k.get("source") or "") or sozluk.girdiler.get(k["name"]) or {}
+        hedef = girdi.get("hedef") if girdi.get("tur") in ("name", "codename") else ""
+        if hedef and hedef != k["name"] and " " not in k["name"].strip():
+            esle[k["name"].strip()] = hedef
+    if not esle:
+        return karakterler, hitaplar, sahne
+    desen = re.compile(r"(?<![\w'’])(" + "|".join(re.escape(a) for a in sorted(esle, key=len, reverse=True)) + r")(?![\w])")
+
+    def yaz(metin):
+        return desen.sub(lambda m: esle[m.group(1)], metin) if isinstance(metin, str) else metin
+    karakterler = [{**k, "name": yaz(k.get("name")), "note": yaz(k.get("note"))} if isinstance(k, dict) else k
+                   for k in karakterler]
+    hitaplar = [{**h, "from": yaz(h.get("from")), "to": yaz(h.get("to"))} if isinstance(h, dict) else h for h in hitaplar]
+    sahne = {d: [{**x, "summary": yaz(x.get("summary"))} for x in liste] for d, liste in sahne.items()}
+    return karakterler, hitaplar, sahne
 
 
 def dizi_analiz(dosyalar, ayar, model, sozluk, gunluk):
@@ -229,7 +278,8 @@ def dizi_analiz(dosyalar, ayar, model, sozluk, gunluk):
             gunluk.uyari(dosyalar[0][0], "hitap: script'in kaynaktan okuduğu çiftler: " + ", ".join(
                 f"{h['from']} -> {h['to']}: {'resmi' if h['form'] == 'formal' else 'samimi'}" for h in kesin))
     kurgu = topla(sahne_isleri, sahne_sonuclari, "fictional")
-    sahne = topla(sahne_isleri, sahne_sonuclari, "scenes")
+    sahne = {dosya: kisa_sahneleri_birlestir(liste) for dosya, liste in topla(sahne_isleri, sahne_sonuclari, "scenes").items()}
+    karakterler, hitaplar, sahne = adlari_sozluge_uydur(sozluk, karakterler, hitaplar, sahne)
     latin = ayar["ceviri"]["cikti_alfabesi"] == "latin"
     for dosya, satirlar, _ in dosyalar:
         sozluk.birlestir(dosya, {"characters": karakterler, "address": hitaplar, "fictional": kurgu[dosya],
