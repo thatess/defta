@@ -36,6 +36,10 @@ class Gunluk:
         if sure is not None:            # isteğin süresi ve yanıtın geldiği saat: hangi istek yavaş, logdan görülsün
             kayit = {"sn": sure, "saat": time.strftime("%H:%M:%S"), **kayit}
             Model.yerel.sure = None
+        dusunme = getattr(Model.yerel, "dusunme", None)
+        if dusunme is not None:         # yanıtın düşünme token sayısı: hangi hata düşünmeden gelen yanıttan, sayılabilsin
+            kayit = {"dusunme": dusunme, **kayit}
+            Model.yerel.dusunme = None
         with self._kilit:
             with open(self._yol(dosya, "_ham.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps(kayit, ensure_ascii=False) + "\n")

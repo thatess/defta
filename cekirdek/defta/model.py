@@ -192,10 +192,12 @@ class Model:
         def calis():
             Model.yerel.vazgec = bitti      # yanıt öteki kopyadan alındıysa bu kopya yeniden gönderilmez (_iste)
             try:
-                kutu.put((True, self._iste(sistem, kullanici, dusunme)))
+                icerik = self._iste(sistem, kullanici, dusunme)
+                kutu.put((True, (icerik, getattr(Model.yerel, "dusunme", None))))
             except BaseException as e:      # hata öteki kopyayı beklemeye engel olmasın diye kutuya konur
                 kutu.put((False, e))
 
+        Model.yerel.dusunme = None
         if self.iptal.is_set():
             raise Iptal()
         self.kapi.gir()
@@ -234,6 +236,7 @@ class Model:
             with self._kilit:
                 kayit[1].append(sure)
             Model.yerel.sure = round(sure, 1)
+            deger, Model.yerel.dusunme = deger
             self.kapi.basari()
             return deger
         finally:
@@ -306,6 +309,11 @@ class Model:
                                   else f"İstek {tur + 1} denemede de olmadı: {neden}")
         k = cevap.get("usage") if isinstance(cevap.get("usage"), dict) else {}
         ayrinti = k.get("prompt_tokens_details") if isinstance(k.get("prompt_tokens_details"), dict) else {}
+        # Yanıtın düşünme token sayısı (sunucu vermezse None). "low" seviyede model kimi istekte hiç düşünmüyor; düşünmeden
+        # gelen yanıt küçük karar isteklerinde dikkatsiz çıkıyor (gerçek test 51). Kayda yazılır, söz eşitleme okur.
+        cikti_ayr = k.get("completion_tokens_details") if isinstance(k.get("completion_tokens_details"), dict) else {}
+        Model.yerel.dusunme = (cikti_ayr["reasoning_tokens"] if isinstance(cikti_ayr.get("reasoning_tokens"), int)
+                               else None)
         with self._kilit:
             self.sureler.append(time.time() - basla)
             self.istek += 1
@@ -372,6 +380,7 @@ class Kayitli:
         return getattr(self._model, ad)
 
     def iste(self, sistem, kullanici, dusunme=None):
+        Model.yerel.dusunme = None           # kayıttan dönen yanıtın düşünme sayısı bilinmez
         anahtar = hashlib.sha1("\0".join((sistem, kullanici, str(dusunme))).encode("utf-8")).hexdigest()
         with self._kilit:
             sira = self._alinan.get(anahtar, 0)

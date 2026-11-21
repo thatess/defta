@@ -771,8 +771,11 @@ def _mekanik_mi(yazim, latin):
     # Uzun ünlü işareti harfin kendisidir ("Furankī" = "Furanki"): silinirse harf harf okunuş fark edilmez.
     duz = lambda m: "".join(k for k in unicodedata.normalize("NFKD", m.lower()) if not unicodedata.combining(k))
     # "iya" kayma sesi de harf harf okunuştur (ブライア -> "Buraiya" = "Buraia")
+    # Japoncada r ile l aynı sestir: "Loido" (ロイド), "Kamila" (カミラ) da harf harf okunuştur; tanınmayınca resmî yazım
+    # sayılıp oylamaya giriyor, beraberlik çıkarıyordu ("Lloyd" sözlüğe girdi, gerçek test 54; ek oy "Kamila"yı seçti,
+    # gerçek test 50). S27.
     yalin = lambda m: re.sub(r"ou|oo|uu|aa|ii|ee", lambda x: x.group(0)[0],
-                             re.sub(r"iy(?=[aeou])", "i", re.sub(r"[^a-z]", "", duz(m))))
+                             re.sub(r"iy(?=[aeou])", "i", re.sub(r"[^a-z]", "", duz(m)).replace("l", "r")))
     return bool(okunus) and yalin(okunus) == yalin(latin)
 
 
@@ -798,6 +801,10 @@ def _degerler(liste, alan, yazim=""):
     """Oylarda bir alana verilen değerler. Latin dışı kaynağın yazımını aynen geri veren karşılık (超能力者 -> "超能力者")
     karşılık değildir, oya girmez: girseydi üç ayrı oyda ilk gelen o olabiliyor, terim karşılıksız kalıyordu."""
     degerler = [c[alan].strip() for c in liste if isinstance(c.get(alan), str) and c[alan].strip()]
+    if alan == "l":
+        # Latin yazım alanında başka yazının harfi bozuk oydur: düşünmeden gelen yanıtlar "Dar크", "Dezमोndo" yazdı
+        # (gerçek test 54; S26).
+        degerler = [d for d in degerler if not temizlik.latin_disi(d)]
     kaynak_harfleri = set(temizlik.latin_disi(yazim) or "")
     if kaynak_harfleri and alan in ("e", "tr"):
         degerler = [d for d in degerler if not (temizlik.latin_disi(d) and set(temizlik.latin_disi(d)) <= kaynak_harfleri)]
@@ -806,6 +813,39 @@ def _degerler(liste, alan, yazim=""):
 
 KARSILIKLI = ("descriptive", "epithet", "title", "people", "term")
 EK_OY = 2       # karşılık isteğinin cevapları birleşmediyse aynı soru kaç kez daha sorulur
+
+
+def _berabere_yazimlar(gruplar, partiler):
+    """Latin dışı yazımlı adaylardan, oyların verdiği resmî Latin yazımları ("l", harf harf okunuş olmayan) berabere
+    kalanlar: [(parti sırası, aday no)]. Beraberlikte ilk gelen seçiliyordu: フォージャー için üç oy "Fōjā" / "Forujaa"
+    / "Forger" dedi, "Forujaa" girdi (Kodi 1.0.14, SPY x FAMILY S01E02). Oyların çoğu yerleşik biçimle birini
+    destekliyorsa _cogunluk onu seçer, beraberlik sayılmaz."""
+    sonuc = []
+    for k, (grup, parti) in enumerate(zip(gruplar, partiler)):
+        oylar = {}
+        for yanit in grup:
+            for c in (yanit.get("items") or []) if isinstance(yanit, dict) else []:
+                if isinstance(c, dict) and isinstance(c.get("i"), int) and 1 <= c["i"] <= len(parti):
+                    oylar.setdefault(c["i"], []).append(c)
+        for i, liste in sorted(oylar.items()):
+            yazim = parti[i - 1]["yazim"]
+            if not temizlik.latin_disi(yazim):
+                continue
+            resmi = [d for d in _degerler(liste, "l", yazim) if not _mekanik_mi(yazim, d)]
+            say = Counter(_oy_anahtari(d) for d in resmi).most_common(2)
+            if len(say) < 2 or say[0][1] != say[1][1]:
+                continue
+            yerlesik = _sesi_tutan_yerlesik(yazim, _degerler(liste, "e", yazim), len(grup))
+            if yerlesik and any(_oy_anahtari(d) == _oy_anahtari(yerlesik) for d in resmi):
+                continue
+            sonuc.append((k, i))
+    return sonuc
+
+
+def _ek_oylu_yazim(eski, ek, yazim):
+    """Berabere kalan adayın Latin yazımı: ilk oylar ve ek oylar birlikte (her yanıtta yalnız o aday, i=1)."""
+    tek = lambda yanitlar: [{"items": [dict(c, i=1)]} for c in yanitlar]
+    return _cogunluk(tek(eski) + tek(ek), {1: yazim})[0].get("l") if eski or ek else None
 
 
 def _karara_bagla(gruplar, partiler):
@@ -1997,15 +2037,17 @@ def tekrar_eden_ifadeler(metinler, haric=()):
     karşılık alabiliyordu: 懇親会 "davetler" / "veli toplantısı", 鬼ごっこ "ebeleme" / "yakalamaca", aynı selam
     kalıbı iki ayrı biçimde; gerçek test 21, SPY x FAMILY 1. bölüm). Çeviriden sonra denetimde birleştirilir
     (Denetimler._ortak_ifadeler). metinler: {satır no: etiketsiz kaynak metin}.
-    Adaylar: 2+ kanjili öbek (önünde katakana olabilir), iki satırda ortak 10+ harflik parça, dosyada iki kez ve
-    aralarında 30+ satır olan kanji + kana sözcük. İki üç satırda geçmeyen, satırları 3'ten yakın, satırları
+    Adaylar: 3+ kanjili öbek (önünde katakana olabilir), iki satırda ortak 10+ harflik parça, dosyada iki kez ve
+    aralarında 30+ satır olan kanji + kana sözcük. İki kanjili öbek alınmaz: çoğu sıradan sözcük (心配, 絶対, 役所);
+    SPY 1-3. bölümde gönderilen 108 ifadenin 72'si buydu, gerçek tekrar yoktu; model istek başına bunları okuyup
+    eliyordu (S23, bekleyen kararlar madde 86). İki üç satırda geçmeyen, satırları 3'ten yakın, satırları
     birebir aynı (seçim adımının işi) ya da sözlükteki bir yazımın parçası olan aday alınmaz. {ifade: [satır no]}"""
     temiz = {i: re.sub(r"\s+", "", _IFADE_ATILAN.sub(" ", t)) for i, t in metinler.items()}
     temiz = {i: t for i, t in temiz.items() if t}
     hepsi = "\n".join(temiz[i] for i in sorted(temiz))
     adaylar = set()
     for t in temiz.values():
-        adaylar.update(m.group() for m in re.finditer(r"[ァ-ヺー]*" + _IFADE_KANJI + "{2,}", t))
+        adaylar.update(m.group() for m in re.finditer(r"[ァ-ヺー]*" + _IFADE_KANJI + "{3,}", t))
         for a in range(len(t)):
             for uzun in range(4, 7):
                 parca = t[a:a + uzun]
@@ -2177,6 +2219,27 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
         """Sınıflandırma oylarından karar; ardından aynı anda yazım isteği ve karşılık isteği ("l" ve "k" alanları).
         (kararlar, karşılığı sorulan, yazımı sorulan)."""
         kararlar_ = _karara_bagla(oylar_, partiler_)
+        berabere = _berabere_yazimlar(oylar_, partiler_)
+        if berabere:
+            # Yazımı berabere kalan adaylar EK_OY kez daha sınıflandırılır; yalnız yazım ("l") bu oylarla seçilir.
+            alt = {}
+            for k, i in berabere:
+                alt.setdefault(k, []).append(i)
+            with ThreadPoolExecutor(max_workers=max(1, isci)) as havuz:
+                gelen = {k: [havuz.submit(siniflandir, [partiler_[k][i - 1] for i in liste]) for _ in range(EK_OY)]
+                         for k, liste in alt.items()}
+                gelen = {k: [g.result() for g in grup] for k, grup in gelen.items()}
+            for k, liste in alt.items():
+                for m, i in enumerate(liste, 1):
+                    eski = [c for yanit in oylar_[k] if isinstance(yanit, dict) for c in yanit.get("items") or []
+                            if isinstance(c, dict) and c.get("i") == i]
+                    ek = [c for yanit in gelen[k] if isinstance(yanit, dict) for c in yanit.get("items") or []
+                          if isinstance(c, dict) and c.get("i") == m]
+                    yeni = _ek_oylu_yazim(eski, ek, partiler_[k][i - 1]["yazim"])
+                    karar = next((c for c in kararlar_[k] if c.get("i") == i), None)
+                    if yeni and karar is not None:
+                        karar["l"] = yeni
+            yazim_ek_oylu.append(len(berabere))
         _ayni_ada_dusenleri_ayir(kararlar_, oylar_, partiler_, sozluk)
         _bilesik_adlari_esitle(kararlar_, partiler_, sozluk)
         # Özgün sesiyle kalan terim, onu içeren terimin karşılığında da öyle kalır (死神 Shinigami -> 死神代行 "vekil
@@ -2284,6 +2347,7 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
             oylar_ = [[g.result() for g in grup] for grup in gelecek]
         return kararlari_kur(oylar_, kesif_partileri, kesiften=True)
 
+    yazim_ek_oylu = []                   # kararlari_kur: yazımı berabere kalıp ek oyla seçilen aday sayıları
     with ThreadPoolExecutor(max_workers=2) as zincir:         # iki zincir aynı anda: süreyi uzun olanı belirler
         ana, kes = zincir.submit(kararlari_kur, oylar, partiler), zincir.submit(kesif_zinciri)
         kararlar, karsiliksiz, yazimsiz, ek_oylu = ana.result()
@@ -2396,6 +2460,7 @@ def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):
                       + (f", {karsiliksiz} aday için karşılık isteği" if karsiliksiz else "")
                       + (f" (cevapları birleşmeyen {ek_oylu} aday için {EK_OY} ek oy)" if ek_oylu else "")
                       + (f", yazımı okunuş olan {yazimsiz} aday için yazım isteği" if yazimsiz else "")
+                      + (f", yazımı berabere kalan {sum(yazim_ek_oylu)} aday için {EK_OY} ek oy" if yazim_ek_oylu else "")
                       + f"; eser {'tanındı' if taninan else 'tanınmadı'}; "
                       + ", ".join(f"{t} {n}" for t, n in sorted(eklenen.items()))
                       + (f"; adla geçen unvan: {', '.join(sozluk.unvanlar)}" if sozluk.unvanlar else ""))

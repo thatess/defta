@@ -11,7 +11,7 @@ from .ayar import dil_adi, hedef_kodu
 from .cumle import BIRLESTI
 from .hitap import SEN, SIZ
 from .kaynak import KANA_SOZCUK, _yalin, ciglik_mi
-from .model import Iptal, Ret, json_coz
+from .model import Iptal, Model, Ret, json_coz
 
 SECIM_ISTEMI = """A film subtitle repeats some of its lines (a flashback, a repeated scene, a line quoted or echoed later). Each such line was translated into {dil} in more than one way. For every item with "candidates", choose the candidate that renders "source" most accurately and naturally ("before" and "after", when given, are its neighbouring source lines), so that the line reads the same every time. Choose only among the candidates.
 An item with "occurrences" is one line said again elsewhere; each occurrence shows its neighbouring source lines and which candidate it has now. If it is the same words said in the same sense (a memory, an echo, a catchphrase, a punchline repeated), choose one candidate. If the occurrences are said in different situations that need different renderings (said to different people, or meaning something else there), answer "pick": 0 and every occurrence keeps its own translation."""
@@ -24,6 +24,7 @@ IFADE_ISTEMI_LATIN = """Each item holds two lines of one film whose source texts
 Make the translations match only where the repeated words say the same thing in both lines and the translations render them with different words: choose the better rendering already used and rewrite only the words that render the repeated part in the other line. Keep everything else in that line exactly as it is (who does what, person, tense, names, punctuation).
 Leave both lines alone when the repeated part is already rendered the same way, when the shared words are ordinary words whose wording can naturally vary, or when they mean something else in each line.
 Return ONLY this JSON object: {{"lines": [{{"id": 12, "text": "..."}}]}} with only the lines you changed (an empty list is fine)."""
+IFADE_OZENSIZ = 2          # düşünme sayısı bilinmezse: yanıt bu kadar satırı değiştirmeden yollarsa özensizdir (S22)
 YANKI = re.compile(r'^["“]?(We|Me|I|You|Us|Him|Her|Them|Mine|Ours)["”]?\s*\?$', re.I)
 ARDISIK_UZAKLIK = 3        # art arda yinelenen replik en çok kaç altyazı sonra aranır (araya giren konuşmalar)
 ARDISIK_BOSLUK = 150       # ms: ilkinin bitişi ile ikincinin başlangıcı arasındaki en büyük boşluk
@@ -382,14 +383,36 @@ class Denetimler:
                                              for i in idler]}
                   for ifade, idler in list(gruplar.items())[:80]]
         izinli = {i for idler in gruplar.values() for i in idler}
-        try:
-            ham = self.model.iste(istem.format(dil=dil_adi(self.ayar)), json.dumps({"items": ogeler}, ensure_ascii=False))
-            self.gunluk.ham(self.etiket, {"tur": "ifade", "giden": {"items": ogeler}, "gelen": ham})
-            cevap = json_coz(ham)
-            yeni = {int(x["id"]) - 1: x["text"].strip() for x in (cevap.get("lines") or [])
-                    if isinstance(x, dict) and isinstance(x.get("text"), str) and x["text"].strip()}
-        except (Ret, ValueError, KeyError, TypeError, AttributeError) as e:
-            self.gunluk.uyari(self.etiket, f"tekrar eden ifadeler eşitlenemedi ({e})")
+        # Modelin düşünmeden verdiği yanıt özensizdir: sıradan sözcüklerin satırlarını da yeniden yazıyor (300 "siz" ->
+        # "sen", 366 "belediye" -> "devlet dairesi"). Gerçek test 51: düşünme sayısı 0 olan 12 yanıtın 10'u satırları
+        # bozdu, 2'si boş döndü; düşünerek gelen 33 yanıtın hepsi özenliydi. Düşünme sayısı biliniyorsa ölçüt odur (S25):
+        # S22'nin işareti (değiştirmeden yollanan 2+ satır) gerçek test 53'te düşünmeden gelen bir yanıtı kaçırdı (1 satır
+        # aynen; 262 ve 432 bozuldu). Sunucu sayıyı vermezse S22'nin işaretine bakılır. Özensiz yanıt kullanılmaz,
+        # istek bir kez daha sorulur; o da özensizse eşitleme yapılmaz (çeviriler olduğu gibi kalır).
+        for deneme in range(2):
+            try:
+                ham = self.model.iste(istem.format(dil=dil_adi(self.ayar)),
+                                      json.dumps({"items": ogeler}, ensure_ascii=False))
+                dusunme = getattr(Model.yerel, "dusunme", None)       # ham kayda yazınca sıfırlanır
+                self.gunluk.ham(self.etiket, {"tur": "ifade", "giden": {"items": ogeler}, "gelen": ham})
+                cevap = json_coz(ham)
+                yeni = {int(x["id"]) - 1: x["text"].strip() for x in (cevap.get("lines") or [])
+                        if isinstance(x, dict) and isinstance(x.get("text"), str) and x["text"].strip()}
+            except (Ret, ValueError, KeyError, TypeError, AttributeError) as e:
+                self.gunluk.uyari(self.etiket, f"tekrar eden ifadeler eşitlenemedi ({e})")
+                return
+            aynen = sum(1 for i, metin in yeni.items() if i in izinli and metin == duz(i))
+            if dusunme is not None:
+                if dusunme > 0:
+                    break
+                neden = "model düşünmeden yanıtladı"
+            elif aynen < IFADE_OZENSIZ:
+                break
+            else:
+                neden = f"yanıt {aynen} satırı değiştirmeden yolladı"
+            self.gunluk.uyari(self.etiket, f"tekrar eden ifadeler: {neden} (özensiz yanıt), "
+                                           + ("yeniden soruldu" if deneme == 0 else "eşitleme yapılmadı"))
+        else:
             return
         for i, metin in yeni.items():
             if i not in izinli or metin == duz(i):
