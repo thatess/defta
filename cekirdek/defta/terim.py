@@ -805,6 +805,11 @@ def _degerler(liste, alan, yazim=""):
         # Latin yazım alanında başka yazının harfi bozuk oydur: düşünmeden gelen yanıtlar "Dar크", "Dezमोndo" yazdı
         # (gerçek test 54; S26).
         degerler = [d for d in degerler if not temizlik.latin_disi(d)]
+        # Çoğul eki yalnız eksiz biçim de oylarda varsa atılır ("Dalc" / "Dalcs"); oyların hepsi "Paris" ise kalır;
+        # eksiz biçim harf harf okunuşsa ("Pentos" -> "Pento") birleşmez, okunuşa oy olmaz.
+        kucukler = {d.lower() for d in degerler}
+        degerler = [e if (e := _cogul_eki_at(yazim, d)) != d and e.lower() in kucukler and not _mekanik_mi(yazim, e)
+                    else d for d in degerler]
     kaynak_harfleri = set(temizlik.latin_disi(yazim) or "")
     if kaynak_harfleri and alan in ("e", "tr"):
         degerler = [d for d in degerler if not (temizlik.latin_disi(d) and set(temizlik.latin_disi(d)) <= kaynak_harfleri)]
@@ -1299,6 +1304,30 @@ def kaynak_sirasi(yazim, latin):
     return " ".join(en_iyi) if puan(en_iyi) > puan(sozcukler) else latin
 
 
+def _cogul_eki_at(yazim, latin):
+    """Katakana okunuşunda "s" sesi yoksa tek sözcüklük yazımın sonundaki İngilizce çoğul eki atılır: ダルク "Dalcs" ->
+    "Dalc", ペント "pents" -> "pent". Model para birimini çoğul yazıyordu; oylar "Dalc" / "Dalcs" diye bölünüp beraberlikte
+    "Darc" seçildi (Kodi 1.0.16 SPY E02). Okunuş "s" sesiyle bitiyorsa (ウェスタリス "Westalis", ストリクス), yazım çift s
+    ("SS") ya da birden çok sözcükse ("Honey Princess") dokunulmaz. Kayıtlardaki bütün eşleşmeler para birimiydi (S29)."""
+    kana = re.sub(r"[^ァ-ヺー]", "", yazim or "").rstrip("ー")
+    if not kana or kana[-1] in "スズツ" or not isinstance(latin, str):
+        return latin
+    m = re.fullmatch(r"([^\W\d_]+[^sS\W\d_])[sS]", latin.strip())
+    return m.group(1) if m else latin
+
+
+def _cogulsuz_okunusa_uyar(yazim, latin, okunus):
+    """Yazım isteğinin cevabındaki çoğul eki, eksiz biçim okunuşun başıysa atılır: ペント okunuş "Pento", cevap "pents"
+    -> "pent". Okunuşu tutmayan ("Louis", okunuş "Rui") dokunulmaz (S29)."""
+    eksiz = _cogul_eki_at(yazim, latin)
+    o = re.sub(r"[^a-z]", "", str(okunus or "").lower().translate(MAKRONSUZ))
+    k = re.sub(r"[^a-z]", "", eksiz.lower())
+    # Okunuş eksiz biçimin sonuna Japoncanın eklediği ünlü olmalı (pent -> "pento"); eksiz biçim ünlüyle bitiyorsa
+    # "s" sessiz harftir ("Paris", okunuş "Pari"): kalır.
+    uyar = bool(k) and k[-1] not in "aeiou" and len(o) == len(k) + 1 and o.startswith(k) and o[-1] in "aeiou"
+    return eksiz if eksiz != latin and uyar else latin
+
+
 def _yazimlari_tamamla(kararlar, partiler, sor, oy, isci, baslik):
     """Kana içeren ad, kod adı ve terimde seçilen Latin yazım harf harf okunuşsa (ステラ -> "Sutera", 黄昏(たそがれ) ->
     "Tasogare") ya da hiç yoksa yazım ayrıca sorulur. Oyların hepsi okunuşu verdiyse oylamanın "resmî yazım üstündür"
@@ -1318,15 +1347,16 @@ def _yazimlari_tamamla(kararlar, partiler, sor, oy, isci, baslik):
                     or c.get("t") in ("title", "epithet") and OKUNUS_KATAKANA.search(yazim))
                     and (not latin or _mekanik_mi(yazim, latin))):
                 # okunuşu katakanayla verilmiş unvanın yazımı da sorulur: ödünç sözcükse (ハンドラー) duyulduğu gibi kalır
-                eksik.append((c, partiler[k][c["i"] - 1]))
+                eksik.append((c, partiler[k][c["i"] - 1], latin))
     if not eksik:
         return 0
     yuk = {"title_hint": baslik,
-           "items": [{"i": n, "s": a["yazim"], "lines": a["ornek"]} for n, (_, a) in enumerate(eksik, 1)]}
+           "items": [{"i": n, "s": a["yazim"], "lines": a["ornek"]} for n, (_, a, _) in enumerate(eksik, 1)]}
     with ThreadPoolExecutor(max_workers=max(1, isci)) as havuz:
         yanitlar = [g.result() or {} for g in [havuz.submit(sor, yuk) for _ in range(max(1, oy))]]
-    for n, (c, a) in enumerate(eksik, 1):
-        degerler = [kaynak_sirasi(a["yazim"], str(x.get("l") or "").strip().translate(MAKRONSUZ))
+    for n, (c, a, onceki) in enumerate(eksik, 1):
+        degerler = [_cogulsuz_okunusa_uyar(a["yazim"], kaynak_sirasi(a["yazim"], str(x.get("l") or "").strip()
+                                                                    .translate(MAKRONSUZ)), onceki)
                     for y in yanitlar for x in y.get("items") or [] if isinstance(x, dict) and x.get("i") == n]
         # Noktasız tek katakana ad tek sözcüktür: ユーリ -> "Yuri Briar" (tam adı vermiş) parçanın yazımı değildir.
         tek_ad = c.get("t") == "name" and re.fullmatch(r"[ァ-ヺー]+", a["yazim"])

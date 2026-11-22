@@ -418,6 +418,9 @@ class Denetimler:
         for i, metin in yeni.items():
             if i not in izinli or metin == duz(i):
                 continue
+            metin = temizlik.satir_basi_kucult(duz(i), metin)
+            if metin == duz(i):
+                continue
             if difflib.SequenceMatcher(None, duz(i), metin).ratio() < 0.6:
                 self.gunluk.uyari(self.etiket, f"satır {i + 1}: ifade eşitlemesi çok değiştirdi, kullanılmadı: {metin!r}")
                 continue

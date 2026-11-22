@@ -143,14 +143,41 @@ _EKLI_HAL = re.compile(
 # ("müslümanlar", "tanrı'nın": gerçek test F/G, Kingdom of Heaven).
 _TR_BUYUK = re.compile(r"(?<![\wçğıöşü])(müslüman|hristiyan|hıristiyan|yahudi|musevi|arap(?!saç)|islam|budist|katolik|"
                        r"protestan|ortodoks|haçlı|yunan|ispanyol|kızılderili|türk(?!ü)|japon|ingiliz|fransız|italyan|kelt|sakson|viking|"
-                       r"(?:pers|iskoç|aztek|inka|rus|alman|moğol|kürt|ermeni|gürcü|arnavut|macar|fars|portekiz|latin|"
+                       r"(?:pers|iskoç|aztek|inka|rus|"
+                       # "alman" fiil de olabilir ("yüzüğü senin alman", "bugüne alman gerekirse"): ardından gelen
+                       # gerek/lazım/için… ya da önündeki "senin" milliyet değildir (S29).
+                       r"(?<!senin )alman(?! (?:gerek|lazım|şart|için|d[ae]\b|m[ıi]\b|mümkün|yeter|doğru|iyi))|moğol|kürt|ermeni|gürcü|arnavut|macar|fars|portekiz|latin|"
                        r"çin|hint|amerikan?|afrika|avrupa|asya)(?=l[ae]r|l[ıi]|[cç][ae]|[^\wçğıöşü]|$))(?=[a-zçğıöşü'’]|[^\w]|$)")
 
 
 def tr_buyuk_harf(metin):
-    """ "müslümanlar" -> "Müslümanlar", "tanrı'nın" -> "Tanrı'nın" (kesme işareti yalnız özel adda olur)."""
+    """ "müslümanlar" -> "Müslümanlar", "tanrı'nın" -> "Tanrı'nın" (kesme işareti yalnız özel adda olur). Küçük harfli
+    sözcüğün sonundaki büyük I/İ küçülür: "İnandI" -> "İnandı" (modelin yanıtı, Kodi 1.0.16 SPY E02 401; S29)."""
     metin = _TR_BUYUK.sub(lambda m: ("İ" if m.group(1)[0] == "i" else m.group(1)[0].upper()) + m.group(1)[1:], metin)
+    metin = re.sub(r"(?<![\w'’])([A-ZÇĞİÖŞÜ]?[a-zçğıöşüâîû]{2,})([Iİ])(?![\w'’])",
+                   lambda m: m.group(1) + ("ı" if m.group(2) == "I" else "i"), metin)
     return re.sub(r"(?<![\wçğıöşü])tanrı(?=['’])", "Tanrı", metin)
+
+
+def satir_basi_kucult(eski, yeni):
+    """Yeniden yazılan çeviride satır sonundan sonra süren cümlenin büyük harfle başlaması geri alınır: eski çeviride
+    o satır küçük harfle başlıyorsa, önceki satır cümleyi bitirmiyorsa ve sözcük eski çeviride büyük harfle hiç
+    geçmiyorsa (ad değilse). "Yok, gerçekten\nDört gözle bekliyordum." (söz eşitleme yanıtı, Kodi 1.0.16 SPY E02 310;
+    S29)."""
+    es, ys = eski.split("\n"), yeni.split("\n")
+    for k in range(1, len(ys)):
+        if k >= len(es):
+            break
+        m = re.match(r"(\s*(?:<i>)?\s*)([A-ZÇĞİÖŞÜ])([a-zçğıöşüâîû]+)", ys[k])
+        e = re.match(r"\s*(?:<i>)?\s*([a-zçğıöşüâîû])", es[k])
+        if not (m and e) or re.search(r"[.!?…:\"”»]\s*(?:</i>)?\s*$", ys[k - 1]):
+            continue
+        sozcuk = m.group(2) + m.group(3)
+        if re.search(r"(?<![\w])" + re.escape(sozcuk) + r"(?![\w])", eski):
+            continue
+        ys[k] = m.group(1) + ("ı" if m.group(2) == "I" else "i" if m.group(2) == "İ" else m.group(2).lower()) \
+            + ys[k][m.end(2):]
+    return "\n".join(ys)
 
 
 _YUMUSA = {"p": "b", "ç": "c", "t": "d", "k": "ğ"}

@@ -2448,6 +2448,35 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertIn("too strong for a Japanese source", m.gidenler[1]["fix"][0]["problem"])
         self.assertEqual(sonuc[0], "Beni fena faka bastırdı.")
 
+    def test_cogul_eki_buyuk_harf_ve_alman(self):
+        """S29 (Kodi 1.0.16 SPY E02): para biriminin çoğul eki oyları bölmez ("Dalc" / "Dalcs" berabere kalıp "Darc"
+        seçilmişti), yazım isteğinin "pents" cevabı "pent" olur; okunuşu "s" ile biten, birden çok sözcüklü ve
+        sessiz s'li yazım kalır. Sözcük sonunda büyük I küçülür ("İnandI"); söz eşitleme satır sonundan sonra cümleyi
+        büyük harfle başlatmaz; "senin alman", "alman gerekirse" milliyet sayılmaz."""
+        from defta.terim import _cogunluk, _cogulsuz_okunusa_uyar
+        from defta.temizlik import tr_buyuk_harf, satir_basi_kucult
+        oy = lambda l: {"items": [{"i": 1, "t": "name", "l": l}]}
+        self.assertEqual(_cogunluk([oy("Darc"), oy("Dalk"), oy("Dalc"), oy("Dalcs")], {1: "ダルク"})[0]["l"], "Dalc")
+        self.assertEqual(_cogunluk([oy("Paris"), oy("Paris")], {1: "パリ"})[0]["l"], "Paris")
+        self.assertEqual(_cogunluk([oy("Westalis"), oy("Westali")], {1: "西国(ウェスタリス)"})[0]["l"], "Westalis")
+        self.assertEqual(_cogunluk([oy("Pent"), oy("Pentos"), oy("Pento")], {1: "ペント"})[0]["l"], "Pent")
+        self.assertEqual(_cogulsuz_okunusa_uyar("ペント", "pents", "Pento"), "pent")
+        self.assertEqual(_cogulsuz_okunusa_uyar("ルイ", "Louis", "Rui"), "Louis")
+        self.assertEqual(_cogulsuz_okunusa_uyar("パリ", "Paris", "Pari"), "Paris")
+        self.assertEqual(_cogulsuz_okunusa_uyar("ハニー姫", "Honey Princess", "Hanii"), "Honey Princess")
+        self.assertEqual(tr_buyuk_harf("İnandI."), "İnandı.")
+        self.assertEqual(tr_buyuk_harf("orklarI gördüm"), "orkları gördüm")
+        for t in ("HAYIR!", "TÜBİTAK", "Gel, IŞIK!"):
+            self.assertEqual(tr_buyuk_harf(t), t)
+        self.assertEqual(tr_buyuk_harf("yüzüğü senin alman da"), "yüzüğü senin alman da")
+        self.assertEqual(tr_buyuk_harf("bugüne alman gerekirse"), "bugüne alman gerekirse")
+        self.assertEqual(tr_buyuk_harf("bir alman askeri"), "bir Alman askeri")
+        self.assertEqual(satir_basi_kucult("Yok, gerçekten\nmerakla bekliyordum.", "Yok, gerçekten\nDört gözle bekliyordum."),
+                         "Yok, gerçekten\ndört gözle bekliyordum.")
+        self.assertEqual(satir_basi_kucult("Bunu yapmayı\nLoid istedi.", "Bunu yapmayı\nLoid istemişti."),
+                         "Bunu yapmayı\nLoid istemişti.")
+        self.assertEqual(satir_basi_kucult("Geldin mi?\nnasılsın", "Geldin mi?\nNasılsın"), "Geldin mi?\nNasılsın")
+
     def test_dini_soz_onerilmez_beddua_klise_sayilmaz(self):
         """Talimat dini söz önermez; kaynakta dini söz yoksa çeviride de olmaz ("for pity's sake" -> "Allah aşkına"
         çıkıyordu). "Curse you!" -> "Kahrolasın!" klişe sayılmaz (yeniden sorulunca "Allah belanı versin" oluyordu);
