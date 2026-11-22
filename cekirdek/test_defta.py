@@ -2448,6 +2448,20 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertIn("too strong for a Japanese source", m.gidenler[1]["fix"][0]["problem"])
         self.assertEqual(sonuc[0], "Beni fena faka bastırdı.")
 
+    def test_dini_soz_onerilmez_beddua_klise_sayilmaz(self):
+        """Talimat dini söz önermez; kaynakta dini söz yoksa çeviride de olmaz ("for pity's sake" -> "Allah aşkına"
+        çıkıyordu). "Curse you!" -> "Kahrolasın!" klişe sayılmaz (yeniden sorulunca "Allah belanı versin" oluyordu);
+        "kahrolası herif" klişe kalır (S28)."""
+        from defta.denetim import KLISE
+        from defta import istem
+        metin = istem.DIL_KURALLARI["tr"]
+        self.assertNotIn('real anger or grief "Allah kahretsin!"', metin)
+        self.assertIn('Religious words ("Allah", "Tanrı") only where the source has one', metin)
+        self.assertTrue(KLISE["tr"].search("kahrolası herif"))
+        self.assertTrue(KLISE["tr"].search("lanet olsun"))
+        self.assertFalse(KLISE["tr"].search("kahrolasın!"))
+        self.assertFalse(KLISE["tr"].search("allah kahretsin, laura."))
+
     def test_sicramak_agir_kufur_sayilmaz(self):
         """"sıçramak" ve "sıçan" küfür değildir: satır yeniden sorulmaz (doğru çeviri bozuluyordu)."""
         from defta.denetim import JP_AGIR

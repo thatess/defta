@@ -56,7 +56,7 @@ def ardisik_mi(once, sonra):
     return -ARDISIK_BOSLUK <= sonra.bas - once.bit <= ARDISIK_BOSLUK
 
 
-KLISE = {"tr": re.compile(r"(?<!allah )kahretsin|kahrolası|lanet olası|lanet olsun|seni aptal|seni pislik|"
+KLISE = {"tr": re.compile(r"(?<!allah )kahretsin|kahrolası(?![nc])|lanet olası|lanet olsun|seni aptal|seni pislik|"
                          r"(?<![\wçğıöşü])lanet(?=\s+(?!et|ed|oku|ol)[\wçğıöşü])")}
 
 # Bip'li pekiştiricinin nitelik gibi çevrilmesi ("[bleep] raw" -> "bok gibi çiğ"): bip bir sözcüğün önündeyse ve
@@ -121,7 +121,8 @@ class Denetimler:
         klise = KLISE.get(kod)
         m = klise.search(kucuk) if klise else None
         if m:
-            neden = f'"{m.group(0)}" is a dubbing cliché: use what a person would really say, at the same strength'
+            neden = (f'"{m.group(0)}" is a dubbing cliché: use what a person would really say, at the same strength; '
+                     "no religious word unless the source has one")
             if _bip_pekistirici(kaynak):
                 neden += (f'; the bleeped word is an intensifier: drop "{m.group(0)}" entirely and let the tone or a '
                           "stronger word carry the anger")
