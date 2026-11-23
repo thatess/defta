@@ -21,6 +21,38 @@ ARDISIK_BOZUK = 10          # bu kadar üst üste kullanılamayan yanıtta çal�
 # Kullanılabilir yanıt bir kez geldiyse model ve adres doğrudur: hep reddedilen tek satır (parça ikiye bölünerek 15-20
 # kez üst üste sorulur) bütün dosyayı durdurmasın; o satır orijinal bırakılır. Sınır yine de vardır.
 ARDISIK_BOZUK_SONRA = 50
+_KARDES_DUR = {"the", "that", "this", "these", "those", "and", "or", "but", "a", "an", "one", "two", "three", "four",
+               "five", "six", "seven", "eight", "nine", "ten", "his", "her", "my", "your", "our", "their", "its", "of",
+               "in", "to", "for", "no", "some", "any", "all", "every", "each", "both"}
+
+
+def kardes_ad(yazim, kaynak, ceviri_kucuk):
+    """Kaynakta sözlük teriminin (yazim) kendisi yokken aynı sonla biten başka bir ad geçiyorsa o adı döndürür.
+    Japonca: "スペード王国" terimi, kaynakta "ダイヤモンド王国" (son iki kanji aynı, baş farklı). Latin harfli: "Spade Kingdom"
+    terimi, kaynakta "Diamond Kingdom" (son sözcük aynı; terimin öteki sözcükleri kaynakta yok, kaynaktaki adın baş
+    sözcüğü çeviride de yok). Sayım (511 kayıt, 478 bin satır): 2 isabet."""
+    yazim = yazim.strip()
+    if re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", yazim):
+        m0 = re.fullmatch(r"([\u30a0-\u30ff\u4e00-\u9fff]{2,}?)([\u4e00-\u9fff]{2})", yazim)
+        if not m0 or yazim in kaynak:
+            return ""
+        for m in re.finditer(r"([\u30a0-\u30ff]{2,}|[\u4e00-\u9fff]{2,})" + re.escape(m0.group(2)), kaynak):
+            if m.group(1) != m0.group(1):
+                return m.group(0)
+        return ""
+    soz = yazim.split()
+    if len(soz) < 2 or len(soz[-1]) < 4:
+        return ""
+    bas = [x.lower() for x in soz[:-1] if x.lower() not in _KARDES_DUR]
+    if not bas or any(re.search(r"\b" + re.escape(b) + r"\b", kaynak, re.I) for b in bas):
+        return ""
+    for m in re.finditer(r"\b([A-Z][\w'’-]+) " + re.escape(soz[-1]) + r"\b", kaynak):
+        h = m.group(1).lower()
+        if h not in _KARDES_DUR and h not in bas and h not in ceviri_kucuk:
+            return m.group(0)
+    return ""
+
+
 SORUN = {
     "bos": "empty text: every id needs a translation",
     "latin": "not translated or still in a non-Latin script: translate it into the target language, in Latin letters",
@@ -129,6 +161,7 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
         # satırdaki ("TITAN") ya da cümle başındaki ("Imps") terim çeviride yok sayılır, satır yeniden sorulurdu.
         self.kucuk = temizlik.tr_kucuk if hedef_kodu(ayar) in ("tr", "az") else str.lower
         self.terim_maske = {}
+        self.kardes_soruldu = set()   # kardeş ad karışması için bir kez sorulan satırlar (_d_kardes)
         self.kacan_terim = {}   # index -> (kaynak, hedef): kontrolü geçmeyen satırda eksik bulunan sözlük terimi
         self.sahneler = []
         self.notlar, self.konusanlar, self.romanize = {}, {}, set()
@@ -697,7 +730,7 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
                 return sorun
         if i in self.romanize:
             return self._d_romaji(s)            # şarkı sözü: terim ve ek aranmaz
-        for denetim in (self._d_okunus, self._d_unvan, self._d_terim, self._d_ek, self._d_sarki_isareti):
+        for denetim in (self._d_okunus, self._d_unvan, self._d_terim, self._d_kardes, self._d_ek, self._d_sarki_isareti):
             sorun = denetim(s)
             if sorun:
                 return sorun
@@ -836,6 +869,32 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
             if gecti and kok not in kucuk:
                 self.kacan_terim[s.i] = yazi          # yeniden sorarken hangi terim olduğu söylenir
                 return "terim"
+        return None
+
+    def _d_kardes(self, s):
+        """Çeviride bir sözlük adı var ama kaynakta o ad yok, yerinde aynı sonla biten başka bir ad var (S58):
+        "ダイヤモンド王国" (Diamond Kingdom) sözlükteki "スペード王国 -> Maça Krallığı" ile karıştırılıp "Maça Krallığı"
+        yazılmıştı. Satır bir kez, nedeni söylenerek yeniden sorulur; yanıt ne olursa olsun ikinci kez sorulmaz."""
+        if not self.terimler or s.i in self.kardes_soruldu:
+            return None
+        kucuk = " ".join(self.kucuk(temizlik.ETIKET.sub("", s.ceviri)).split())
+        aranan = ETIKET_GIBI.sub("\0", s.giden)
+        gecen = set()                                    # kaynakta geçen terimlerin karşılık kökleri
+        adaylar = []
+        for desen, kok, (kaynak, hedef) in self.terimler:
+            gecti = (any(bicim_gecer(d, aranan) for d in desen) if isinstance(desen, tuple) else bool(desen.search(aranan)))
+            if gecti:
+                gecen.add(kok)
+            elif len(kok) >= 5 and self.kucuk(hedef) != self.kucuk(kaynak) and re.search(r"(?<![\w'’])" + re.escape(kok), kucuk):
+                adaylar.append((kok, kaynak, hedef))
+        for kok, kaynak, hedef in adaylar:
+            if any(kok in g or g in kok for g in gecen):
+                continue
+            kardes = kardes_ad(kaynak, aranan, kucuk)
+            if kardes:
+                self.kardes_soruldu.add(s.i)
+                return (f'the source says "{kardes}", not "{kaynak}": "{hedef}" is the glossary rendering of "{kaynak}", '
+                        f'which is a different name. Translate "{kardes}" itself here')
         return None
 
     def _d_ek(self, s):

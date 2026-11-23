@@ -106,7 +106,10 @@ YON_ISARETI = re.compile(r"(?m)^[ \t]*[<>]{1,3}[ \t]+|[ \t]+[<>]{1,3}[ \t]*$|(?<
 # Japon TV altyazısının işaretleri: ➡ cümlenin sonraki altyazıda sürdüğünü, 🔊 / 📱 sesin hoparlörden ya da telefondan
 # geldiğini gösterir. Söz değildir; kalırsa çeviriye geçiyor ("Kaçın, kaçın! ➡"). Süren cümleyi script zaten
 # noktalamadan anlar.
-YAYIN_ISARETI = re.compile(r"[ \t]*[➡⇒][ \t]*|[🔊📱📞☎📺][ \t]*")
+# Ok, yayına göre değişir (➡ ⇒ ➨ ➜ →): Unicode'un ok işaretlerinin hepsi aynı sayılır (S56; Black Clover TV kaydında ➨
+# 61 satırın 13'ünde çeviride kalıyordu). ⸨ ⸩ ve ｟ ｠ ekran dışı sesin ayraçlarıdır: japonca_duzelt italiğe çevirir.
+OK = "\u2192\u21d2\u2794-\u27be\u2b95"
+YAYIN_ISARETI = re.compile(r"[ \t]*[" + OK + r"][ \t]*|[🔊📱📞☎📺][ \t]*")
 
 
 def _ortak(metin):
@@ -300,7 +303,7 @@ def kaynak_hazirla(metin):
     # Sondaki ➡ cümlenin sonraki altyazıda sürdüğünü söyler: Japonca altyazının sürdürme çizgisine (—) çevrilir ki
     # bölünmüş cümle tanınsın (cumle.SURDURME); öteki yayın işaretleri _ortak'ta atılır.
     # Cümle bitmişse ("ルフィ～！➡": konuşan sürüyor, cümle değil) işaret yalnız atılır.
-    metin = re.sub(r"(?<![。！？!?…])[ \t]*[➡⇒][ \t]*$", "—", metin.rstrip())
+    metin = re.sub(r"(?<![。！？!?…])[ \t]*[" + OK + r"][ \t]*$", "—", metin.rstrip())
     return _bosluk(japonca_duzelt(_ortak(metin))), ustte
 
 
@@ -309,6 +312,9 @@ _YARIM_KANA = re.compile(r"[｡-ﾟ]+")
 # Satır başındaki yarım genişlikli konuşmacı etiketi ((ワポル), [ｽﾋﾟｰｶ](ワポル), ≪(水夫)): tam genişlikliye çevrilip
 # satırın başına alınır; yoksa etiket tanınmıyor, çeviriye "(Wapol)" ya da "Wapol:" diye giriyordu (One Piece, TV kaydı).
 _YARIM_ETIKET = re.compile(r"^((?:\[[^\[\]]{1,12}\]|[≪《])*)\(([^()（）]{1,24})\)")
+
+
+_IKI_NOKTA_ETIKET = re.compile(r"^((?:<i>|≪|《)*)([ァ-ヺー一-龥々0-9０-９]{1,12})：")
 
 
 def japonca_duzelt(metin):
@@ -324,6 +330,15 @@ def japonca_duzelt(metin):
     for satir in metin.split("\n"):
         m = _YARIM_ETIKET.match(satir)
         if m and _JP_HARF.search(m.group(2)) and not re.search(r"[音声]$", m.group(2)):
+            satir = f"（{m.group(2)}）{m.group(1)}{satir[m.end():]}"
+        # ⸨ / ｟ satır başında ekran dışı sesi açar (≪ gibi), ⸩ / ｠ kapatır: söz değildir (S56)
+        satir = re.sub(r"^((?:<i>)?)[⸨｟]", r"\1≪", satir)
+        satir = re.sub(r"[⸨⸩｟｠]", "", satir)
+        # "ダンテ：あぁ…" / "<i>ナハト：…</i>" / "≪アシェラッド：…": adı iki noktayla veren konuşmacı etiketi parantezli
+        # etikete çevrilir, öndeki işaretlerden önce gelir (S57; çeviriye "Dante: Ah..." diye giriyordu). Ad hiragana
+        # içermez (katakana, kanji, sayı + 人) ve yalnız rakam değildir ("１０：３０" saat kalır).
+        m = _IKI_NOKTA_ETIKET.match(satir)
+        if m and not re.fullmatch(r"[0-9０-９]+", m.group(2)) and satir[m.end():].strip(" \t</i>"):
             satir = f"（{m.group(2)}）{m.group(1)}{satir[m.end():]}"
         on = re.match(r"(（[^（）]{1,24}）)?(\s*)≪", satir)
         if on:

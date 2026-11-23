@@ -1473,6 +1473,27 @@ Use Crimson Lotus Strike, Kenji-senpai.
                               self.satirlar, True, self.gunluk)
         self.assertEqual((self.sozluk.terimler, self.sozluk.korunacak), ({}, []))
 
+    def test_kardes_ad_sozlukteki_adla_karistirilirsa_bir_kez_sorulur(self):
+        """S58 (Kodi 1.0.18, Black Clover S02E01 21): "ダイヤモンド王国" sözlükteki "スペード王国 -> Maça Krallığı" ile
+        karıştırıldı. Çeviride sözlük adı var, kaynakta o ad yok ama aynı sonla biten başka bir ad var: yeniden sorulur."""
+        from defta.cevirmen import kardes_ad
+        self.assertEqual(kardes_ad("スペード王国", "ダイヤモンド王国の魔導学を", "maça krallığı'nın"), "ダイヤモンド王国")
+        self.assertEqual(kardes_ad("スペード王国", "スペード王国の魔導学を", "maça krallığı'nın"), "")
+        self.assertEqual(kardes_ad("スペード", "ダイヤモンド王国の", "maça"), "")                      # sonu kanji değil
+        self.assertEqual(kardes_ad("モジャモジャ", "モジャジャ", "paspal"), "")
+        self.assertEqual(kardes_ad("Spade Kingdom", "I ran the Diamond Kingdom labs.", "maça krallığı"), "Diamond Kingdom")
+        self.assertEqual(kardes_ad("House Targaryen", "Daemon Targaryen.", "targaryen hanesi'nden daemon."), "")
+        self.assertEqual(kardes_ad("the One Ring", "One ring to find them...", "tek yüzük"), "")
+        self.assertEqual(kardes_ad("East India Company", "the East India Trading Company", "doğu hindistan şirketi"), "")
+        self.sozluk.girdi_ekle("スペード王国", "descriptive", "Maça Krallığı")
+        c = Cevirmen(self.ayar, SahteModel(), "S", self.gunluk, self.sozluk)
+        c._hazirla(self._satirlar(["ダイヤモンド王国の魔導学を担っていた。", "スペード王国民ではない。", "王国を追われた。"]), "x.srt")
+        sorun = c._satir_kontrol(0, {0: "Maça Krallığı'nın büyü araştırmalarını yürütüyordum."})
+        self.assertIn('the source says "ダイヤモンド王国", not "スペード王国"', sorun)
+        self.assertIsNone(c._satir_kontrol(0, {0: "Maça Krallığı'nın büyü araştırmalarını yürütüyordum."}))   # bir kez
+        self.assertIsNone(c._satir_kontrol(1, {1: "Maça Krallığı halkı değilsiniz."}))
+        self.assertIsNone(c._satir_kontrol(2, {2: "Maça Krallığı'ndan kovuldum."}))            # kardeş ad yok: sorulmaz
+
     def test_japonca_ek_ve_tekrar_birlestirme(self):
         from defta.dosya import tekrarlari_birlestir
         c = Cevirmen(self.ayar, SahteModel(), "S", self.gunluk)
@@ -2778,6 +2799,21 @@ Use Crimson Lotus Strike, Kenji-senpai.
                          "<i>世界政府の闇…</i>\n<i>あんなものを見ちまった以上…</i>")
         self.assertEqual(hazir("あんなものを見ちまった以上…》"), "<i>あんなものを見ちまった以上…</i>")
         self.assertEqual(hazir("(Wapol) hi"), "(Wapol) hi")                  # Latin harfli parantez dokunulmaz
+        # S56: ok ailesi (➨ ➜ →) ➡ gibidir; ⸨ ⸩ ve ｟ ｠ ekran dışı ses ayracıdır
+        self.assertEqual(hazir("王国を追われたが➨"), "王国を追われたが—")
+        self.assertEqual(hazir("ルフィ～！➨"), "ルフィ～！")
+        self.assertEqual(hazir("こちらが攻める番だ⸩"), "こちらが攻める番だ")
+        self.assertEqual(hazir("⸨冥府の門が開かれる。"), "<i>冥府の門が開かれる。</i>")
+        # S57: "Ad：" konuşmacı etiketi (çeviriye "Dante: Ah..." diye giriyordu)
+        self.assertEqual(not_ve_konusmaci_ayir(hazir("<i>ダンテ：あぁ…。</i>"))[0::2], ("<i>あぁ…。</i>", ["ダンテ"]))
+        self.assertEqual(not_ve_konusmaci_ayir(hazir("｟アシェラッド：死者は？"))[0::2], ("<i>死者は？</i>", ["アシェラッド"]))
+        self.assertEqual(not_ve_konusmaci_ayir(hazir("⸨ナハト：３日後\n門が開かれる。"))[2], ["ナハト", ""])
+        self.assertEqual(hazir("<i>２人：オレは</i>"), "（２人）<i>オレは</i>")
+        self.assertEqual(not_ve_konusmaci_ayir(hazir("《アシェラッド：浅い！》"))[0::2], ("<i>浅い！</i>", ["アシェラッド"]))
+        self.assertEqual(hazir("《アシェラッド：ずいぶん無造作に\n間合いを詰めてくる》"),
+                         "（アシェラッド）<i>ずいぶん無造作に</i>\n<i>間合いを詰めてくる</i>")
+        self.assertEqual(hazir("１０：３０に集合だ"), "１０：３０に集合だ")              # saat etiket değildir
+        self.assertEqual(hazir("そうだな：と言った"), "そうだな：と言った")              # hiraganalı söz etiket değildir
         self.assertEqual(hazir("(おなかの鳴る音)"), "(おなかの鳴る音)")          # ses notu etiket değildir
 
     def test_cok_kisa_ceviri_suphesi_dogu_asya_yazisinda_sorulmaz(self):
