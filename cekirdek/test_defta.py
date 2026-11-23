@@ -410,10 +410,20 @@ class Testler(unittest.TestCase):
         self.assertEqual(model.gidenler[0]["lines"][1]["text"], "Calm down,\nboth of you.")
         self.assertEqual([s.metin for s in cikti], ["- TR Hih!\n- TR Bofu.", "TR Calm down,\nboth of you."])
         self.assertEqual(model.cagri, 2)                                 # tiresi eksik yanıt yeniden soruldu
+        # aynı etiketli iki satır modele iki ayrı konuşan olarak gider ("speaker" tek değil)
+        icerik = "1\n00:00:01,000 --> 00:00:03,000\n（黒服）Who ordered a woman?\n（黒服）Dunno.\n\n"
+        model = SahteModel(lambda cagri, satirlar: satirlar)
+        cikti = self._dosya_cevir(ayar, model, icerik)
+        oge = model.gidenler[0]["lines"][0]
+        self.assertEqual(oge["text"], "- Who ordered a woman?\n- Dunno.")
+        self.assertEqual(oge.get("speakers"), ["黒服", "黒服"])
+        self.assertNotIn("speaker", oge)
+        self.assertEqual(cikti[0].metin, "- TR Who ordered a woman?\n- TR Dunno.")
         from defta.cevirmen import konusma_tireleri
         self.assertEqual(konusma_tireleri("スパイ失格だ\nちち", ["ロイド", "アーニャ"]), "- スパイ失格だ\n- ちち")
         self.assertEqual(konusma_tireleri("<i>A</i>\nB", ["x", "y"]), "<i>- A</i>\n- B")
-        self.assertEqual(konusma_tireleri("A\nB", ["x", "x"]), "A\nB")           # aynı kişi
+        # etiket her satırda ayrı yazılmış: aynı etiket de olsa konuşan değişti (iki "siyah giyimli" adam; S32)
+        self.assertEqual(konusma_tireleri("誰か 女 頼んだか？\nさあ", ["黒服", "黒服"]), "- 誰か 女 頼んだか？\n- さあ")
         self.assertEqual(konusma_tireleri("A\nB", ["x", ""]), "A\nB")            # etiketsiz ikinci satır: aynı kişi
         self.assertEqual(konusma_tireleri("A\nB", ["", "x"]), "- A\n- B")        # ikinci satırda konuşan değişti
 
@@ -1687,6 +1697,31 @@ Use Crimson Lotus Strike, Kenji-senpai.
         sonuc = Cevirmen(ayar, m, "S", self.gunluk, self.sozluk.gorunum(ayar)).cevir(satirlar, "u.srt")
         self.assertEqual((sonuc[0], len(m.gidenler)), ("Kudüs Prensesi Sibylla ve kocası!", 1))
 
+    def test_tamlamadaki_unvan_iyelik_ekiyle_kabul_edilir(self):
+        # Unvanın önünde onu niteleyen ad varsa (kurum) Türkçede unvan iyelik eki alır: "Teftiş Kurulu Kaptanı Levi".
+        # Bu doğru çeviri yeniden sorulmaz (sorulunca model eki atıp "Kurulu Kaptan Levi" yazıyordu). Önünde sözcük
+        # olmadan ekli unvan ("Kaptanı Levi") kabul edilmez.
+        self.sozluk.unvanlar = ["隊長"]
+        self.sozluk.elle_ekle({"リヴァイ": "Levi"})
+        satirlar = self._satirlar(["調査局のリヴァイ隊長ですね", "リヴァイ隊長、報告です。"])
+        ilk = {1: "Teftiş Kurulu Kaptanı Levi, değil mi?", 2: "Kaptanı Levi, rapor veriyorum."}
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                return json.dumps({"lines": [{"id": x["id"], "text": "Kaptan Levi, rapor veriyorum." if "fix" in veri
+                                              else ilk[x["id"]]} for x in veri["lines"]]}, ensure_ascii=False)
+        ayar = ayar_birlestir({"model": {"es_zamanli_istek": 1}, "kontrol": {"supheli_satir_kontrolu": False},
+                               "modlar": {"anime_ekleri": "ceviri"}, "unvan": {"denetim": "sor"}})
+        m = M()
+        sonuc = Cevirmen(ayar, m, "S", self.gunluk, self.sozluk.gorunum(ayar)).cevir(satirlar, "u.srt")
+        self.assertEqual(sonuc[0], "Teftiş Kurulu Kaptanı Levi, değil mi?")
+        self.assertEqual(sonuc[1], "Kaptan Levi, rapor veriyorum.")
+        self.assertEqual([[f["id"] for f in g["fix"]] for g in m.gidenler if "fix" in g], [[2]])
+
     def test_unvan_tablosu_dile_gore(self):
         ozel = ayar_birlestir({"unvanlar": {"tr": {"Lord": "Efendi", "Mr": "{ad} Bey"}, "en": {"隊長": "Captain"}}})
         from defta.ayar import unvan_tablosu, AyarHatasi
@@ -2336,6 +2371,222 @@ Use Crimson Lotus Strike, Kenji-senpai.
         for temiz in ("B planı", "5 m uzakta", "b... bilmiyorum", "o ve e", "Ş-şey"):
             self.assertIsNone(TEK_HARF["tr"].search(temiz), temiz)
 
+    def test_yalniz_noktalama_sorulur(self):
+        """S40 (Odyssey 1732): model satırın anlamını önceki satıra yazıp buraya yalnız "." bırakıyordu. Satır yeniden
+        sorulur; kaynakta söz yoksa ("♪~", "...") noktalama kabul edilir; yeniden de noktalama dönerse o kalır."""
+        satirlar = self._satirlar(["We violated all that's ever sacred", "between people.", "♪〜", "...",
+                                   "Across the country."])
+        for k in range(1, 5):
+            satirlar[k].bas = satirlar[k - 1].bit + 3000           # ayrı cümleler
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                if "fix" in veri:
+                    return json.dumps({"lines": [{"id": 2, "text": "insanlar arasında."}, {"id": 5, "text": "..."}]},
+                                      ensure_ascii=False)
+                return json.dumps({"lines": [{"id": 1, "text": "İnsanlar arasındaki kutsal ne varsa çiğnedik"},
+                                             {"id": 2, "text": "."}, {"id": 3, "text": "♪~"}, {"id": 4, "text": "..."},
+                                             {"id": 5, "text": "<i>...</i>"}]}, ensure_ascii=False)
+
+        model = M()
+        ayar = ayar_birlestir({"ceviri": {"bolunmus_cumle": "kapali"}})
+        sonuc = Cevirmen(ayar, model, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
+        self.assertEqual(sorted(f["id"] for f in model.gidenler[1]["fix"]), [2, 5])
+        self.assertIn("only punctuation", model.gidenler[1]["fix"][0]["problem"])
+        self.assertEqual(sonuc[1], "insanlar arasında.")
+        self.assertEqual(sonuc[3], "...")                          # kaynakta söz yok: sorulmaz
+        self.assertEqual(sonuc[4], "...")                          # yine noktalama: modelin metni kalır, kaynak değil
+
+    def test_ayni_harfle_baslayan_kopuk_harf_silinir(self):
+        """S41 (SPY 388 "s size", LOTR 229 "t tepelerinden"): kopuk harf sonraki sözcüğün ilk harfiyse script siler,
+        satır yeniden sorulmaz (soru "size"yi "sana" yapıyordu). Başka harf ("s destan") yine sorulur."""
+        satirlar = self._satirlar(["Well, Loid, I have a proposal...", "the fabled hospitality of the dwarves."])
+        satirlar[1].bas = satirlar[0].bit + 3000
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                if "fix" in veri:
+                    return json.dumps({"lines": [{"id": x["id"], "text": "Şey, Loid,\nsana bir teklifim var..." if x["id"] == 1
+                                                  else "cücelerin dillere destan misafirperverliği."}
+                                                 for x in veri["lines"]]}, ensure_ascii=False)
+                return json.dumps({"lines": [{"id": 1, "text": "Şey, Loid,\ns size bir teklifim var..."},
+                                             {"id": 2, "text": "cücelerin dillere s destan misafirperverliği."}]},
+                                  ensure_ascii=False)
+
+        model = M()
+        sonuc = Cevirmen(self.ayar, model, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
+        self.assertEqual([f["id"] for f in model.gidenler[1]["fix"]], [2])
+        self.assertEqual(sonuc[0], "Şey, Loid,\nsize bir teklifim var...")
+        self.assertEqual(sonuc[1], "cücelerin dillere destan misafirperverliği.")
+        from defta.denetim import kopuk_harf_sil
+        for temiz in ("B planı", "b planı", "5 m mesafe", "b... bilmiyorum", "Ş-şey", "o ve e"):
+            self.assertEqual(kopuk_harf_sil(temiz, "tr"), temiz)
+        self.assertEqual(kopuk_harf_sil("ağaçların\nt tepelerinden", "tr"), "ağaçların\ntepelerinden")
+        self.assertEqual(kopuk_harf_sil("t tepe", "en"), "t tepe")
+
+    def test_kalinti_isaretli_ceviri_yeniden_sorulur(self):
+        """S47 (gerçek test 69, SPY E02 410): model tırnak yerine “ yazıp JSON'u bozdu, "Şey, o...“},{" ekrana çıktı.
+        Satır yeniden sorulur; yine kalıntılı dönerse işaretler silinir. Kaynakta da geçen işaret sayılmaz."""
+        satirlar = self._satirlar(["Well, that is...", "Use the {name} field.", "Hmm."])
+        for k in (1, 2):
+            satirlar[k].bas = satirlar[k - 1].bit + 3000
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                if "fix" in veri:
+                    return json.dumps({"lines": [{"id": x["id"], "text": "Şey, o..." if x["id"] == 1 else "Hım.},{"}
+                                                 for x in veri["lines"]]}, ensure_ascii=False)
+                return json.dumps({"lines": [{"id": 1, "text": "Şey, o...“},{"}, {"id": 2, "text": "{name} alanını kullan."},
+                                             {"id": 3, "text": "Hım.},{"}]}, ensure_ascii=False)
+
+        model = M()
+        sonuc = Cevirmen(self.ayar, model, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
+        self.assertEqual(sorted(f["id"] for f in model.gidenler[1]["fix"]), [1, 3])
+        self.assertIn("stray code", model.gidenler[1]["fix"][0]["problem"])
+        self.assertEqual(sonuc[0], "Şey, o...")
+        self.assertEqual(sonuc[1], "{name} alanını kullan.")       # kaynakta da var: sorulmaz
+        self.assertEqual(sonuc[2], "Hım.")                         # yine kalıntılı: işaretler silindi
+        self.assertEqual(temizlik.kalinti_isaretleri("<i>Merhaba</i>"), "")
+
+    def test_yeni_cumle_basi_buyutulur(self):
+        """S48 (gerçek test 69, LOTR 1408 "lembas."): kaynakta yeni cümleyle başlayan altyazının çevirisi küçük harfle
+        başlıyorsa ilk harf büyür. Süren cümleye, üç noktaya ve küçük harfle başlayan kaynağa dokunulmaz."""
+        b = temizlik.cumle_basi_buyut
+        self.assertEqual(b("Elvish waybread.", "Lembas.", "lembas."), "Lembas.")
+        self.assertEqual(b("", "Is it?", "ılık mı?"), "Ilık mı?")
+        self.assertEqual(b("Hi.", "It is.", "izmir"), "İzmir")
+        self.assertEqual(b("Hi.", "It is.", "izmir", tr=False), "Izmir")
+        self.assertEqual(b("Three were given to the elves,", "Immortal.", "ölümsüz."), "ölümsüz.")
+        self.assertEqual(b("Much that once was...", "Is lost.", "yitip gitti."), "yitip gitti.")
+        self.assertEqual(b("Stop.", "...a fleet...", "...bir donanma..."), "...bir donanma...")
+        self.assertEqual(b("the road goes on", "down from the door", "kapıdan aşağı"), "kapıdan aşağı")
+        self.assertEqual(b("Hm.", "- What?\n- Ice.", "- ne?\n- buz."), "- Ne?\n- Buz.")
+        self.assertEqual(b("Hm.", "<i>Run.</i>", "<i>koş.</i>"), "<i>Koş.</i>")
+        self.assertEqual(b("Took your fastest ship.", "And brightest crew.", "en iyi tayfanı da yanına.",
+                           onceki_ceviri="En hızlı gemini alıp"), "en iyi tayfanı da yanına.")
+        self.assertEqual(b("Elvish waybread.", "Lembas.", "lembas.", onceki_ceviri="Elflerin yol ekmeği."), "Lembas.")
+        self.assertEqual(b("A voice was crying.", "Isildur's bane is found.", "isildur'un felaketi bulundu."),
+                         "Isildur'un felaketi bulundu.")
+        self.assertEqual(b("He is more honorable", "- Than you could ever be.\n- He doesn't.", "- olabileceğin kadar.\n- korumuyor."),
+                         "- olabileceğin kadar.\n- Korumuyor.")
+
+    def test_kucuk_terim_kesmesinde_t_yumusamaz(self):
+        """S51 (gerçek test 69, LOTR 561 "hobbidin"): kesme kaldırılırken t yalnız yumuşadığı bilinen sözcükte d olur."""
+        k = temizlik.kucuk_terim_kesmesi
+        self.assertEqual(k("hobbit'in, lanet'i, geçit'i, üstat'ın, yüzük'ü, talip'i",
+                           ["hobbit", "lanet", "geçit", "üstat", "yüzük", "talip"]),
+                         "hobbitin, laneti, geçidi, üstadın, yüzüğü, talibi")
+
+    def test_iyelikli_akrabalik_adi_kesme_almaz(self):
+        """S49 (Odyssey 350 "Annen'e", 1509 "Annem'i"): birinci/ikinci kişi iyelikli akrabalık adı ad değildir."""
+        k = temizlik.akraba_kesmesi
+        self.assertEqual(k("Annen'e ne söyleyeyim?"), "Annene ne söyleyeyim?")
+        self.assertEqual(k("annem'i sınama, Babam'a sor, kızım'ın, oğlun'un, kardeşim'e"),
+                         "annemi sınama, Babama sor, kızımın, oğlunun, kardeşime")
+        for temiz in ("Yüzük Kardeşliği'nin", "Nine'la", "Baba'yla", "Kızıldeniz'i", "Kızılderili'nin", "Anne'nin"):
+            self.assertEqual(k(temiz), temiz)
+
+    def test_japonca_boslukla_bolunmus_sozcuk_birlesir(self):
+        """S46 (LOTR 360, gerçek test 68): model "neredeyse"yi Japonca boşlukla böldü ("n\u3000eredeyse"); kopuk harf
+        sorusuna İngilizce yanıt geldi ve kabul edildi. Script birleştirir, satır sorulmaz."""
+        satirlar = self._satirlar(["The writing, which at first was as clear\nas red flame, has all but disappeared."])
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                if "fix" in veri:
+                    return json.dumps({"lines": [{"id": 1, "text": "Başta kızıl alev kadar net olan yazı,\n"
+                                                                   "nearly completely disappeared."}]})
+                return json.dumps({"lines": [{"id": 1, "text": "Başta kızıl alev kadar net olan yazı,\n"
+                                                               "n\u3000eredeyse tamamen silinmiş."}]}, ensure_ascii=False)
+
+        model = M()
+        sonuc = Cevirmen(self.ayar, model, "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
+        self.assertEqual(len(model.gidenler), 1)
+        self.assertEqual(sonuc[0], "Başta kızıl alev kadar net olan yazı,\nneredeyse tamamen silinmiş.")
+        from defta.denetim import bolunmus_sozcuk_birlestir
+        for temiz in ("A\u3000grubu", "o\u3000gün", "bir\u3000gün", "B\u3000planı"):
+            self.assertEqual(bolunmus_sozcuk_birlestir(temiz, "tr"), temiz)
+        self.assertEqual(bolunmus_sozcuk_birlestir("n\u3000early", "en"), "n\u3000early")
+
+    def test_kaynak_dile_kayan_suphe_yaniti_kullanilmaz(self):
+        """S46: şüphe yanıtı kaynakta küçük harfle geçen ve önceki çeviride olmayan sözcük getirirse ("nearly completely
+        disappeared.", "frakking karıncalar") kullanılmaz; kaymayı düzeltirken geri konan ad (Sauron) engel değil."""
+        satirlar = self._satirlar(["The writing has all but disappeared.", "Hail Sauron, lord of the earth."])
+        satirlar[1].bas = satirlar[0].bit + 3000
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                if "fix" in veri:
+                    return json.dumps({"lines": [{"id": x["id"], "text": "Yazı nearly disappeared." if x["id"] == 1
+                                                  else "Sauron, dünyanın efendisi."} for x in veri["lines"]]},
+                                      ensure_ascii=False)
+                return json.dumps({"lines": [{"id": 1, "text": "Yazı s neredeyse silinmiş."},
+                                             {"id": 2, "text": "Ey dünyanın efendisi."}]}, ensure_ascii=False)
+
+        model = M()
+        cev = Cevirmen(self.ayar, model, "S", self.gunluk, self.sozluk)
+        cev._supheler = lambda idler, kabul: {i: "test" for i in idler}
+        sonuc = cev.cevir(satirlar, "x.srt")
+        self.assertEqual(sonuc[0], "Yazı s neredeyse silinmiş.")         # İngilizce yanıt kullanılmadı
+        self.assertEqual(sonuc[1], "Sauron, dünyanın efendisi.")
+        from defta.denetim import kaynak_sizintisi
+        self.assertEqual(kaynak_sizintisi("a Jack and Coke", "viski-kola", "bir Jack and Coke", "tr"), ["and"])
+        self.assertEqual(kaynak_sizintisi("「行け」", "Git!", "Yürü!", "tr"), [])
+        self.assertEqual(kaynak_sizintisi("all but gone", "x", "all but gone", "en"), [])
+
+    def test_cumle_basinda_buyuk_harfli_sozluk_adi_eksik_sayilmaz(self):
+        """S42 (LOTR 1427): küçük harfli sözlük adı ("hithlain") çeviride cümle başında büyük harfle geçiyor; eksik
+        sayılıp "elf" ile birlikte "ad değişmiş" diye yeniden soruluyor, doğru çeviri "Hithlain ipi." oluyordu."""
+        satirlar = self._satirlar(["Elven rope made of hithlain.", "But mithril."])
+        satirlar[1].bas = satirlar[0].bit + 3000
+
+        class M:
+            gidenler = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                self.gidenler.append(veri)
+                return json.dumps({"lines": [{"id": 1, "text": "Hithlain'den elf ipi."}, {"id": 2, "text": "Mithril."}]
+                                  if "fix" not in veri else
+                                  [{"id": x["id"], "text": "Hithlain ipi."} for x in veri["lines"]]}, ensure_ascii=False)
+
+        self.sozluk.elle_ekle(degismez=("hithlain", "elf", "mithril"))
+        model = M()
+        sonuc = Cevirmen(self.ayar, model, "S", self.gunluk, self.sozluk.gorunum(self.ayar)).cevir(satirlar, "x.srt")
+        self.assertEqual(len(model.gidenler), 1)
+        self.assertEqual(sonuc, {0: "Hithlain'den elf ipi.", 1: "Mithril."})
+
+    def test_ayni_turden_etiket_taninir(self):
+        """S45 (LOTR 155, 262): "Female hobbit" etiket olarak tanınınca sözün başındaki "Male hobbit: ..." ve
+        "Female hobbit 2: ..." da etikettir; çeviride "Hobbit: Konuşma!" kalıyordu. Sıradan cümle başı tanınmaz."""
+        from defta.kaynak import latin_etiketleri
+        metinler = ["Gandalf:\nHello.", "Gandalf:\nYes.", "Gandalf:\nNo.", "Frodo:\nHi.", "Frodo:\nOk.",
+                    "Frodo:\nGo.", "Female hobbit:\nBilbo!", "Male hobbit: Speech!", "Female hobbit 2: Gandalf!",
+                    "My hobbit: no.", "Old voice: here.", "The hobbit: lies."]
+        etiketler = latin_etiketleri(metinler)
+        self.assertTrue({"Male hobbit", "Female hobbit 2", "Female hobbit"} <= etiketler)
+        self.assertFalse({"My hobbit", "Old voice", "The hobbit"} & etiketler)
+
     def test_not_olarak_silinen_pay_tire_sayisina_girmez(self):
         satirlar = self._satirlar(["- [laughs]\n- Wow."])
 
@@ -2490,6 +2741,11 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertTrue(KLISE["tr"].search("lanet olsun"))
         self.assertFalse(KLISE["tr"].search("kahrolasın!"))
         self.assertFalse(KLISE["tr"].search("allah kahretsin, laura."))
+        # beddua anlamındaki "lanet" klişe değildir (Odyssey "Not a curse." / "You cursed them?"; S33)
+        for dogru in ("lanet değil.", "onlara lanet mi okudun?", "demek bir lanet var."):
+            self.assertFalse(KLISE["tr"].search(dogru), dogru)
+        for klise in ("bu lanet sahilde", "lanet topraklardan", "lanet olsun sana"):
+            self.assertTrue(KLISE["tr"].search(klise), klise)
 
     def test_sicramak_agir_kufur_sayilmaz(self):
         """"sıçramak" ve "sıçan" küfür değildir: satır yeniden sorulmaz (doğru çeviri bozuluyordu)."""
@@ -2652,21 +2908,6 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertNotIn("biz", karar[2])
         self.assertEqual(hedef_belirle("Eagle Point", {**karar[1], "kaynak": True}, True),
                          ("descriptive", "Eagle Point"))
-
-    def test_tekrar_eden_latin_satir_cifti_bulunur(self):
-        """Latin harfli kaynakta sözleri uzak satırda yeniden geçen satır çifti eşitlemeye aday olur (gerçek test 26,
-        American Gods 313/321); 3 satırdan yakın ya da birebir aynı satırlar aday olmaz. Sıradan sözleri paylaşan çift de
-        aday olabilir ("color" çifti): onu bırakmak modelin işi."""
-        from defta.terim import tekrar_eden_latin_satirlar
-        m = {i: "Okay." for i in range(40)}
-        m.update({3: "What should I call you if I were so inclined?", 11: "And if I was inclined, what might I call you?",
-                  5: "Look at the color of that inside.", 30: "Look at the damn color of the bacon.",
-                  20: "Private Kimmel, what is my view of gambling in the barracks?",
-                  22: "Private Kimmel, what is my view of gambling...",
-                  25: "We will never surrender to them today.", 35: "We will never surrender to them today."})
-        bulunan = tekrar_eden_latin_satirlar(m, ["Kimmel"])
-        self.assertEqual(sorted(bulunan.values()), [[3, 11], [5, 30]])
-        self.assertEqual(set(next(k for k, v in bulunan.items() if v == [3, 11]).split()), {"what", "i", "call", "you", "if", "inclined"})
 
     def test_kesme_isareti_ekrana_cikmaz_ve_devam_kucuk_harf(self):
         satirlar = self._satirlar(["No one knows, but the elders\nwant Ithaca to be prepared.",
@@ -2899,6 +3140,20 @@ Use Crimson Lotus Strike, Kenji-senpai.
         satir = {x["id"]: x for x in veri["lines"]}
         self.assertEqual(satir[19]["says_to"], "Yor -> Anya: formal; Anya -> Yor: informal")
         self.assertEqual(satir[20]["says_to"], "Loid -> Yor: formal")
+
+    def test_sahne_ortasindan_baslayan_parcanin_baglami_sahne_basina_uzar(self):
+        satirlar = self._satirlar([f"satır {n}" for n in range(1, 61)])
+        c = Cevirmen(self.ayar, None, "S", self.gunluk, self.sozluk)
+        c._hazirla(satirlar, "x.srt")
+        c.sahneler = [[1, 10, "a"], [11, 60, "b"]]
+        def once(idler):
+            return json.loads(c._yuk(idler))["context_before"]
+        self.assertEqual(once([14, 15]), [f"satır {n}" for n in range(7, 15)])      # sahne yakın: 8 satır kalır (kısalmaz)
+        self.assertEqual(once([49, 50]), [f"satır {n}" for n in range(20, 50)])     # en çok 30 satır
+        self.assertEqual(once([10, 11]), [f"satır {n}" for n in range(3, 11)])      # sahne başı: eskisi gibi 8
+        self.assertEqual(once([30]), [f"satır {n}" for n in range(11, 31)])
+        c.ayar = ayar_birlestir({"parca": {"sahne_baglami": 0}})
+        self.assertEqual(once([30]), [f"satır {n}" for n in range(23, 31)])         # kapalı: 8 satır
 
     def test_karsiliga_cumledeki_sayi_girmez(self):
         """Sözlük her geçtiği yerde aynı biçimi dayatır: karşılığa terimde olmayan, cümleden gelen sayı girmez."""
@@ -3300,6 +3555,19 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertIn("the way it SOUNDS", istem_olustur(ayar_birlestir({})))
         self.assertNotIn("the way it SOUNDS", istem_olustur(ayar_birlestir({"ceviri": {"hedef_dil": "ru", "cikti_alfabesi": "serbest"}})))
 
+    def test_ad_kurali_celismez(self):
+        # Kural 4: "sesine göre" yalnız uydurma ad içindir (ギリシャ -> Yunanistan, "Girisha" değil); resmî çeviri cümlesi
+        # yarım çeviri örneğiyle ("Diagon Yolu") kendi kuralına aykırıydı ve kararı sözlükten alıp modelin hafızasına
+        # veriyordu (S30).
+        for ayar in ({}, {"ceviri": {"hedef_dil": "en"}}):
+            metin = istem_olustur(ayar_birlestir(ayar))
+            self.assertNotIn("Diagon", metin)
+            self.assertNotIn("established official", metin)
+        metin = istem_olustur(ayar_birlestir({}))
+        self.assertIn("An invented name written in another script is written in Latin letters the way it SOUNDS", metin)
+        self.assertIn("never half translated", metin)
+        self.assertIn('"Rome" -> "Roma"', metin)
+
     def test_karsiligi_yazimiyla_ayni_terim_kayda_gecer(self):
         """Bütün cevaplar Latin yazımın kendisiyse (ミスリル -> mithril) karar belirsiz sayılmaz: terim yazımıyla kayda
         geçer, her bölümde yeniden sorulmaz. Kanji yazımda "l" İngilizce çeviridir: o belirsiz kalır. Yazım isteği
@@ -3439,6 +3707,33 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(kararlar[0][0]["l"], "Britannia")
         self.assertEqual(giden[0], ["ブリタニア"])
 
+    def test_hitap_ciftleri_sahne_ozetine_bagli_degil(self):
+        # Japonca satırda ad Japonca, tablo Latin harfli: ad sözlükten çevrilir. Eskiden eşleşmeyi İngilizce sahne
+        # özeti sağlıyordu; özet kapalıyken Japonca dosyada hiç çift gitmiyordu (gerçek test 64; S34)
+        from defta.hitap import ilgili_ciftler
+        tablo = {"Camilla -> Yor": "resmi", "Yuri -> Yor": "samimi", "Loid -> Franky": "samimi"}
+        adlar = {"ヨル・ブライア": "Yor", "カミラ": "Camilla", "ロイド・フォージャー": "Loid", "フランキー": "Franky"}
+        self.assertEqual(ilgili_ciftler(tablo, "（カミラ）ヨル先輩 元がいいんだから", adlar),
+                         ["Camilla -> Yor: formal", "Yuri -> Yor: informal"])          # bir ucu geçse yeter
+        self.assertEqual(ilgili_ciftler(tablo, "（ロイド）行くぞ", adlar), ["Loid -> Franky: informal"])
+        self.assertEqual(ilgili_ciftler(tablo, "誰か 女 頼んだか？", adlar), [])
+        self.assertEqual(ilgili_ciftler(tablo, "Camilla, wait!"), ["Camilla -> Yor: formal"])   # Latin kaynak
+        self.assertEqual(ilgili_ciftler(tablo, "行くぞ", adlar, {"Franky"}), ["Loid -> Franky: informal"])
+
+    def test_yazim_oyunda_buyuk_kucuk_harf_ayni_oydur(self):
+        # gerçek test 58: ペント için yazım oyları "pent" / "Pento" / "Pent"; harf büyüklüğü ayrı sayılınca ikisi de 1 oyda
+        # kalıyor, ilk oylamanın harf harf okunuşu "Pento" sözlüğe giriyordu (S31)
+        from defta.terim import _yazimlari_tamamla, _yazim_sec
+        kararlar = [[{"i": 1, "t": "name", "l": "Pento"}]]
+        partiler = [[{"yazim": "ペント", "ornek": []}]]
+        yanit = iter([{"items": [{"i": 1, "l": "pent"}]}, {"items": [{"i": 1, "l": "Pento"}]},
+                      {"items": [{"i": 1, "l": "Pent"}]}])
+        self.assertEqual(_yazimlari_tamamla(kararlar, partiler, lambda yuk: next(yanit), 3, 1, "SPY"), 1)
+        self.assertEqual(kararlar[0][0]["l"], "Pent")
+        self.assertEqual(_yazim_sec(["Dalc", "dalc", "dalc"], 2), "dalc")      # en sık yazılış
+        self.assertIsNone(_yazim_sec(["Dalc", "Dalk"], 2))                     # farklı yazım birleşmez
+        self.assertIsNone(_yazim_sec([], 2))
+
     def test_halk_adinin_koku_sifat_ve_dil_bicimini_kabul_eder(self):
         satirlar = self._satirlar(["The Chinese army is moving.", "He speaks Chinese."])
         self.sozluk.girdi_ekle("Chinese", "people", "Çinli")
@@ -3500,10 +3795,42 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual([sonuc[3], sonuc[8]], ["Kurtarın!", "Yakın!"])           # yinelenmeyen satıra dokunulmaz
         self.assertEqual([sonuc[9], sonuc[11]], ["Hayır.", "Olmaz."])             # kısa tesadüfi tekrar: dokunulmaz
 
+    def test_tekrar_eden_sahne_devam_satiri_ve_tek_karar(self):
+        """S44 (Odyssey): "...a fleet..." başta "A face..." cümlesinin, sonda "Sing, Muse, of a face..." cümlesinin
+        devamı; Türkçede eki başka, eşitlenmez. Ortak satırı olan eşleşmeler tek karar alır (iki grubun seçimi
+        birbirini ezip "çek" / "çekin" karışık kalıyordu)."""
+        metinler = ["A face...", "...a fleet...", "...a war...", "Gone.",
+                    "Sing, Muse, of a face...", "...a fleet...", "...a war...", "Home.",
+                    "Row.", "And... pull!", "And... pull!", "And... pull!", "Stop.",
+                    "Row.", "And... pull!", "And... pull!", "And... pull!", "Rest."]
+        satirlar = self._satirlar(metinler)
+        yanit = {1: "Bir yüz...", 2: "...bir donanma...", 3: "...bir savaş...", 4: "Gitti.",
+                 5: "Söyle Musa, bir yüzden...", 6: "...bir donanmadan...", 7: "...bir savaştan...", 8: "Ev.",
+                 9: "Kürek.", 10: "Ve... çek!", 11: "Ve... çekin!", 12: "Ve... çek!", 13: "Dur.",
+                 14: "Kürek.", 15: "Ve... çekin!", 16: "Ve... çek!", 17: "Ve... çekin!", 18: "Dinlenin."}
+
+        class M:
+            secim = []
+
+            def iste(self, sistem, kullanici, dusunme=None):
+                veri = json.loads(kullanici)
+                if "items" in veri:
+                    M.secim.append(veri["items"])
+                    return json.dumps({"choices": [{"n": x["n"], "pick": 2} for x in veri["items"]]})
+                return json.dumps({"lines": [{"id": x["id"], "text": yanit[x["id"]]} for x in veri["lines"]]},
+                                  ensure_ascii=False)
+
+        ayar = ayar_birlestir({"model": {"es_zamanli_istek": 1}, "ceviri": {"bolunmus_cumle": "kapali"}})
+        sonuc = Cevirmen(ayar, M(), "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
+        self.assertEqual([sonuc[1], sonuc[2], sonuc[5], sonuc[6]],
+                         ["...bir donanma...", "...bir savaş...", "...bir donanmadan...", "...bir savaştan..."])
+        self.assertEqual(len({sonuc[i] for i in (9, 10, 11, 14, 15, 16)}), 1)
+        self.assertEqual([x["source"] for x in M.secim[0]], ["and... pull!"])
+
     def test_yinelenen_uzun_replik_ayni_okunur(self):
-        """Uzun replik ilk geçişinde bölünmüş bir cümlenin parçasıysa yinelenen satır o cümlenin sözleriyle yeniden
-        yazılır (yankı). Tek başına yeniden geçen tam cümle modele sorulur: aynı anlamdaysa bir aday seçer, bağlam
-        başkaysa "0" der ve her geçiş kendi çevirisiyle kalır. Yanıt gelmezse de kalır."""
+        """Uzun replik ilk geçişinde bölünmüş bir cümlenin parçasıysa yinelenen satıra dokunulmaz (yankı adımı S43'te
+        kaldırıldı). Tek başına yeniden geçen tam cümle modele sorulur: aynı anlamdaysa bir aday seçer, bağlam başkaysa
+        "0" der ve her geçiş kendi çevirisiyle kalır. Yanıt gelmezse de kalır."""
         satirlar = self._satirlar([
             "I wish none of this had happened.", "Go home.", "You couldn't keep the gate shut",
             "because you lacked the strength.", "Run!", "Who are you?", "Later.",
@@ -3532,18 +3859,15 @@ Use Crimson Lotus Strike, Kenji-senpai.
         sonuc = Cevirmen(self.ayar, M(), "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
         ogeler = M.secim_istegi["items"]
         self.assertEqual([x["source"] for x in ogeler], [
-            "I wish none of this had happened.", "Who are you?", "You will pay for this, my friend.",
-            "Because you lacked the strength."])
+            "I wish none of this had happened.", "Who are you?", "You will pay for this, my friend."])
         tekrar = ogeler[0]
         self.assertEqual(tekrar["occurrences"], [{"before": "", "after": "Go home.", "now": 1},
                                                  {"before": "Later.", "after": "Why...?!", "now": 2}])
-        self.assertEqual(ogeler[3]["sentence"], "You couldn't keep the gate shut because you lacked the strength.")
-        self.assertEqual(ogeler[3]["sentence_translation"], "Gücün yetmediği için kapıyı kapalı tutamadın.")
-        self.assertIn('"texts"', M.sistem)
+        self.assertNotIn('"texts"', M.sistem)
         self.assertIn('"pick": 0', M.sistem)
         # aynı anlam: seçilen aday iki geçişte de
         self.assertEqual([sonuc[0], sonuc[7]], ["Bunların hiçbiri olmasaydı keşke."] * 2)
-        self.assertEqual(sonuc[9], "Gücün yetmediği için.")              # yankı duyulur; düşen nokta yerinde
+        self.assertEqual(sonuc[9], "Çünkü yeterince güçlü değildin.")    # yankı yok: kendi çevirisi kalır
         # "0": başka kişiye söylenmiş, her geçiş kendi çevirisiyle
         self.assertEqual([sonuc[5], sonuc[10]], ["Sen kimsin?", "Kimsiniz?"])
         self.assertEqual([sonuc[11], sonuc[13]], ["Bunu ödeyeceksin dostum.", "Bunu ödeyeceksiniz dostum."])
@@ -3669,36 +3993,6 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(sonuc[45], "Amcalarla yakalamaca oynuyordum.")
         AsilModel.yerel.dusunme = None
 
-    def test_latin_tekrar_eden_satir_ceviriden_sonra_esitlenir(self):
-        """İngilizce kaynakta sözleri uzak satırda yeniden geçen satırın çevirisi modele sorulur; değişiklik ancak az
-        değişiklikse ve satır denetiminden geçerse kullanılır (gerçek test 26, American Gods 313/321)."""
-        metinler = ["Okay."] * 30
-        metinler[3], metinler[12] = "What should I call you if I were so inclined?", "And if I was inclined, what might I call you?"
-        satirlar = self._satirlar(metinler)
-        for k in range(1, 30):
-            satirlar[k].bas = satirlar[k - 1].bit + 2000
-        yanit = {i + 1: "Tamam." for i in range(30)}
-        yanit.update({4: "İstersem sana ne diye hitap edeyim?", 13: "Peki ben sana ne diye hitap edeyim?"})
-
-        class M:
-            ifade = None
-
-            def iste(self, sistem, kullanici, dusunme=None):
-                veri = json.loads(kullanici)
-                if sistem.startswith("Each item holds two lines"):
-                    M.ifade = veri
-                    return json.dumps({"lines": [{"id": 13, "text": "Peki istersem sana ne diye hitap edeyim?"}]},
-                                      ensure_ascii=False)
-                if "lines" not in veri:
-                    return json.dumps({"items": []})
-                return json.dumps({"lines": [{"id": x["id"], "text": yanit[x["id"]]} for x in veri["lines"]
-                                             if not x.get("skip")]}, ensure_ascii=False)
-
-        sonuc = Cevirmen(self.ayar, M(), "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
-        self.assertEqual([x["id"] for x in M.ifade["items"][0]["lines"]], [4, 13])
-        self.assertEqual(sonuc[12], "Peki istersem sana ne diye hitap edeyim?")
-        self.assertEqual(sonuc[3], "İstersem sana ne diye hitap edeyim?")
-
     def test_yinelenen_replik_etiketsiz_eslesir_yarim_cumle_sorulmaz(self):
         """Konuşmacı etiketli geçiş ("（カミラ）", "Gandalf:") etiketsiz geçişle eşleşir; yarım cümle (sonu üç nokta ya da
         virgülle kesik) tek başına yinelense de sorulmaz: fragmandaki yarım cümle tam cümlenin yerine geçiyordu."""
@@ -3721,7 +4015,7 @@ Use Crimson Lotus Strike, Kenji-senpai.
                                   ensure_ascii=False)
 
         sonuc = Cevirmen(self.ayar, M(), "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
-        # yarım cümle seçime girmez (ilk geçişi bölünmüş cümlenin parçası olduğu için yankı olarak sorulabilir)
+        # yarım cümle seçime girmez
         self.assertEqual([x["source"] for x in M.secim_istegi["items"] if "occurrences" in x],
                          ["ぜひ パートナーと ご一緒に", "Fly, you fools, run now!"])
         self.assertEqual([sonuc[0], sonuc[5]], ["Partnerinizle birlikte tabii."] * 2)
@@ -3735,23 +4029,6 @@ Use Crimson Lotus Strike, Kenji-senpai.
             self.assertTrue(_YARIM_SON.search(t) or _YARIM_BAS.search(t), yarim)
         for tam in ("はは 存在しない", "Fly, you fools!", "I wish none of this had happened."):
             self.assertFalse(_YARIM_SON.search(tam) or _YARIM_BAS.search(tam), tam)
-
-    def test_yanki_icin_yazilan_gecersiz_ceviri_kullanilmaz(self):
-        satirlar = self._satirlar(["You couldn't keep the gate shut", "because you lacked the strength.", "Run!",
-                                   "Because you lacked the strength."])
-        satirlar[1].bas = satirlar[0].bit
-        yanit = {1: "Gücün yetmediği için | kapıyı kapalı tutamadın.", 3: "Kaç!", 4: "Çünkü yeterince güçlü değildin."}
-
-        class M:
-            def iste(self, sistem, kullanici, dusunme=None):
-                veri = json.loads(kullanici)
-                if "items" in veri:
-                    return json.dumps({"texts": [{"n": 1, "text": "力が足りなかったから"}]}, ensure_ascii=False)
-                return json.dumps({"lines": [{"id": x["id"], "text": yanit[x["id"]]} for x in veri["lines"]]},
-                                  ensure_ascii=False)
-
-        sonuc = Cevirmen(self.ayar, M(), "S", self.gunluk, self.sozluk).cevir(satirlar, "x.srt")
-        self.assertEqual(sonuc[3], "Çünkü yeterince güçlü değildin.")
 
     def test_zamir_yankisi_sorulur(self):
         satirlar = self._satirlar(["We think you should stay.", '- "We"?\n- All of us.'])
@@ -3809,6 +4086,10 @@ class KaymaTestleri(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.gunluk = Gunluk(self.tmp.name)
+        # Sahte model kaynağı "TR " önekiyle geri yazıyor: kaynak dile kayma denetimi (S46) burada anlamsız.
+        yama = mock.patch("defta.denetim.kaynak_sizintisi", return_value=[])
+        yama.start()
+        self.addCleanup(yama.stop)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -3939,6 +4220,22 @@ class KaymaTestleri(unittest.TestCase):
         self.assertIn(3, fix)
         self.assertEqual((sonuc[0] + " " + sonuc[1]).replace("\n", " "), "Birinci sınıfta bedava ufak bir set veriyorlar.")
         self.assertEqual(sonuc[2], "Bunu bilmiyor olabilirsin.")
+
+    def test_komsunun_cevirisini_de_iceren_ceviri_sorulur(self):
+        """S50 (gerçek test 69, LOTR 936-937): bölünmüş cümle olarak gönderilmemiş komşu altyazılarda model cümlenin
+        tamamını birine yazıp ötekinde yineledi. Kısa yineleme ("Ufacık bir şey.") ve kaynakta da yinelenen söz
+        sayılmaz."""
+        metinler = ["I will take it to the mountain myself.", "Nobody else could ever do it.", "Really?"]
+        ilk = {1: "Onu dağa kendim götüreceğim, başka kimse yapamaz.", 2: "Onu dağa kendim götüreceğim.",
+               3: "Gerçekten mi?"}
+        duzeltme = {1: "Onu dağa kendim götüreceğim.", 2: "Başka kimse yapamaz.", 3: "Gerçekten mi?"}
+        sonuc, istekler = self._bolunmus(metinler, ilk, duzeltme)
+        fix = {f["id"]: f["problem"] for f in istekler[1]["fix"]}
+        self.assertIn("also contains the translation of id 2", fix[1])
+        self.assertEqual(sonuc[1], "Başka kimse yapamaz.")
+        metinler = ["Over so small a thing.", "Such a little thing.", "Really?"]
+        ilk = {1: "Ufacık bir şey yüzünden.", 2: "Ufacık bir şey.", 3: "Gerçekten mi?"}
+        self.assertEqual(len(self._bolunmus(metinler, ilk, {})[1]), 1)
 
     def test_kaynakta_da_yinelenen_soz_kayma_sayilmaz(self):
         """Kaynak aynı sözü sonraki altyazıda gerçekten yineliyorsa çevirideki tekrar doğrudur: yeniden sorulmaz."""
@@ -4721,6 +5018,52 @@ class Karar0134Testleri(unittest.TestCase):
         ayar = ayar_birlestir({"model": {"es_zamanli_istek": 1}, "kontrol": {"tekrar_eden_sahne": False}})
         return Cevirmen(ayar, model, "S", self.gunluk, sozluk=sozluk).cevir(satirlar, "a.srt"), model
 
+    def test_akrabalik_hitabi_satir_satir_dayatilmaz(self):
+        # 姉さん karşıdakine "sen" yerine de söylenir: "senin sayende" doğru çeviridir, sözlük karşılığı ("abla")
+        # yok diye yeniden sorulmaz (sorulunca üçüncü kişiye dönüyordu). Öteki terimler denetlenmeye devam eder.
+        sozluk = Sozluk(os.path.join(self.tmp.name, "akraba.json"))
+        sozluk.elle_ekle({"組織": "Teşkilat"})
+        sozluk.girdi_yaz("姉さん", tur="epithet", hedef="abla")       # sınıflandırma "lakap" deyince sözlüğe girer
+        sonuc, model = self._cevir(["姉さんのおかげだよ", "組織の命令だ"], sozluk,
+                                   {1: {1: "Senin sayende.", 2: "Örgütün emri."}, 2: {2: "Teşkilat'ın emri."}})
+        self.assertEqual(sonuc[0], "Senin sayende.")
+        self.assertEqual(sonuc[1], "Teşkilat'ın emri.")
+        self.assertEqual([[f["id"] for f in g["fix"]] for g in model.gidenler if "fix" in g], [[2]])
+        self.assertEqual(sozluk.terimler.get("姉さん"), "abla")                        # sözlükte kalır, modele gider
+
+    def test_ingilizce_ekli_ad_koku_aranir(self):
+        # Olduğu gibi bırakılan ad İngilizce ekle kayıtlı ("Bagginses", "Gollum's"): Türkçe ek köke gelir. Kök geçiyorsa
+        # doğru çeviri yeniden sorulmaz; ad hiç yoksa yine sorulur.
+        sozluk = Sozluk(os.path.join(self.tmp.name, "ekli.json"))
+        sozluk.girdi_yaz("bagginses", tur="name", hedef="Bagginses")      # kaynak küçük harf yazmış (gerçek sözlükteki gibi)
+        sozluk.girdi_yaz("gollum's", tur="name", hedef="Gollum's")
+        sonuc, model = self._cevir(["My dear bagginses!", "In gollum's cave.", "The bagginses again."], sozluk,
+                                   {1: {1: "Sevgili Bagginsler!", 2: "Gollum'un mağarasında.", 3: "Yine onlar."},
+                                    2: {3: "Yine Bagginsler."}})
+        self.assertEqual((sonuc[0], sonuc[1], sonuc[2]), ("Sevgili Bagginsler!", "Gollum'un mağarasında.", "Yine Bagginsler."))
+        self.assertEqual([[f["id"] for f in g["fix"]] for g in model.gidenler if "fix" in g], [[3]])
+
+    def test_ingilizce_kalan_yapim_ekli_tanim_dayatilmaz(self):
+        # Sözlük "elvish" sözcüğünü çevirmemiş ("Elvish"): doğru çeviri ("Elf ilacı") yeniden sorulmaz. Olduğu gibi kalan
+        # özel ad ("shire" -> "Shire") denetlenmeye devam eder: çeviride yoksa sorulur.
+        sozluk = Sozluk(os.path.join(self.tmp.name, "tanim.json"))
+        sozluk.girdi_yaz("elvish", tur="descriptive", hedef="Elvish")
+        sozluk.girdi_yaz("shire", tur="descriptive", hedef="Shire")
+        sonuc, model = self._cevir(["He needs elvish medicine.", "Back to the shire."], sozluk,
+                                   {1: {1: "Elf ilacı lazım.", 2: "Eve dönelim."}, 2: {2: "Shire'a dönelim."}})
+        self.assertEqual((sonuc[0], sonuc[1]), ("Elf ilacı lazım.", "Shire'a dönelim."))
+        self.assertEqual([[f["id"] for f in g["fix"]] for g in model.gidenler if "fix" in g], [[2]])
+
+    def test_tek_kanjili_unvan_dayatilmaz(self):
+        # 奥 -> "Hanımefendi" kaydı 奥様 ("eşiniz") satırına dayatılmaz; öteki terimler denetlenmeye devam eder.
+        sozluk = Sozluk(os.path.join(self.tmp.name, "kanji.json"))
+        sozluk.girdi_yaz("奥", tur="title", hedef="Hanımefendi")
+        sozluk.elle_ekle({"組織": "Teşkilat"})
+        sonuc, model = self._cevir(["奥様は ご一緒では？", "組織の命令だ"], sozluk,
+                                   {1: {1: "Eşiniz de sizinle değil mi?", 2: "Örgütün emri."}, 2: {2: "Teşkilat'ın emri."}})
+        self.assertEqual((sonuc[0], sonuc[1]), ("Eşiniz de sizinle değil mi?", "Teşkilat'ın emri."))
+        self.assertEqual([[f["id"] for f in g["fix"]] for g in model.gidenler if "fix" in g], [[2]])
+
     def test_hiragana_okunus_tek_basina_ad_sayilmaz(self):
         # 凪(なぎ) -> Nagi. Okunuş "なぎ" sıradan fiilin içinde de geçer (つなぎとめる): o satıra ad yazdırılmaz.
         from defta.kaynak import _terim_bicimleri, okunus_yazimi
@@ -4984,7 +5327,12 @@ class Karar106Testleri(unittest.TestCase):
                   30: "写真を返せ", 31: "写真だ",                  # 3 satırdan yakın: alınmaz
                   40: "ロイドの家", 75: "ロイドの車"})
         bulunan = tekrar_eden_ifadeler(m, ["ロイド"])
-        self.assertEqual(bulunan.get("こんにちは あるいは こんばんは"), [2, 60])
+        self.assertIsNone(bulunan.get("こんにちは あるいは こんばんは"))      # cümle parçası gitmez (S52)
+        from defta.terim import isim_ifade
+        for ad in ("密輸組織", "交換条件", "鬼ごっこ", "美術品の"):
+            self.assertTrue(isim_ifade(ad))
+        for parca in ("思うんですよ", "人 いないの", "楽しみにして", "見えない", "頼みたい"):
+            self.assertFalse(isim_ifade(parca))
         self.assertEqual(bulunan.get("懇親会"), [10, 14])
         self.assertEqual(bulunan.get("鬼ごっこ"), [20, 70])
         self.assertNotIn("写真", bulunan)

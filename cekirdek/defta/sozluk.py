@@ -569,7 +569,7 @@ class Sozluk:
             except (KeyError, TypeError, ValueError):
                 continue
             if ozet and 1 <= ilk <= son <= len(satirlar):
-                sahneler.append([ilk, son, ozet[:240]])
+                sahneler.append([ilk, son, ozet[:400]])   # ayrıntılı özet iki cümle; 240 ikinciyi kesiyordu (S54)
         if sahneler:
             self.sahneler[dosya] = sahneler
         for k in analiz.get("characters") or []:

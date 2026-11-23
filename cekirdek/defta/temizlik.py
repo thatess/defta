@@ -183,6 +183,15 @@ def satir_basi_kucult(eski, yeni):
 _YUMUSA = {"p": "b", "ç": "c", "t": "d", "k": "ğ"}
 
 
+_T_YUMUSAYAN = {"geçit", "üstat", "üstad", "velet", "kanat", "umut", "ümit", "armut", "kilit", "kağıt", "kâğıt", "damat",
+                "murat", "yoğurt", "inat"}
+
+
+def temizlik_t_yumusar(kok):
+    """Sonu t olan çok heceli sözcük ünlüyle başlayan ekte d'ye yumuşar mı? Yalnız bilinen sözcüklerde."""
+    return kok.lower().split()[-1] in _T_YUMUSAYAN
+
+
 def kucuk_terim_kesmesi(metin, sozcukler):
     """Türkçede kesme işareti yalnız özel adda olur: sözlükteki küçük harfli terim ("baba", Anya'nın babasına
     dediği; "elf") ek alırken kesme almaz: "baba'nın" -> "babanın", "Baba'yla" -> "Babayla". Model sözlükte gördüğü
@@ -198,7 +207,11 @@ def kucuk_terim_kesmesi(metin, sozcukler):
                                                   m.string[:m.start()]):
                 return m.group(0)
             son = kok[-1].lower()
-            if (son in _YUMUSA and ek[:1].lower() in "aeıioöuü"
+            # Çok heceli sözcükte p, ç, k ünlüyle başlayan ekte yumuşar; t çoğunlukla yumuşamaz (hobbitin, laneti,
+            # cumhuriyetin): yalnız yumuşadığı bilinen sözcüklerde d olur (geçidi, üstadı, veledi). Kayıtlardaki 46
+            # kesmeli t ekinin 44'ü yumuşamayan sözcüktü, "hobbidin" diye yazılıyordu (S51).
+            t_yumusar = temizlik_t_yumusar(kok)
+            if (son in _YUMUSA and ek[:1].lower() in "aeıioöuü" and (son != "t" or t_yumusar)
                     and len(re.findall(r"[aeıioöuüâîû]", kok.lower())) > 1):
                 yumusak = "g" if son == "k" and kok[-2:-1].lower() == "n" else _YUMUSA[son]
                 kok = kok[:-1] + (yumusak.upper() if kok[-1].isupper() else yumusak)
@@ -207,6 +220,19 @@ def kucuk_terim_kesmesi(metin, sozcukler):
         desen = rf"(?<![\wçğıöşü'’])((?:{re.escape(soz[0])}|{re.escape(buyuk)}){re.escape(soz[1:])})['’]([a-zçğıöşü]+)"
         metin = re.sub(desen, birlestir, metin)
     return metin
+
+
+_AKRABA_IYELIK = re.compile(
+    r"(?<![\wçğıöşü'’])((?:[Aa]nne|[Bb]aba|[Aa]bla|[Aa]mca|[Dd]ayı|[Tt]eyze|[Hh]ala|[Dd]ede|[Nn]ine|[Kk]oca|[Kk]arı|"
+    r"[Aa]bi|[Bb]abaanne|[Aa]nneanne)(?:m|n|mız|miz|nız|niz)|(?:[Aa]ğabey|[Kk]ardeş|[Ee]ş)(?:im|in|imiz|iniz)|"
+    r"[Oo]ğl(?:um|un|umuz|unuz)|[Kk]ız(?:ım|ın|ımız|ınız))['’]([a-zçğıöşü]+)")
+
+
+def akraba_kesmesi(metin):
+    """Birinci ya da ikinci kişi iyelik eki almış akrabalık adı ad değildir, ek alırken kesme almaz: "Annen'e" ->
+    "Annene", "Babam'a" -> "Babama" (gerçek test 69, Odyssey 350 / 1509). Üçüncü kişi iyeliği ("Yüzük Kardeşliği'nin")
+    ve eksiz yazılan ad ("Nine'la", "Baba'yla") dokunulmaz. 473 kayıtlı çeviride 8 kez (S49)."""
+    return _AKRABA_IYELIK.sub(r"\1\2", metin)
 
 
 def kana_latinle(metin):
@@ -381,6 +407,66 @@ def kalinti_tara(metin):
     """İzinli <i> dışında kalan şüpheli işaretleri döndürür."""
     duz = metin.replace("<i>", "").replace("</i>", "")
     return "".join(sorted(set(re.findall(r"[<>{}\\⟦⟧]", duz))))
+
+
+KALINTI = re.compile(r"[{}\\]|<(?!/?i>)|(?<!<i)(?<!</i)>")
+
+
+def kalinti_isaretleri(metin, kaynak=""):
+    """Çeviride kalmış kod ya da JSON parçası: { } \\ ve <i> dışındaki < >. Kaynakta da geçen işaret sayılmaz. Korunan
+    parçanın ⟦ ⟧ işaretleri sayılmaz (modelin yanıtında olağan, sonra silinir)."""
+    return "".join(sorted({k for k in KALINTI.findall(metin) if k not in kaynak}))
+
+
+def kalinti_sil(metin, kaynak=""):
+    """Yeniden sorulduğunda da kalıntı işaretli dönen çeviriden işaretleri ve yanlarındaki tırnak/virgül artığını
+    siler ("Şey, o...“},{" -> "Şey, o..."; gerçek test 69, SPY E02 410)."""
+    isaret = kalinti_isaretleri(metin, kaynak)
+    if not isaret:
+        return metin
+    metin = re.sub(r"</?(?!i>)[^<>\s]{0,10}>", " ", metin)       # bozuk etiket: "Sağa!</>" (Interstellar 1565)
+    sinif = "".join(re.escape(k) for k in isaret)
+    metin = re.sub(r"[\"“”,:\s]*[" + sinif + r"]+[\"“”,:]*", " ", metin)
+    return "\n".join(" ".join(x.split()) for x in metin.split("\n")).strip()
+
+
+_ILK_HARF = re.compile(r"^((?:<[^>]+>|[-–—♪♫\s\"“'‘(\[¿¡])*)([^\W\d_])")
+_CUMLE_SONU = re.compile(r"(?<!\.\.)[.!?][\"”’')\]]*(?:</i>)?\s*$")
+
+
+def cumle_basi_buyut(onceki_kaynak, kaynak, ceviri, tr=True, onceki_ceviri=None):
+    """Kaynakta yeni cümleyle (önceki altyazı . ! ? ile bitmiş, bu altyazı büyük harfle başlıyor) başlayan altyazının
+    çevirisi küçük harfle başlıyorsa ilk harfi büyür ("lembas." -> "Lembas."; gerçek test 69, LOTR 1408). Diyalogda
+    her konuşmacının satırı ayrı bakılır (tire yeni söz demektir). Üç noktayla biten ya da süren cümleye dokunulmaz;
+    önceki altyazının çevirisi de cümleyi bitirmiş olmalı (model iki kaynak cümlesini tek cümle yapmış olabilir:
+    "En hızlı gemini alıp / en iyi tayfanı da yanına."; Odyssey 233-234)."""
+    def buyut(m):
+        h = m.group(2)
+        if tr and h == "i":
+            # Kaynaktaki ad Latin I ile yazılıyorsa öyle kalır: "isildur'un" -> "Isildur'un" ("İsildur" değil)
+            soz = re.match(r"[^\W\d_]+", m.string[m.end(2) - 1:]).group(0)
+            if re.search(r"(?<![^\W\d_])I" + re.escape(soz[1:]), kaynak):
+                return m.group(1) + "I"
+        return m.group(1) + (("İ" if h == "i" else "I" if h == "ı" else h.upper()) if tr else h.upper())
+
+    def buyuk_mu(metin):
+        m = _ILK_HARF.match(metin.strip())
+        return bool(m) and m.group(2).isupper() and not re.match(r"\s*(?:\.\.\.|…)", re.sub(r"<[^>]+>", "", metin))
+
+    k_satir = [x for x in kaynak.split("\n") if x.strip()]
+    c_satir = ceviri.split("\n")
+    diyalog = (len(k_satir) == len(c_satir) > 1 and all(re.match(r"\s*(?:<[^>]+>)*\s*[-–—]", x) for x in k_satir)
+               and all(re.match(r"\s*(?:<[^>]+>)*\s*[-–—]", x) for x in c_satir))
+    # İlk satır yalnız önceki cümle bittiyse yeni cümledir (diyalogda da: "- Than you could ever be." önceki
+    # altyazının cümlesini sürdürüyor; House of the Dragon 634). Diyalogun sonraki satırları yeni konuşmacıdır.
+    yeni_cumle = ((onceki_ceviri is None or not onceki_ceviri.strip() or _CUMLE_SONU.search(onceki_ceviri))
+                  and (not onceki_kaynak.strip() or _CUMLE_SONU.search(onceki_kaynak)))
+    if diyalog:
+        return "\n".join(_ILK_HARF.sub(buyut, c, count=1) if buyuk_mu(k) and (n or yeni_cumle) else c
+                         for n, (k, c) in enumerate(zip(k_satir, c_satir)))
+    if yeni_cumle and k_satir and buyuk_mu(k_satir[0]):
+        return _ILK_HARF.sub(buyut, ceviri, count=1)
+    return ceviri
 
 
 def latin_disi(metin):

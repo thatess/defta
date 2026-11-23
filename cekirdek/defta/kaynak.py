@@ -24,6 +24,11 @@ def _ses_yalin(metin):
 
 
 KANA_DIZI = re.compile(r"[\u3041-\u3096\u30A1-\u30FA\u30FC]{3,}")
+# Akrabalık sözcüğü + hitap eki (姉さん, お兄ちゃん, 母上): Japoncada karşıdakine "sen" yerine de söylenir. Sözlük
+# karşılığı ("abla") satır satır dayatılmaz: "senin sayende" doğru çevirisi yeniden sorulunca üçüncü kişiye
+# dönüyordu ("ablam sayesinde... ona"; kayıtlardaki 7 yeniden sorunun 7'si).
+JP_AKRABA_HITABI = re.compile(r"[お御]?(?:姉|兄|母|父|爺|婆|祖父|祖母|叔父|叔母|伯父|伯母|ねえ|にい|かあ|とう|じい|ばあ|おじ|おば)"
+                              r"(?:さん|ちゃん|さま|様|上|貴|たん)")
 YALNIZ_UNVAN = re.compile(r"(?<![\u30A1-\u30FA\u30FC\u4e00-\u9fff])(先生|先輩)")
 
 
@@ -139,6 +144,18 @@ ETIKET_OLMAYAN = {"look", "listen", "remember", "note", "warning", "well", "so",
 ETIKET_OLMAYAN_ILK = {"A", "An", "The", "This", "That", "My", "Your", "Our", "His", "Her", "Their", "One"}
 
 
+# Tanınmış çok sözcüklü etiketin türü ("Female hobbit", "Female voice"): sözün başındaki "Male hobbit: ...",
+# "Female hobbit 2: ..." aynı türden konuşmacıdır. İkinci sözcüğü küçük harfli olduğu için öteki kurallara girmiyordu,
+# etiket çeviride kalıyordu ("Hobbit: Konuşma!", LOTR 262; S45).
+TUR_ETIKET_BAS = re.compile(r"^(?:" + temizlik.TIRE + r"\s*)?([A-ZÇĞİÖŞÜÂÎÛ][\w.'’-]*(?: [\w.'’-]+){1,2}):\s+\S")
+
+
+def _etiket_turu(ad):
+    """Etiketin son sözcüğü, sondaki sayı atılarak ("Female hobbit 2" -> "hobbit"); tek sözcüklüyse boş."""
+    sozler = re.sub(r"\s+\d+$", "", ad).split()
+    return sozler[-1].lower() if len(sozler) >= 2 else ""
+
+
 def latin_etiketleri(metinler):
     """Dosyadaki küçük harfli konuşmacı etiketleri: kendi satırında, ardından söz gelen "Ad:" satırlarından ya da
     sözün başında duran "Ad: ..." etiketlerinden en az ETIKET_ESIGI kez geçenler (ikisi birlikte sayılır; sözün
@@ -173,6 +190,14 @@ def latin_etiketleri(metinler):
                 m = TEKIL_ETIKET_BAS.match(satir) or ADLI_ETIKET_SATIRI.match(satir)
                 if (m and len(m.group(1)) <= 24 and m.group(1).lower().rstrip(".") not in ETIKET_OLMAYAN
                         and m.group(1).split()[0] not in ETIKET_OLMAYAN_ILK and not temizlik.duyuru_etiketi(m.group(1))):
+                    etiketler.add(m.group(1))
+        turler = {_etiket_turu(a) for a in etiketler} - {""}
+        for metin in metinler:
+            for satir in (temizlik.ETIKET.sub("", x).strip() for x in metin.split("\n")):
+                m = TUR_ETIKET_BAS.match(satir)
+                if (m and len(m.group(1)) <= 24 and _etiket_turu(m.group(1)) in turler
+                        and m.group(1).split()[0] not in ETIKET_OLMAYAN_ILK
+                        and m.group(1).lower() not in ETIKET_OLMAYAN and not temizlik.duyuru_etiketi(m.group(1))):
                     etiketler.add(m.group(1))
     return etiketler
 
@@ -328,11 +353,6 @@ def token_tahmini(metin):
     """Kaba token tahmini: Latin harflerde ~3,5 karakter, Doğu Asya yazılarında karakter başına 1."""
     genis = sum(1 for k in metin if ord(k) > 0x2E7F)
     return int((len(metin) - genis) / 3.5 + genis) + 8
-
-
-def _okunan_harf(metin):
-    """İzleyicinin okuduğu karakter sayısı: etiketler, satır sonları ve parça işaretleri sayılmaz."""
-    return len(re.sub(r"\s*\|\s*", " ", temizlik.ETIKET.sub("", metin)).replace("\n", ""))
 
 
 def _yalin(metin):

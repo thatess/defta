@@ -187,26 +187,48 @@ class HitapDenetimi:
 
     def _ilgili_hitap(self, bas, son):
         """Bu aralıkta en az bir ucunun adı geçen çiftlerin hitap biçimi; modelin gözünün önünde dursun diye isteğe
-        eklenir."""
+        eklenir. Yalnız parçanın satırlarına ve konuşan etiketlerine bakılır, sahne özetine bakılmaz (S34)."""
         if not self._tablo():
             return []
-        parcalar = [ozet for a, b, ozet in self.sahneler if a <= son + 1 and b >= bas + 1]
+        metinler, latinler = [], set()
         for i in range(max(0, bas - 5), min(len(self.satirlar), son + 6)):
-            parcalar.append(self.satirlar[i].metin)
-            parcalar.extend(self.konusanlar.get(i, ()))
-        metin = " ".join(parcalar)
+            metinler.append(self.satirlar[i].metin)
+            for k in self.konusanlar.get(i, ()):
+                metinler.append(k)
+                ad = self.sozluk.latin_ad(k) if self.sozluk is not None and k else None
+                if ad:
+                    latinler.add(ad)
+        adlar = self.sozluk.adlar if self.sozluk is not None else {}
+        return ilgili_ciftler(self._tablo(), " ".join(metinler), adlar, latinler)
 
-        def geciyor(ad):
-            """Ad tam sözcük (çoğuluyla, harf büyüklüğü fark etmez) ya da büyük harfli daha uzun bir adın başı
-            ("Samwise") olarak geçiyor mu? "same" Sam değildir."""
-            d = re.escape(ad)
-            return bool(re.search(r"(?<!\w)" + d + r"(?:e?s)?(?!\w)", metin, re.I)
-                        or (ad[:1].isupper() and re.search(r"(?<!\w)" + d, metin)))
-        # Çiftin bir ucu geçse yeter: konuşan çoğu satırda adıyla anılmaz (Nardole'nin "Doctor"a resmi hitabı, adı
-        # geçmeyen istekte düşüyor, "tabloda yok = samimi" kuralıyla "sen" oluyordu).
-        ilgili = []
-        for cift, bicim in self._tablo().items():
-            adlar = [a.strip() for a in cift.split("->")]
-            if len(adlar) == 2 and all(adlar) and any(geciyor(a) for a in adlar):
-                ilgili.append(f"{cift}: {'informal' if bicim == 'samimi' else 'formal'}")
-        return ilgili
+
+def ilgili_ciftler(tablo, metin, adlar=None, latinler=()):
+    """Sen/siz tablosundan bir parçaya gidecek çiftler: en az bir ucunun adı parçada geçen çiftler.
+
+    tablo: {"A -> B": "resmi" | "samimi"}; metin: parçanın satırları ve konuşan etiketleri; adlar: kaynak yazım ->
+    Latin ad (sözlük: "ヨル・ブライア" -> "Yor"); latinler: script'in başka yoldan bildiği Latin adlar.
+    Japonca satırda ad Japonca yazılır, tablo Latin harflidir: ad sözlükten Latin'e çevrilip aranır. Eskiden
+    eşleşmeyi İngilizce sahne özeti sağlıyordu; özet kapatılınca Japonca dosyada hiç çift gitmiyordu (gerçek test 64).
+    """
+    bulunan = set(latinler)
+    for kaynak, latin in (adlar or {}).items():
+        yalin = re.sub(r"\([^)]*\)", "", kaynak).strip()
+        if any(p in metin for p in [yalin] + [x for x in re.split(r"[・=＝ ]", yalin) if len(x) >= 2]):
+            bulunan.add(latin)
+    ek = " ".join(bulunan)
+    tam = metin + " " + ek
+
+    def geciyor(ad):
+        """Ad tam sözcük (çoğuluyla, harf büyüklüğü fark etmez) ya da büyük harfli daha uzun bir adın başı
+        ("Samwise") olarak geçiyor mu? "same" Sam değildir."""
+        d = re.escape(ad)
+        return bool(re.search(r"(?<!\w)" + d + r"(?:e?s)?(?!\w)", tam, re.I)
+                    or (ad[:1].isupper() and re.search(r"(?<!\w)" + d, tam)))
+    # Çiftin bir ucu geçse yeter: konuşan çoğu satırda adıyla anılmaz (Nardole'nin "Doctor"a resmi hitabı, adı
+    # geçmeyen istekte düşüyor, "tabloda yok = samimi" kuralıyla "sen" oluyordu).
+    ilgili = []
+    for cift, bicim in tablo.items():
+        uclar = [a.strip() for a in cift.split("->")]
+        if len(uclar) == 2 and all(uclar) and any(geciyor(a) for a in uclar):
+            ilgili.append(f"{cift}: {'informal' if bicim == 'samimi' else 'formal'}")
+    return ilgili

@@ -37,10 +37,12 @@ class UnvanDenetimi:
             beklenen = kalip.replace("{ad}", hedef_ad)
             if temizlik.tr_kucuk(beklenen) in temizlik.tr_kucuk(duz):
                 continue
-            # "Princess Sibylla of Jerusalem" -> "Kudüs Prensesi Sibylla": "of" ile gelen yer adı unvanı tamlamaya
-            # çevirir (Türkçede iyelik ekiyle), bu da kayıttaki biçimdir.
-            if (kalip.endswith(" {ad}") and re.match(r"\s+of\s", kaynak[m.end():])
-                    and re.search(r"(?<![\w-])" + re.escape(temizlik.tr_kucuk(kalip[:-len(" {ad}")]))
+            # Tamlama: unvanın önünde onu niteleyen bir ad varsa Türkçede unvan iyelik eki alır, bu da kayıttaki
+            # biçimdir. "Princess Sibylla of Jerusalem" -> "Kudüs Prensesi Sibylla"; "監査局のブレナン次官" ->
+            # "Denetim Dairesi Müsteşarı Brennan" (yeniden sorulunca model eki atıp "Dairesi Müsteşar Brennan"
+            # yazıyordu: 13 denemenin 9'u). Önünde sözcük yoksa ("Müsteşarı Brennan geldi") kabul edilmez.
+            if (kalip.endswith(" {ad}")
+                    and re.search(r"[^\W\d_]['’\w]*\s+" + re.escape(temizlik.tr_kucuk(kalip[:-len(" {ad}")]))
                                   + r"s?[ıiuü]\s+" + re.escape(temizlik.tr_kucuk(hedef_ad)) + r"(?![\w-])",
                                   temizlik.tr_kucuk(duz))):
                 continue

@@ -8,6 +8,7 @@ import json
 import socket
 import ssl
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -118,7 +119,50 @@ def kullanici_ajani(surum):
     _kullanici = f"Defta v{surum}"
 
 
+# Süre ölçümü (1.0.18): her isteğin sunucusu, süresi ve sonucu. Yalnız sunucu adı tutulur (adresin yolu jeton, sorgusu
+# anahtar taşıyabilir). Arama ve indirme sonunda kayda özet yazılır; davranışı değiştirmez.
+_olcum_kilidi = threading.Lock()
+_olcumler = []
+
+
+def _olc(adres, bas, sonuc):
+    try:
+        sunucu = urllib.parse.urlsplit(adres).hostname or "?"
+    except ValueError:
+        sunucu = "?"
+    with _olcum_kilidi:
+        if len(_olcumler) < 500:
+            _olcumler.append((sunucu, time.time() - bas, sonuc))
+
+
+def olcum_ozeti(sifirla=True):
+    """"sunucu: 3 istek 0.4+1.1+0.9 sn; ..." biçiminde özet; istek yoksa boş."""
+    with _olcum_kilidi:
+        liste = list(_olcumler)
+        if sifirla:
+            del _olcumler[:]
+    gruplar = {}
+    for sunucu, sure, sonuc in liste:
+        gruplar.setdefault(sunucu, []).append(f"{sure:.1f}" + ("" if sonuc == 200 else f"({sonuc})"))
+    return "; ".join(f"{s}: {len(g)} istek {'+'.join(g)} sn" for s, g in gruplar.items())
+
+
 def istek(yontem, adres, basliklar=None, sorgu=None, govde=None, zaman_asimi=15, ham=False, deneme=2):
+    """(kod, veri, başlıklar): _istek'in süresi ölçülen sarmalayıcısı."""
+    bas = time.time()
+    try:
+        yanit = _istek(yontem, adres, basliklar, sorgu, govde, zaman_asimi, ham, deneme)
+    except YanitHatasi as e:
+        _olc(adres, bas, e.kod)
+        raise
+    except Exception as e:
+        _olc(adres, bas, type(e).__name__)
+        raise
+    _olc(adres, bas, yanit[0])
+    return yanit
+
+
+def _istek(yontem, adres, basliklar=None, sorgu=None, govde=None, zaman_asimi=15, ham=False, deneme=2):
     """(kod, veri, başlıklar). veri: JSON ise çözülmüş, ham=True ise bayt. 429 ve 5xx'te en çok bir kez, kısa
     bekleyerek yeniden dener (Retry-After 5 sn'den uzunsa beklemez, hatayı döndürür)."""
     if sorgu:

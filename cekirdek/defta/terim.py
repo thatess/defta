@@ -1360,11 +1360,23 @@ def _yazimlari_tamamla(kararlar, partiler, sor, oy, isci, baslik):
                     for y in yanitlar for x in y.get("items") or [] if isinstance(x, dict) and x.get("i") == n]
         # Noktasız tek katakana ad tek sözcüktür: ユーリ -> "Yuri Briar" (tam adı vermiş) parçanın yazımı değildir.
         tek_ad = c.get("t") == "name" and re.fullmatch(r"[ァ-ヺー]+", a["yazim"])
-        resmi = Counter(d for d in degerler if d and not temizlik.latin_disi(d) and len(d) <= 60
-                        and not _mekanik_mi(a["yazim"], d) and not (tek_ad and " " in d))
-        if resmi and resmi.most_common(1)[0][1] >= min(2, len(yanitlar)):
-            c["l"] = resmi.most_common(1)[0][0]
+        secilen = _yazim_sec([d for d in degerler if d and not temizlik.latin_disi(d) and len(d) <= 60
+                              and not _mekanik_mi(a["yazim"], d) and not (tek_ad and " " in d)], min(2, len(yanitlar)))
+        if secilen:
+            c["l"] = secilen
     return len(eksik)
+
+
+def _yazim_sec(resmi, gereken):
+    """Yazım isteğinin resmî yazımlarından en az `gereken` oy alanı; büyük/küçük harf farkı aynı oydur: "pent" ve "Pent"
+    ayrı sayılınca ikisi de 1 oyda kalıyor, ilk oylamanın harf harf okunuşu ("Pento") sözlüğe giriyordu (gerçek test 58).
+    Kazanan oyların en sık yazılışı alınır; eşitlikte büyük harfle başlayan."""
+    say = Counter(_oy_anahtari(d) for d in resmi)
+    if not say or say.most_common(1)[0][1] < gereken:
+        return None
+    anahtar = say.most_common(1)[0][0]
+    bicimler = Counter(d for d in resmi if _oy_anahtari(d) == anahtar)
+    return max(bicimler, key=lambda d: (bicimler[d], d[:1].isupper()))
 
 
 _KANJILI = re.compile(r"[一-龥々]")
@@ -2062,6 +2074,14 @@ _IFADE_KANJI = r"[一-龯々]"
 _IFADE_ATILAN = re.compile(r"[“”「」『』〝〟\"…‥！？!?、。・〜♪～]")
 
 
+def isim_ifade(ifade):
+    """Eşitlemeye yalnız ad olan ifade gider (密輸組織, 交換条件, 懇親会, 鬼ごっこ): en çok 3 hiragana, çekim ekiyle
+    bitmez. Cümle parçası (思うんですよ, 人いないの, 楽しみにして, 見えない) gitmez: 474 kayıtlı eşitlemede
+    iyileşmelerin hemen hepsi adlarda, bozmalar ve boşuna yeniden yazımlar cümle parçalarındaydı (S52)."""
+    yalin = re.sub(r"\s+", "", ifade)
+    return len(re.findall(r"[ぁ-ゖ]", yalin)) <= 3 and yalin[-1:] not in "いうるたてだすよねかん"
+
+
 def tekrar_eden_ifadeler(metinler, haric=()):
     """Japonca kaynakta birbirinden uzak iki üç satırda geçen ortak ifade (parçalar ayrı çevrildiği için iki ayrı
     karşılık alabiliyordu: 懇親会 "davetler" / "veli toplantısı", 鬼ごっこ "ebeleme" / "yakalamaca", aynı selam
@@ -2110,6 +2130,9 @@ def tekrar_eden_ifadeler(metinler, haric=()):
     for ifade, idler in sorted(secilen.items(), key=lambda kv: -len(kv[0])):
         if not any(ifade in u and idler <= v for u, v in sonuc.items()):
             sonuc[ifade] = idler
+    # Ad olmayan ifade en sonda elenir: önce elenirse içindeki kısa parça ("思うんですよ" -> "思うんで") tek başına
+    # aday kalıp yine gidiyordu (gerçek test 70).
+    sonuc = {ifade: idler for ifade, idler in sonuc.items() if isim_ifade(ifade)}
     # Kaynakta boşlukla yazılmışsa ("こんにちは あるいは こんばんは") yazım kaynaktaki gibi alınır
     yazimli = {}
     for ifade, idler in sonuc.items():
@@ -2117,36 +2140,6 @@ def tekrar_eden_ifadeler(metinler, haric=()):
         m = re.search(desen, metinler[min(idler)])
         yazimli[" ".join(m.group().split()) if m else ifade] = sorted(idler)
     return yazimli
-
-
-_LATIN_SOZ = re.compile(r"[^\W\d_]+(?:['’][^\W\d_]+)?")
-
-
-def tekrar_eden_latin_satirlar(metinler, haric=()):
-    """Latin harfli kaynakta sözleri uzak bir satırda yeniden geçen satır çifti (sonradan hatırlanan söz, döngüde
-    yinelenen replik: "What should I call you if I were so inclined?" / "And if I was inclined, what might I call
-    you?"). Parçalar ayrı çevrildiği için iki ayrı biçimde çevrilebiliyordu (gerçek test 26, American Gods 313/321).
-    Aday: dosyada yalnız bu iki satırda geçen 5+ harflik bir sözcükleri var, satırlar 3+ satır uzakta, ikisi de 6+
-    sözcüklük, en az 5 ve kısa satırın sözcüklerinin %60'ı ortak; birebir aynı satırlar (seçim adımının işi) ve
-    sözlükteki yazımlar alınmaz. {ortak sözcükler (ilk satırdaki sırayla): [satır no, satır no]}"""
-    sozler = {i: [w.lower() for w in _LATIN_SOZ.findall(t)] for i, t in metinler.items()}
-    gectigi = defaultdict(set)
-    for i, ws in sozler.items():
-        for w in set(ws):
-            gectigi[w].add(i)
-    haric = {h.lower() for h in haric if h}
-    sonuc = {}
-    for w, idler in gectigi.items():
-        if len(idler) != 2 or len(w) < 5 or w in haric:
-            continue
-        a, b = sorted(idler)
-        A, B = set(sozler[a]), set(sozler[b])
-        ortak = A & B
-        if (b - a < 3 or len(sozler[a]) < 6 or len(sozler[b]) < 6 or len(ortak) < 5
-                or len(ortak) < 0.6 * min(len(A), len(B)) or sozler[a] == sozler[b]):
-            continue
-        sonuc[" ".join(dict.fromkeys(x for x in sozler[a] if x in ortak))] = [a, b]
-    return sonuc
 
 
 def terimleri_cikar(dosyalar, ayar, model, sozluk, gunluk):

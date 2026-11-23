@@ -18,6 +18,7 @@ from . import ag, arama, ceviri_isi, eslesme, kayit, kodi, liste, metin
 from . import video as video_modulu
 from .siteler import Aday
 
+_ACILIS = time.time()           # default.py daha erken anı verir (calistir)
 SERVIS_BEKLEME = 4.0            # servisin işi aldığını bildirmesi en çok bu kadar beklenir
 _DIL_AD = {"tr": metin.DIL_TR, "en": metin.DIL_EN, "ja": metin.DIL_JA, "de": metin.DIL_DE, "fr": metin.DIL_FR,
            "es": metin.DIL_ES, "it": metin.DIL_IT, "pt": metin.DIL_PT, "pt-BR": metin.DIL_PT_BR, "ru": metin.DIL_RU,
@@ -98,10 +99,30 @@ def suren_is(video_anahtari):
 
 
 # -------------------------------------------------------------------------------------------------- arama
+class _Sure:
+    """Adım süreleri (1.0.18): kayda tek satır yazar, davranışı değiştirmez."""
+
+    def __init__(self):
+        self.bas = self.son = time.time()
+        self.adimlar = []
+
+    def adim(self, ad):
+        simdi = time.time()
+        self.adimlar.append(f"{ad} {simdi - self.son:.1f}")
+        self.son = simdi
+
+    def yaz(self, baslik):
+        istekler = ag.olcum_ozeti()
+        _kayit(f"süre ({baslik}): " + ", ".join(self.adimlar) + f", toplam {time.time() - self.bas:.1f} sn"
+               f" (eklenti açılışından {time.time() - _ACILIS:.1f} sn)" + (f" | istekler: {istekler}" if istekler else ""))
+
+
 def ara(tutamac, sorgu):
+    sure = _Sure()
     durum = kayit.Durum(kodi.profil())
     ay = ayarlar()
     oynayan = video_modulu.oynatilan(xbmc, xbmcvfs, karma=False, ad_bul=video_modulu.sunucu_adi_bul(kodi.ozellik))
+    sure.adim("video")
     paylasilan = kodi.ozellik("karma." + video_modulu.karma_anahtari(oynayan))     # servis oynatma başında hesapladı
     if paylasilan:
         oynayan.karma = None if paylasilan == "-" else paylasilan
@@ -117,6 +138,7 @@ def ara(tutamac, sorgu):
         v.oynayan_anahtari = oynayan.video_anahtari()
     else:
         v = oynayan
+    sure.adim("karma")
     _kayit("arama: " + v.ozet())
     if not v.tanindi:
         _bildir(metin.al(metin.B_BULUNAMADI), "")
@@ -124,7 +146,9 @@ def ara(tutamac, sorgu):
     diller = [ay["hedef_dil"]] + ay["kaynak_diller"]
     eslesme.uygula(durum, v)
     site_listesi = arama.siteler(kodi.ayar, durum, eslesme=lambda vid: eslesme.anilist_bul(durum, vid))
+    sure.adim("eşleme")
     adaylar, hatalar = _onbellekle_ara(site_listesi, v, diller)
+    sure.adim("siteler")
     # Anahtarı eksik siteler Kodi açık kaldıkça bir kez bildirilir (eklenti her aramada yeni yorumlayıcıda çalışır)
     bildirilen = set(filter(None, (kodi.ozellik("anahtar_bildirildi") or "").split("|")))
     arama.hatalari_isle(hatalar, durum, _bildir, _kayit, eksik=getattr(site_listesi, "eksik", ()),
@@ -153,6 +177,8 @@ def ara(tutamac, sorgu):
                                                                               "a": s.anahtar}))
         xbmcplugin.addDirectoryItem(handle=tutamac, url=adres, listitem=li, isFolder=False)
     _kayit(f"liste: {len(satirlar)} satır ({len(adaylar)} aday, {len(hazirlar)} hazır çeviri)")
+    sure.adim("liste")
+    sure.yaz("arama")
 
 
 ARAMA_ONBELLEGI = 15 * 60
@@ -186,6 +212,7 @@ def _ver(tutamac, yol):
 
 
 def indir(tutamac, sorgu):
+    sure = _Sure()
     durum = kayit.Durum(kodi.profil())
     son = kayit.oku(os.path.join(kodi.profil("gecici"), "son_arama.json")) or {}
     v = kayittan_video(son.get("video"))
@@ -207,7 +234,10 @@ def indir(tutamac, sorgu):
         yol = kaymis(durum, v, son, secili)
     elif eylem == "yeniden":
         yol = yeniden(durum, v, secili)
+    sure.adim(eylem or "?")
     _ver(tutamac, yol)
+    sure.adim("yükle")
+    sure.yaz("seçim")
 
 
 def _durdur_digerleri(v, haric=""):
@@ -458,7 +488,10 @@ def yeniden(durum, v, secili):
 
 
 # ---------------------------------------------------------------------------------------------- giriş
-def calistir(argv):
+def calistir(argv, acilis=None):
+    global _ACILIS
+    if acilis:
+        _ACILIS = acilis
     ag.kullanici_ajani(kodi.surum())
     tutamac = int(argv[1])
     sorgu = dict(urllib.parse.parse_qsl((argv[2] if len(argv) > 2 else "").lstrip("?")))

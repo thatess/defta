@@ -25,13 +25,13 @@ VARSAYILAN = {
     "hitap": {"acik": True, "tablo": True, "kanit": True, "oy": 3},
     "unvan": {"acik": True, "tablo": True, "model_karari": True, "denetim": "duzelt"},
     "sozluk": {"otomatik": True, "terimler": True, "kesif": True, "anlam_notu": True, "karakterler": True,
-               "sahne_ozeti": True, "kurgu_tespiti": True, "oy": 3,
+               "sahne_ozeti": True, "sahne_ayrinti": True, "kurgu_tespiti": True, "oy": 3,
                "dusunme_seviyesi": "low", "karsilik_dusunme": "medium", "hitap_dusunme": "low", "sahne_dusunme": "low",
                "aday_esigi": 2, "analiz_token": 60000, "sahne_token": 4500},
     "kontrol": {"supheli_satir_kontrolu": True, "kayma_kontrolu": True,
                 "tekrar_eden_sahne": True, "deneme_sayisi": 3, "deneme_satir": 0},
     "cikti": {"satir_karakter": 42, "saniye_basina_karakter": 25, "sure_uzat_azami": 1.5},
-    "parca": {"altyazi_sayisi": 0, "baglam_once": 8, "baglam_sonra": 4, "sahne_boslugu": 2.5},
+    "parca": {"altyazi_sayisi": 0, "baglam_once": 8, "sahne_baglami": 30, "baglam_sonra": 4, "sahne_boslugu": 2.5},
     "girdi": {"tekrarlari_birlestir": True, "sub_fps": 23.976, "ass_sarki_stili": True, "ass_yazi_stili": True,
               "cift_dil": "referans"},
     # Unvan tabloları, hedef dile göre: kaynakta geçen sözcük -> çeviride yazılacak olan ("{ad}" yoksa ad arkasına gelir).
@@ -50,7 +50,7 @@ EN_AZ = {("model", "es_zamanli_istek"): 1, ("model", "zaman_asimi"): 5, ("hitap"
          ("sozluk", "aday_esigi"): 1, ("sozluk", "analiz_token"): 1000, ("sozluk", "sahne_token"): 500,
          ("kontrol", "deneme_sayisi"): 1, ("kontrol", "deneme_satir"): 0, ("cikti", "satir_karakter"): 10,
          ("cikti", "saniye_basina_karakter"): 5, ("cikti", "sure_uzat_azami"): 0, ("parca", "altyazi_sayisi"): 0,
-         ("parca", "baglam_once"): 0, ("parca", "baglam_sonra"): 0, ("parca", "sahne_boslugu"): 0,
+         ("parca", "baglam_once"): 0, ("parca", "sahne_baglami"): 0, ("parca", "baglam_sonra"): 0, ("parca", "sahne_boslugu"): 0,
          ("girdi", "sub_fps"): 1}
 
 UC_MOD = ("orijinal", "orijinal_ceviri", "ceviri")

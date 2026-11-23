@@ -9,20 +9,14 @@ import re
 from . import temizlik
 from .ayar import dil_adi, hedef_kodu
 from .cumle import BIRLESTI
-from .hitap import SEN, SIZ
 from .kaynak import KANA_SOZCUK, _yalin, ciglik_mi
 from .model import Iptal, Model, Ret, json_coz
 
 SECIM_ISTEMI = """A film subtitle repeats some of its lines (a flashback, a repeated scene, a line quoted or echoed later). Each such line was translated into {dil} in more than one way. For every item with "candidates", choose the candidate that renders "source" most accurately and naturally ("before" and "after", when given, are its neighbouring source lines), so that the line reads the same every time. Choose only among the candidates.
 An item with "occurrences" is one line said again elsewhere; each occurrence shows its neighbouring source lines and which candidate it has now. If it is the same words said in the same sense (a memory, an echo, a catchphrase, a punchline repeated), choose one candidate. If the occurrences are said in different situations that need different renderings (said to different people, or meaning something else there), answer "pick": 0 and every occurrence keeps its own translation."""
-YANKI_ISTEMI = """For every item with "sentence": "source" repeats words that are also said inside a longer sentence elsewhere in the film ("sentence", translated as "sentence_translation"). Translate "source" with the same wording that sentence_translation uses for those words, so the echo is heard ("current" is its translation now)."""
 IFADE_ISTEMI = """Each item is a Japanese expression ("expression") that occurs in two or three lines of one film. The lines were translated into {dil} separately ("lines": each source line and its current translation).
 Make the translations match only where the expression names the same particular thing (a game, an event, a gathering, an object, a place) or is the same set phrase, greeting or line said again, and the translations render it with different words: choose the best rendering already used and rewrite only the words that render the expression in the other lines. Keep everything else in those lines exactly as it is (who does what, person, tense, names, punctuation).
 Leave a line alone when the expression is already rendered the same way, when it is an ordinary word whose wording can naturally vary, or when it means something else there.
-Return ONLY this JSON object: {{"lines": [{{"id": 12, "text": "..."}}]}} with only the lines you changed (an empty list is fine)."""
-IFADE_ISTEMI_LATIN = """Each item holds two lines of one film whose source texts repeat the same words ("repeated": a line said again later, a callback, a quoted or set phrase). The lines were translated into {dil} separately ("lines": each source line and its current translation).
-Make the translations match only where the repeated words say the same thing in both lines and the translations render them with different words: choose the better rendering already used and rewrite only the words that render the repeated part in the other line. Keep everything else in that line exactly as it is (who does what, person, tense, names, punctuation).
-Leave both lines alone when the repeated part is already rendered the same way, when the shared words are ordinary words whose wording can naturally vary, or when they mean something else in each line.
 Return ONLY this JSON object: {{"lines": [{{"id": 12, "text": "..."}}]}} with only the lines you changed (an empty list is fine)."""
 IFADE_OZENSIZ = 2          # düşünme sayısı bilinmezse: yanıt bu kadar satırı değiştirmeden yollarsa özensizdir (S22)
 YANKI = re.compile(r'^["“]?(We|Me|I|You|Us|Him|Her|Them|Mine|Ours)["”]?\s*\?$', re.I)
@@ -57,7 +51,10 @@ def ardisik_mi(once, sonra):
 
 
 KLISE = {"tr": re.compile(r"(?<!allah )kahretsin|kahrolası(?![nc])|lanet olası|lanet olsun|seni aptal|seni pislik|"
-                         r"(?<![\wçğıöşü])lanet(?=\s+(?!et|ed|oku|ol)[\wçğıöşü])")}
+                         r"(?<![\wçğıöşü])lanet(?=\s+(?!et|ed|oku|ol|"
+                         # beddua anlamındaki ad: "Lanet değil.", "lanet mi okudun?", "bir lanet var" (Odyssey "Not a
+                         # curse." / "You cursed them?": doğru çeviri klişe sayılıp "sövgü" yapılıyordu; S33)
+                         r"(?:değil|mi|mı|mu|mü|var|yok|da|de|gibi|ki)(?![\wçğıöşü]))[\wçğıöşü])")}
 
 # Bip'li pekiştiricinin nitelik gibi çevrilmesi ("[bleep] raw" -> "bok gibi çiğ"): bip bir sözcüğün önündeyse ve
 # kaynakta benzetme ("like") yoksa çevirideki bu kalıp pekiştiriciyi niteliğe çevirmiştir.
@@ -83,6 +80,48 @@ YER_TUTUCU = re.compile(r"(?:\.\.\.|…)['’][a-zçğıöşüA-ZÇĞİÖŞÜ]")
 TEK_HARF = {"tr": re.compile(r"(?<![\w'’.\-])(?<!\d )[bcçdfgğhjklmnprsştvyz](?![\w'’.\-])")}
 
 
+def bolunmus_sozcuk_birlestir(metin, kod):
+    """Modelin Japonca boşlukla (U+3000) böldüğü sözcüğü birleştirir ("n\u3000eredeyse" -> "neredeyse"; LOTR 360,
+    gerçek test 68). Boşluk Latin noktalamaya çevrilince "n eredeyse" kalıyor, kopuk harf sorusuna İngilizce yanıt
+    geliyordu ("nearly completely disappeared."). Yalnız kopuk tek ünsüzden sonra (TEK_HARF; "A grubu", "o gün"
+    gibi gerçek tek harfli sözcüklere dokunulmaz). 546 ham kayıtta çeviride U+3000 bir kez geçiyor, o da bu (S46)."""
+    tek = TEK_HARF.get(kod)
+    if not tek or "\u3000" not in metin:
+        return metin
+    return re.sub("(" + tek.pattern + r")\u3000(?=[a-zçğıöşü])", r"\1", metin)
+
+
+LATIN_KUCUK_SOZ = re.compile(r"(?<![^\W\d_])[a-z][a-z'’]{2,}(?![^\W\d_])")
+
+
+def kaynak_sizintisi(kaynak, eski, yeni, kod):
+    """Şüphe sorusunun yanıtı kaynak dile kaymışsa kaynaktan gelen küçük harfli sözcükleri döndürür: yanıtta olup
+    önceki çeviride olmayan, kaynakta da küçük harfle geçen sözcükler ("nearly completely disappeared.", "frakking
+    karıncalar", "Jack and Coke"). Adlar büyük harfle başladığı için sayılmaz (Sauron, Hari Seldon kaymayı düzeltirken
+    geri konur). 1172 kabul edilmiş şüphe yanıtında 3 sızıntının 3'ünü yakalıyor, yanlış yakaladığı yok (S46)."""
+    if kod == "en":
+        return []
+    kaynakta = set(LATIN_KUCUK_SOZ.findall(temizlik.ETIKET.sub("", kaynak)))
+    if not kaynakta:
+        return []
+    oncede = {w.lower() for w in LATIN_KUCUK_SOZ.findall(eski.lower())}
+    return [w for w in dict.fromkeys(LATIN_KUCUK_SOZ.findall(temizlik.ETIKET.sub("", yeni)))
+            if w in kaynakta and w not in oncede]
+
+
+def kopuk_harf_sil(metin, kod):
+    """Sonraki sözcüğün ilk harfiyle aynı olan kopuk tek harfi siler ("ağaçların\nt tepelerinden" -> "ağaçların\n
+    tepelerinden"): model sözcüğe başlayıp satırı kırmış, sonra sözcüğü baştan yazmış. Yeniden sormak gerekmez; soru
+    satırın başka yerini de değiştiriyordu ("s size" -> "sana": siz -> sen; SPY 388). Kayıtlarda bu türden 8 örneğin
+    8'inde silmek doğru sonucu veriyor (S41). Harf sonraki sözcüğün başı değilse ("s destan", "n eredeyse") dokunulmaz,
+    o satır yine sorulur."""
+    tek = TEK_HARF.get(kod)
+    if not tek:
+        return metin
+    desen = re.compile("(" + tek.pattern + r")[ \t]+(?=(\S))")
+    return desen.sub(lambda m: "" if temizlik.tr_kucuk(m.group(2)) == m.group(1) else m.group(0), metin)
+
+
 def _bip_pekistirici(kaynak):
     """Bip bir sözcüğün önünde ve kaynakta benzetme yok: pekiştiricidir ("[bleep] raw", "the [bleep] grill")."""
     return bool(BIP_ONUNDE.search(kaynak)) and not re.search(r"\blike\b", kaynak, re.I)
@@ -102,10 +141,26 @@ def _son_parca(ceviri):
     return cumleler[-1].strip() if len(cumleler) > 1 else ""
 
 
+def icinde_yinelenir(x, y):
+    """y'nin çevirisi x'in çevirisinin içinde (neredeyse) aynen geçiyor ve x ondan uzun mu? Kısa söz (20 harften az)
+    sayılmaz: anlamı yineleyen kısa söz olağandır ("Ufacık bir şey yüzünden." / "Ufacık bir şey."; "Sadece biraz
+    yiyecek lazım." / "Yiyecek lazım.")."""
+    a, b = _yalin(x), _yalin(y)
+    if len(b) < 20 or len(a) < len(b) + 5:
+        return False
+    m = difflib.SequenceMatcher(None, a, b, autojunk=False).find_longest_match(0, len(a), 0, len(b))
+    return m.size >= 0.9 * len(b)
+
+
 def _kaynakta_yinelenir(once, sonra):
     """Sonraki altyazının kaynağının en az yarısı önceki cümlenin kaynağında da kesintisiz geçiyor mu?"""
     a, b = _yalin(once), _yalin(sonra)
     if not b:
+        return True
+    # Sözcüklerinin çoğu ötekinde de geçiyorsa (araya söz girmiş olsa da) kaynak sözü yineliyor demektir:
+    # "We just need some food." / "We need food." (Odyssey 684; S50)
+    sa, sb = set(re.findall(r"[^\W\d_]+", once.lower())), re.findall(r"[^\W\d_]+", sonra.lower())
+    if len(sb) >= 2 and sum(1 for w in sb if w in sa) >= 0.6 * len(sb):
         return True
     m = difflib.SequenceMatcher(None, a, b, autojunk=False).find_longest_match(0, len(a), 0, len(b))
     return m.size * 2 >= len(b)
@@ -227,7 +282,15 @@ class Denetimler:
         # bulunuyordu, doğru çeviri "Baggins yok" -> "hiç hobbit yok" diye bozuldu (gerçek test 10-11, LOTR 363).
         # Çeviride Türkçe ek alır: büyük harfli ad kesmeyle (Frodo'nun), küçük harfli terim doğrudan (hobbitler).
         kaynak_desen = [(a, re.compile(r"(?<![\w'’])" + re.escape(a) + r"(?:'s|’s|s|es)?(?![\w])", re.I)) for a in adlar]
-        ceviri_desen = [(a, re.compile(r"(?<![\w'’])" + re.escape(a) + ("" if a[:1].islower() else r"(?![^\W\d_])")))
+        # Küçük harfli sözlük adı çeviride cümle başında büyük harfle de geçer ("Hithlain'den", "Mithril."): ad yerinde
+        # olduğu hâlde "eksik" sayılıyordu; kaynakta olmayan başka bir sözle birleşince doğru çeviri yeniden sorulup
+        # bozuluyordu ("Hithlain'den elf ipi." -> "Hithlain ipi.", LOTR 1427, üç koşuda; S42).
+        def ilk_harf(a):
+            if not a[:1].islower():
+                return re.escape(a)
+            buyuk = {a[0].upper()} | ({"İ"} if a[0] == "i" else set())
+            return "[" + re.escape(a[0] + "".join(buyuk)) + "]" + re.escape(a[1:])
+        ceviri_desen = [(a, re.compile(r"(?<![\w'’])" + ilk_harf(a) + ("" if a[:1].islower() else r"(?![^\W\d_])")))
                         for a in adlar]
 
         def gecen(metin, desenler, buyuk_kucuk=True):
@@ -244,7 +307,7 @@ class Denetimler:
         # (sıradan sözcük "will" ad "Will" sayılmasın).
         kucuk = self._adlari_kucuk_yazan_kaynak(kaynak_desen)
         k_ad = k_gevsek if kucuk else {i: gecen(kaynak[i], kaynak_desen) for i in sira}
-        c_ad = {i: gecen(duz[i], ceviri_desen) for i in sira}
+        c_ad = {i: gecen(duz[i], ceviri_desen, False) for i in sira}      # harf büyüklüğünü desen denetler
         kayan, neden = set(), {}
         for a, b in zip(sira, sira[1:]):
             if b - a > len(self.birlesik.get(a, {}).get("grup", [a])):
@@ -266,6 +329,16 @@ class Denetimler:
                     kayan.update((a, b))
                     neden[a] = (f"the last part of this translation repeats the translation of id {b + 1}, which this "
                                 f"line's source does not say: translate only this line's own source text")
+            # Bölünmüş cümle olarak gönderilmemiş komşu iki altyazıdan birinin çevirisi ötekinin çevirisini de içeriyor,
+            # kaynakta böyle bir tekrar yok: model cümlenin tamamını bir altyazıya yazıp ikinciye yinelemiş (gerçek
+            # test 69, LOTR 936-937 "Yüzük, ... yok edilemez, Gléin'in oğlu Gimli..." / "Yüzük, ... yok edilemez."; S50).
+            elif not _kaynakta_yinelenir(kaynak[a], kaynak[b]) and not _kaynakta_yinelenir(kaynak[b], kaynak[a]):
+                for x, y in ((a, b), (b, a)):
+                    if icinde_yinelenir(duz[x], duz[y]):
+                        kayan.update((a, b))
+                        neden[x] = (f"this translation also contains the translation of id {y + 1}, which this "
+                                    f"line's source does not say: translate only this line's own source text")
+                        break
             for x, y in ((a, b), (b, a)):                   # ad x'in kaynağında, ama çevirisi y'ye yazılmış
                 if (k_ad[x] - c_ad[x]) & (c_ad[y] - k_gevsek[y]):
                     kayan.update((a, b))
@@ -327,6 +400,11 @@ class Denetimler:
                 self.gunluk.uyari(self.etiket, f"satır {i + 1}: şüphe üzerine gelen yanıt kullanılmadı "
                                                f"({yeni_kalip[0][:90]}): {sonuc[i]!r}")
                 continue
+            sizan = kaynak_sizintisi(self._kaynak(i), kabul[i], sonuc[i], kod)
+            if sizan:                       # yanıt kaynak dile kaydı: önceki çeviri kalır
+                self.gunluk.uyari(self.etiket, f"satır {i + 1}: şüphe üzerine gelen yanıt kullanılmadı "
+                                               f"(kaynak dilde sözcük: {', '.join(sizan)}): {sonuc[i]!r}")
+                continue
             self.gunluk.uyari(self.etiket, f"satır {i + 1}: şüphe üzerine düzeltildi ({supheli[i][:90]}): "
                                            f"{kabul[i]!r} -> {sonuc[i]!r}")
             kabul[i] = sonuc[i]
@@ -357,7 +435,7 @@ class Denetimler:
         ifadeyi karşılayan sözleri eşitler. Sözlüğe sorarak birleştirme denendi: oylar dağıldı, bir koşuda yanlış girdi
         oluştu (冒険 -> "SPY WARS"; gerçek test 22), bırakıldı. Yeniden yazılan satır eskisinden çok ayrılıyorsa ya da
         satır denetiminden geçmiyorsa kullanılmaz."""
-        from .terim import tekrar_eden_ifadeler, tekrar_eden_latin_satirlar
+        from .terim import tekrar_eden_ifadeler
         metinler = {}
         for i in sorted(self.giden):
             if i in sonuc and i not in self.uye and i not in self.birlesik and sonuc[i] != BIRLESTI:
@@ -367,16 +445,11 @@ class Denetimler:
             return
         haric = list(self.sozluk.girdiler) if self.sozluk is not None else []
         japonca = sum(1 for k in harf if "\u3040" <= k <= "\u30ff" or "\u4e00" <= k <= "\u9fff") >= 0.3 * len(harf)
-        harfler = [k for k in harf if k.isalpha()]
-        if japonca:
-            gruplar, istem, anahtar = tekrar_eden_ifadeler(metinler, haric), IFADE_ISTEMI, "expression"
-        elif harfler and sum(1 for k in harfler if k < "\u0250") >= 0.9 * len(harfler):
-            # Latin harfli kaynak: yalnız sözleri uzak bir satırda yeniden geçen satır çiftleri (gerçek test 26)
-            metinler = {i: m.replace("\n", " ") for i, m in metinler.items()}
-            gruplar = tekrar_eden_latin_satirlar(metinler, haric)
-            istem, anahtar = IFADE_ISTEMI_LATIN, "repeated"
-        else:
+        # Latin harfli kaynakta satır çifti eşitlemesi kaldırıldı: 56 kayıtlı eşitlemede kazanç yoktu, satırlar
+        # boşuna yeniden yazılıyor ya da bozuluyordu (American Gods 321 "ağzımdan çıkarsa", Odyssey 1536 "olmalı?"; S52).
+        if not japonca:
             return
+        gruplar, istem, anahtar = tekrar_eden_ifadeler(metinler, haric), IFADE_ISTEMI, "expression"
         if not gruplar:
             return
         duz = lambda i: temizlik.ETIKET.sub("", sonuc[i]).strip()
@@ -442,9 +515,10 @@ class Denetimler:
         adaylardan birini işaret eder. Tek başına yeniden geçen replik birleştirilmez: aynı sözler başka bir
         bağlamda başka anlama gelir (tanıtımda yarım kesilen cümle ile sahnedeki tamamı); seçim doğru çeviriyi
         yanlışıyla değiştiriyordu. Art arda gelen aynı replik ayrıdır (_ardisik_yinelenen).
-        Uzun replik başka bir geçişinde bölünmüş bir cümlenin parçasıysa o parçanın çevirisi ayrıca yoktur: model
-        tek başına geçen satırı o cümlenin çevirisindeki sözlerle yeniden yazar. Sen/siz biçimi farklı çeviriler
-        (başka birine söylenmiş olabilir) birleştirilmez.
+        Uzun replik başka bir geçişinde bölünmüş bir cümlenin parçasıysa dokunulmaz: o geçişin ayrı çevirisi yoktur.
+        Eskiden tek başına geçen satır cümlenin çevirisindeki sözlerle yeniden yazılıyordu ("yankı"); 269 çalışmanın
+        59'unda yarım ek ve cümle ortası parçası bıraktığı için kaldırıldı ("Kaçan güneşi kovalasak.", LOTR 328
+        "durmadan uzayıp gidiyorsa"; S43).
         Tek başına yeniden geçen tam cümle (yarım değil, bölünmüş cümlenin parçası değil) de modele sorulur: aynı
         anlamdaysa bir aday seçer, bağlam başkaysa (başka birine, başka anlamda) "0" der ve ikisi de kalır. Bölüm
         sonunda yinelenen şaka ("Annem yok" / "Annen yok ki") ve hatırlanan söz başka çevriliyordu (SPY x FAMILY)."""
@@ -461,13 +535,6 @@ class Denetimler:
 
         def duz(i):
             return temizlik.ETIKET.sub("", sonuc[i]).strip()
-
-        def hitap_biri(metinler):            # Türkçede sen ve siz biçimli çeviriler bir arada değil
-            if hedef_kodu(self.ayar) != "tr":
-                return True
-            bicimler = {("siz" if SIZ.search(k) else "") + ("sen" if SEN.search(k) else "")
-                        for k in map(temizlik.tr_kucuk, metinler)} - {""}
-            return len(bicimler) <= 1
 
         def uzun(i, kisa=False):             # baştaki tire, tırnak ve üç nokta, sondaki nokta ve virgül sayılmaz
             t = re.sub(r"^[\s\-–—….\"'“”‘’«»„]+|[\s.,;:…\"'“”‘’«»]+$", "", norm(i))
@@ -493,12 +560,39 @@ class Denetimler:
             for anahtar in (("önce", norm(i - 1), norm(i)), ("sonra", norm(i), norm(i + 1))):
                 if all(anahtar):
                     ciftler.setdefault(anahtar, []).append(i)
-        for anahtar, idler in ciftler.items():
-            if len(idler) > 1:
-                i0 = idler[0]
-                gruplar.setdefault((norm(i0 - 1), norm(i0), norm(i0 + 1)), [])
-                hedef = gruplar[(norm(i0 - 1), norm(i0), norm(i0 + 1))]
-                hedef.extend(x for x in idler if x not in hedef)
+        # Ortak satırı olan eşleşmeler tek grup olur ve tek karar alır: satır hem önceki hem sonraki komşusuyla
+        # eşleşince iki ayrı gruba giriyor, iki seçimden sonraki öncekini eziyordu ("Ve... çek!" / "Ve... çekin!" /
+        # "Haydi... çekin!" aynı sahnede karışık; Odyssey 671-706; S44).
+        kumeler = []
+        for idler in ciftler.values():
+            if len(idler) < 2:
+                continue
+            kume = set(idler)
+            for k in [k for k in kumeler if k & kume]:
+                kume |= k
+                kumeler.remove(k)
+            kumeler.append(kume)
+
+        def devam(i):                        # "...a fleet...": cümle önceki satırdan sürüyor
+            return bool(re.match(r"\s*(?:\.\.\.|[…‥])", kaynak_metni(i)))
+
+        def baslangic(i):                    # devam satırının cümlesinin başladığı satır ("" devam değilse)
+            j = i
+            while j > 0 and devam(j) and i - j < 8:
+                j -= 1
+            return norm(j) if j != i else ""
+
+        # Devam satırı, cümlesinin başladığı satır da aynıysa eşitlenir: "...a fleet..." filmin başında "A face..."
+        # cümlesinin, sonda "Sing, Muse, of a face..." cümlesinin parçası; Türkçede eki başka ("bir donanma..." /
+        # "bir donanmadan..."). Eşitleme doğru eki siliyordu (kayıtlarda 217 değişikliğin 202'si; S44).
+        for kume in kumeler:
+            parcalar = {}
+            for i in sorted(kume):
+                parcalar.setdefault(baslangic(i), []).append(i)
+            for idler in parcalar.values():
+                if len(idler) > 1:
+                    i0 = idler[0]
+                    gruplar[(norm(i0 - 1), norm(i0), norm(i0 + 1), i0)] = idler
         sahnede = {i for v in gruplar.values() if len(v) > 1 for i in v}
         secilecek = [({"before": k[0], "source": k[1], "after": k[2]}, v, "tekrar eden sahne")
                      for k, v in gruplar.items() if len(v) > 1 and len({duz(i) for i in v}) > 1]
@@ -511,9 +605,7 @@ class Denetimler:
                 parcali.setdefault(anahtar, self.uye.get(i, i))
             else:
                 tekli.setdefault(anahtar, []).append(i)
-        yazilacak = []
         for anahtar, idler in tekli.items():
-            kaynak = " ".join(temizlik.ETIKET.sub("", self.satirlar[idler[0]].metin).split())
             if (anahtar not in parcali and len(idler) > 1 and len({duz(i) for i in idler}) > 1
                     and all(tam(i) for i in idler)):
                 secenek = list(dict.fromkeys(duz(i) for i in idler))
@@ -521,36 +613,22 @@ class Denetimler:
                              "now": secenek.index(duz(i)) + 1} for i in idler]
                 secilecek.append(({"source": kaynak_metni(idler[0]), "occurrences": gecisler}, idler,
                                   "tek başına yinelenen replik"))
-                continue
-            if anahtar in parcali and uzun(idler[0]):
-                cumle = self.birlesik[parcali[anahtar]]
-                onceki = " ".join(" ".join(duz(j).split()) for j in cumle["grup"] if sonuc.get(j, BIRLESTI) != BIRLESTI)
-                if hitap_biri([onceki] + [duz(i) for i in idler]):
-                    yazilacak.append(({"source": kaynak, "sentence": cumle["metin"], "sentence_translation": onceki,
-                                       "current": " ".join(duz(idler[0]).split())}, idler))
-        if not secilecek and not yazilacak:
+        if not secilecek:
             return
         ogeler, adaylar = [], []
         for n, (oge, idler, _) in enumerate(secilecek, 1):
             secenek = list(dict.fromkeys(duz(i) for i in idler))
             adaylar.append(secenek)
             ogeler.append({"n": n, **oge, "candidates": {str(k): c for k, c in enumerate(secenek, 1)}})
-        for n, (oge, _) in enumerate(yazilacak, len(secilecek) + 1):
-            ogeler.append({"n": n, **oge})
-        bicim = (['"choices": [{"n": 1, "pick": 2}]'] if secilecek else []) + (
-            [f'"texts": [{{"n": {len(secilecek) + 1}, "text": "..."}}]'] if yazilacak else [])
-        sistem = (SECIM_ISTEMI.format(dil=dil_adi(self.ayar)) + ("\n" + YANKI_ISTEMI if yazilacak else "")
-                  + "\nReturn ONLY this JSON object: {" + ", ".join(bicim) + "} with one entry per item.")
-        secim, yazi = {}, {}
+        sistem = (SECIM_ISTEMI.format(dil=dil_adi(self.ayar))
+                  + '\nReturn ONLY this JSON object: {"choices": [{"n": 1, "pick": 2}]} with one entry per item.')
+        secim = {}
         try:
             ham = self.model.iste(sistem, json.dumps({"items": ogeler}, ensure_ascii=False))
             self.gunluk.ham(self.etiket, {"tur": "secim", "giden": {"items": ogeler}, "gelen": ham})
             cevap = json_coz(ham)
             for x in (cevap.get("choices") or []):
                 secim[int(x["n"])] = int(x["pick"])
-            for x in (cevap.get("texts") or []):
-                if isinstance(x.get("text"), str) and x["text"].strip():
-                    yazi[int(x["n"])] = x["text"].strip()
         except (Ret, ValueError, KeyError, TypeError, AttributeError) as e:
             self.gunluk.uyari(self.etiket, f"yinelenen satırlar için seçim yapılamadı ({e}); ilk çeviriler kullanıldı")
 
@@ -571,18 +649,3 @@ class Denetimler:
             for i in idler:
                 if duz(i) != secilen:
                     koy(i, secilen, f"{neden}, seçilen çeviri kullanıldı")
-        for n, (_, idler) in enumerate(yazilacak, len(secilecek) + 1):
-            if n not in yazi:
-                continue
-            # Model sondaki noktalamayı düşürdüyse satırın şimdiki çevirisindeki konur (".", "?!", "...").
-            son = re.search(r"[.!?…]+$", duz(idler[0]))
-            metin = yazi[n] + (son.group() if son and not re.search(r"[.!?…]$", yazi[n]) else "")
-            denenen = {i: {i: metin} for i in idler}             # satır denetimi metni yerinde düzeltir
-            sorun = next((s for s in (self._satir_kontrol(i, d) for i, d in denenen.items()) if s), None)
-            if sorun:
-                self.gunluk.uyari(self.etiket, f"satır {idler[0] + 1}: yankı için yazılan çeviri kullanılmadı "
-                                               f"({sorun}): {metin!r}")
-                continue
-            for i, d in denenen.items():
-                if duz(i) != temizlik.ETIKET.sub("", d[i]).strip():
-                    koy(i, d[i], "yankı, bölünmüş cümledeki sözlerle yeniden yazıldı")

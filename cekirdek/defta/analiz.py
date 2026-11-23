@@ -61,6 +61,21 @@ SAHNE_BOLUMLERI = (
 )
 
 
+# Ayrıntılı sahne özeti (sozluk.sahne_ayrinti; S53 denemesi): daha kısa sahneler; özet kimden ya da neden söz edildiğini,
+# kişilerin ilişkisini ve cinsiyetini de söyler. Gerçek test 69'daki 35 anlam hatasının 12'sinde eksik olan bilgi
+# buydu ("bu beyefendi" kadın için, "terfini", "Yeğenin Bilbo"); 62 satırlık sahne tek cümleyle özetleniyordu.
+SAHNE_AYRINTI = (
+    ("(roughly one scene per 30-60 lines)",
+     "and whenever the people talking or the subject of the talk changes (roughly one scene per 10-25 lines, never "
+     "more than 30)"),
+    ('"summary" is ONE short English sentence: who is speaking to whom, where, what is happening and what is at stake.',
+     '"summary" is one or two short English sentences. First: who is speaking to whom, where, what is happening and '
+     'what is at stake. Then, whenever these lines show it: whom or what the talk is about (whose plan, whose job, '
+     'whose belonging; who did what to whom) and how the people are related (brother, uncle, employer). Write (man) '
+     'or (woman) after a person\'s name the first time, when the lines show it.'),
+)
+
+
 def sahne_istemi(ayar):
     """Sahne özetleri ve kurgu dili parçaları: dosyanın bir bölümünü gören, aynı anda çalışan istekler."""
     latin = ayar["ceviri"]["cikti_alfabesi"] == "latin"
@@ -69,6 +84,10 @@ def sahne_istemi(ayar):
     bolumler = [b for anahtar, b in zip(("sahne_ozeti", "kurgu_tespiti"), SAHNE_BOLUMLERI) if s[anahtar]]
     sema = ",\n ".join(b[0] for b in bolumler)
     govde = "\n\n".join(b[1] for b in bolumler).replace("{roma}", roma)
+    if s.get("sahne_ayrinti"):
+        for eski, yeni in SAHNE_AYRINTI:
+            assert eski in govde or not s["sahne_ozeti"], eski
+            govde = govde.replace(eski, yeni)
     return SAHNE_ISTEMI.replace("{sema}", sema).replace("{govde}", govde)
 
 

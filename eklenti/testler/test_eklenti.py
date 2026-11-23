@@ -3288,5 +3288,34 @@ class Karar102Testleri(unittest.TestCase):
             self.assertEqual((yol, cevrilen, yuklenen), (dosya, [], []))
 
 
+class SureOlcumuTestleri(unittest.TestCase):
+    def test_istek_suresi_yalniz_sunucu_adiyla_ozetlenir(self):
+        from d2 import ag
+        ag.olcum_ozeti()
+        with mock.patch("d2.ag._istek", lambda *a, **k: (200, {}, {})):
+            ag.istek("GET", "https://api.ornek.com/v1/gizli-jeton/indir", sorgu={"api_key": "GIZLI"})
+            ag.istek("GET", "https://api.ornek.com/v1/ara")
+
+        def hata(*a, **k):
+            raise ag.YanitHatasi(429)
+        with mock.patch("d2.ag._istek", hata), self.assertRaises(ag.YanitHatasi):
+            ag.istek("GET", "https://baska.com/x")
+        ozet = ag.olcum_ozeti()
+        self.assertRegex(ozet, r"^api\.ornek\.com: 2 istek \d\.\d\+\d\.\d sn; baska\.com: 1 istek \d\.\d\(429\) sn$")
+        self.assertNotIn("GIZLI", ozet)
+        self.assertNotIn("jeton", ozet)
+        self.assertEqual(ag.olcum_ozeti(), "")                      # özet alınınca sıfırlanır
+
+    def test_adim_sureleri_tek_satir_yazilir(self):
+        from d2 import giris
+        satirlar = []
+        with mock.patch("d2.giris._kayit", satirlar.append):
+            s = giris._Sure()
+            s.adim("video")
+            s.adim("siteler")
+            s.yaz("arama")
+        self.assertRegex(satirlar[0], r"^süre \(arama\): video \d\.\d, siteler \d\.\d, toplam \d\.\d sn \(eklenti açılışından")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -84,6 +84,7 @@ kesif = true                   # scriptin göremediği adlar (kanjiyle yazılmı
 anlam_notu = true              # her terime "bu yapımda neyi kastediyor" notu; istemde karşılığın yanına yazılır
 karakterler = true             # karakter adları: etiketteki yazımın (アーニャ) Latin karşılığı; Japonca ad ve ek denetimi kullanır
 sahne_ozeti = true             # sahne özetleri: kısa ve belirsiz satırları doğru okutan bilgi
+sahne_ayrinti = true           # ayrıntılı sahne özeti: daha kısa sahneler; kimden söz edildiği, ilişki ve cinsiyet (S53)
 kurgu_tespiti = true           # uydurma dildeki parçaların bulunup korunması
 oy = 3                         # her sınıflandırma isteği kaç kez sorulsun; çoğunluğun dediği olur (3 ölçüldü, 1 en ucuz)
 dusunme_seviyesi = "low"       # low / medium / high: terim sınıflandırma ve keşif istekleri
@@ -100,7 +101,7 @@ sahne_token = 4500             # sahne istekleri için dosya bu büyüklükte pa
 # Çeviriden sonra script'in denetimleri: sorunlu satır yalnızca nedeniyle birlikte yeniden sorulur.
 supheli_satir_kontrolu = true  # dublaj klişesi, yabancı yazılmış tepki sesi, düşen ya da yanlış yere konan bip'li küfür, kısa çeviri, yinelenen zamir
 kayma_kontrolu = true          # çeviri komşu altyazıya kaymışsa (komşuda aynı çeviri, adın komşuya geçmesi)
-tekrar_eden_sahne = true       # geri dönüşte, alıntıda ya da yankıda yinelenen satır her geçişinde aynı çevrilir
+tekrar_eden_sahne = true       # geri dönüşte ya da alıntıda yinelenen satır her geçişinde aynı çevrilir
 deneme_sayisi = 3              # bir parça en çok kaç kez sorulsun
 deneme_satir = 0               # 0: kapalı. 80: her dosyanın yalnızca ilk 80 altyazısını çevirir (deneme.tr.srt)
 
@@ -115,6 +116,7 @@ sure_uzat_azami = 1.5          # okumaya yetmeyen altyazı sonraki altyazıya ka
 # Dosyanın isteklere bölünmesi. Parçalar aynı anda gider.
 altyazi_sayisi = 0             # 0: otomatik (dosya en az 16 parçaya bölünür, parça yaklaşık 35 altyazıyı geçmez); sayı: istek başına altyazı
 baglam_once = 8                # her isteğe parçadan önceki kaç altyazı bağlam olarak gider (çevrilmez)
+sahne_baglami = 30             # parça sahne ortasından başlıyorsa önceki bağlam sahnenin başına kadar uzar, en çok bu kadar altyazı; 0: kapalı (S55)
 baglam_sonra = 4               # parçadan sonraki kaç altyazı bağlam olarak gider
 sahne_boslugu = 2.5            # saniye; bu kadar sessizlik sahne sınırı sayılır, parça orada kesilir
 
