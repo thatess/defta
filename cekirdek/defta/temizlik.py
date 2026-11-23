@@ -307,6 +307,21 @@ def kaynak_hazirla(metin):
     return _bosluk(japonca_duzelt(_ortak(metin))), ustte
 
 
+_SURDURME_SON = re.compile(r"[—―]\s*((?:</i>)?)\s*$")
+_CEVIRI_CIZGI = re.compile(r"\s*[—―–-]+\s*((?:</i>)?)\s*$")
+
+
+def surdurme_cizgisi_sil(kaynak, ceviri):
+    """Latin dışı kaynakta altyazı sonundaki — cümlenin sonraki altyazıda sürdüğünü gösteren yazım işaretidir (Japonca
+    altyazı; yayın oku ➡ ➨ da buna çevrilir). Söz değildir; model bazen çeviriye taşıyor ("Senin yeteneklerinle—",
+    Black Clover'da bölüm başına 7-15 altyazı). Kaynak böyle bitiyorsa çevirinin sonundaki çizgi silinir (S58).
+    Latin harfli kaynakta "--" yarıda kesilen sözdür: dokunulmaz."""
+    if not ceviri or not latin_disi(kaynak) or not _SURDURME_SON.search(kaynak.rstrip()):
+        return ceviri
+    yeni = _CEVIRI_CIZGI.sub(lambda m: m.group(1), ceviri.rstrip())
+    return yeni if re.search(r"[^\W\d_]", ETIKET.sub("", yeni)) else ceviri
+
+
 _JP_HARF = re.compile(r"[ぁ-ゖァ-ヺ一-龥ｦ-ﾟ]")
 _YARIM_KANA = re.compile(r"[｡-ﾟ]+")
 # Satır başındaki yarım genişlikli konuşmacı etiketi ((ワポル), [ｽﾋﾟｰｶ](ワポル), ≪(水夫)): tam genişlikliye çevrilip

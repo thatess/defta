@@ -2788,6 +2788,18 @@ Use Crimson Lotus Strike, Kenji-senpai.
         self.assertEqual(sonuc[0], "Kan sıçrarsa belli olur.")
         self.assertFalse(any("fix" in g for g in m.gidenler))
 
+    def test_surdurme_cizgisi_ceviride_kalmaz(self):
+        """S58: Japonca altyazının sonundaki — "cümle sürüyor" işaretidir; çeviriye taşınırsa silinir."""
+        sil = temizlik.surdurme_cizgisi_sil
+        self.assertEqual(sil("お前の技術なら—", "Senin yeteneklerinle—"), "Senin yeteneklerinle")
+        self.assertEqual(sil("<i>狙いが読めりゃ—</i>", "<i>Hamlesini çözünce—</i>"), "<i>Hamlesini çözünce</i>")
+        self.assertEqual(sil("悪魔が棲む冥府と—", "yeraltı dünyasıyla-"), "yeraltı dünyasıyla")
+        self.assertEqual(sil("うわっ！\nヴァターシ—", "- Uwa!\n- Ben—"), "- Uwa!\n- Ben")
+        self.assertEqual(sil("お前の技術なら", "Senin yeteneklerinle—"), "Senin yeteneklerinle—")       # kaynakta çizgi yok
+        self.assertEqual(sil("I would never--", "Ben asla—"), "Ben asla—")                              # Latin: kesilen söz
+        self.assertEqual(sil("あっ—", "—"), "—")                                                        # söz kalmıyorsa dokunma
+        self.assertEqual(sil("お前の技術なら—", "Senin yeteneklerinle..."), "Senin yeteneklerinle...")
+
     def test_japonca_yayin_bicimi_duzelir(self):
         """Yarım genişlikli etiket ve kana tanınır; 《》 iç ses ve ≪ ekran dışı ses italik olur."""
         from defta.kaynak import not_ve_konusmaci_ayir

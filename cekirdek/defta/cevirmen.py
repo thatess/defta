@@ -751,6 +751,8 @@ class Cevirmen(CumleDagitimi, Denetimler, HitapDenetimi, UnvanDenetimi):
         if self.latin:
             ceviri = temizlik.noktalama_latin(ceviri)
         ceviri = kopuk_harf_sil(ceviri, hedef_kodu(self.ayar))
+        if i not in self.birlesik:
+            ceviri = temizlik.surdurme_cizgisi_sil(kaynak, ceviri)
         if (kaynak.startswith("<i>") and kaynak.endswith("</i>") and kaynak.count("<i>") == 1
                 and "<i>" not in ceviri and "</i>" not in ceviri and ceviri):
             ceviri = "<i>" + ceviri + "</i>"
